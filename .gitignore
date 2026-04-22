@@ -1,5 +1,8 @@
-﻿node_modules/
+﻿@"
+node_modules/
 .expo/
 *.log
 .DS_Store
-*.orig
+android/
+assets/
+"@ | Out-File -FilePath .gitignore -Encoding utf8
