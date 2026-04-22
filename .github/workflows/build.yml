@@ -16,9 +16,9 @@ jobs:
       with:
         node-version: '18'
         
-    # Install dependencies using npm (not yarn)
+    # Install dependencies using npm install (more lenient than npm ci)
     - name: Install Dependencies
-      run: npm ci
+      run: npm install
 
     # Manually install EAS CLI
     - name: Install EAS CLI
