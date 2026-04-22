@@ -13,11 +13,12 @@ jobs:
           node-version: '20'
       - run: npm install
       - run: npm install -g eas-cli
+      # Remove BOM from JSON files
       - run: for f in eas.json app.json; do [ -f "$f" ] && tail -c +4 "$f" > "$f.tmp" && mv "$f.tmp" "$f"; done
       - run: eas build --platform android --profile preview --non-interactive
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
       - uses: actions/upload-artifact@v4
         with:
-          name: khafif-app
-          path: app-*.apk
+          name: NoCima-app          # ← changed to match your app name
+          path: '*.apk'
