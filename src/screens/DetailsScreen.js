@@ -8,9 +8,11 @@ export default function DetailsScreen({ route }) {
   const [details, setDetails] = useState(null);
   const navigation = useNavigation();
 
-  useEffect(() => { getDetails(url).then(setDetails); }, [url]);
+  useEffect(() => {
+    getDetails(url).then(setDetails);
+  }, [url]);
 
-  if (!details) return <ActivityIndicator style={styles.load} />;
+  if (!details) return <ActivityIndicator style={styles.load} size="large" color="#ff434c" />;
 
   const directLinks = details.sources.filter(s => s.type === 'direct');
   const iframeLinks = details.sources.filter(s => s.type === 'iframe');
@@ -20,7 +22,7 @@ export default function DetailsScreen({ route }) {
       <Image source={{ uri: details.poster }} style={styles.poster} />
       <Text style={styles.title}>{details.title}</Text>
       <Text style={styles.desc}>{details.desc}</Text>
-      
+
       {directLinks.length > 0 && (
         <View style={styles.section}>
           <Text style={styles.sectionHeader}>Play (Native Player)</Text>
@@ -29,10 +31,7 @@ export default function DetailsScreen({ route }) {
             data={directLinks}
             keyExtractor={(item, i) => i.toString()}
             renderItem={({ item }) => (
-              <TouchableOpacity 
-                style={styles.btn} 
-                onPress={() => navigation.navigate('Player', { source: item })}
-              >
+              <TouchableOpacity style={styles.btn} onPress={() => navigation.navigate('Player', { source: item })}>
                 <Text style={styles.btnText}>{item.label}</Text>
               </TouchableOpacity>
             )}
@@ -48,10 +47,7 @@ export default function DetailsScreen({ route }) {
             data={iframeLinks}
             keyExtractor={(item, i) => i.toString()}
             renderItem={({ item }) => (
-              <TouchableOpacity 
-                style={[styles.btn, styles.btnSecondary]} 
-                onPress={() => navigation.navigate('Player', { source: item })}
-              >
+              <TouchableOpacity style={[styles.btn, styles.btnSecondary]} onPress={() => navigation.navigate('Player', { source: item })}>
                 <Text style={styles.btnText}>{item.label}</Text>
               </TouchableOpacity>
             )}
@@ -64,7 +60,7 @@ export default function DetailsScreen({ route }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#141414' },
-  load: { marginTop: 100 },
+  load: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   poster: { width: '100%', height: 300, resizeMode: 'contain' },
   title: { color: '#fff', fontSize: 24, fontWeight: 'bold', padding: 15 },
   desc: { color: '#ccc', paddingHorizontal: 15, marginBottom: 20 },
