@@ -16,10 +16,10 @@ jobs:
       with:
         node-version: '18'
         
-    # CRITICAL FIX: This step strips the hidden BOM character causing the error
-    - name: Fix JSON Files (Strip BOM)
+    # Fix JSON BOM
+    - name: Fix JSON Files
       run: |
-        for file in package.json app.json eas.json; do
+        for file in package.json app.json; do
           if [ -f "$file" ]; then
             sed -i '1s/^\xEF\xBB\xBF//' "$file"
             echo "Cleaned $file"
@@ -29,13 +29,17 @@ jobs:
     - name: Install Dependencies
       run: npm install
 
-    - name: Install EAS CLI
-      run: npm install -g eas-cli
+    - name: Install Expo CLI (Legacy)
+      run: npm install -g expo-cli
 
-    - name: Configure Git
-      run: git config --global user.email "actions@github.com" && git config --global user.name "GitHub Actions"
-
-    - name: Build Android APK
-      run: eas build --platform android --non-interactive
+    - name: Build Android APK (Legacy)
+      run: expo build:android --type apk --non-interactive
       env:
         EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+    
+    # Upload the APK so you can download it from the GitHub Actions summary
+    - name: Upload APK
+      uses: actions/upload-artifact@v2
+      with:
+        name: app-apk
+        path: NoCima-1.0.0.apk
