@@ -6,7 +6,7 @@ let globalCookies = '';
 
 export const setCookies = (cookieString) => {
   globalCookies = cookieString;
-  console.log('✅ Cookies set:', cookieString.substring(0, 100));
+  console.log('✅ Cookies set');
 };
 
 const getHeaders = () => ({
@@ -28,47 +28,44 @@ const fetchHTML = async (path) => {
   }
 };
 
+// Scrape homepage (latest movies)
 export const scrapeHome = async () => {
   const html = await fetchHTML('/main');
   if (!html) return { movies: [], episodes: [] };
   const $ = cheerio.load(html);
-  const movies = [], episodes = [];
+  const movies = [];
+  const episodes = [];
 
-  // Movies (latest movies grid)
   $('.blockMovie').each((i, el) => {
     const link = $(el).find('a').first().attr('href');
     const title = $(el).find('.h5').text().trim();
-    const img = $(el).find('img').first().attr('data-src') || $(el).find('img').first().attr('src');
+    const img = $(el).find('img').first();
+    const poster = img.attr('data-src') || img.attr('src');
+    const category = $(el).find('.bCat').text().trim();
+    const quality = $(el).find('.quality').text().trim();
+    const viewsText = $(el).find('.bviews').text().trim();
+    const views = viewsText.replace(/[^0-9]/g, '');
+
     if (link && title) {
       movies.push({
         id: link,
         title,
-        poster: img?.startsWith('http') ? img : `${BASE_URL}${img}`,
+        poster: poster?.startsWith('http') ? poster : `${BASE_URL}${poster}`,
+        category,
+        quality,
+        views,
         type: 'movie'
       });
     }
   });
 
-  // Episodes (latest episodes)
-  $('.epDivHome').each((i, el) => {
-    const link = $(el).find('a').first().attr('href');
-    const title = $(el).find('.h4').text().trim();
-    const img = $(el).find('.epHomeImg img').first().attr('data-src') || $(el).find('.epHomeImg img').first().attr('src');
-    if (link && title) {
-      episodes.push({
-        id: link,
-        title,
-        poster: img?.startsWith('http') ? img : `${BASE_URL}${img}`,
-        type: 'series'
-      });
-    }
-  });
-
+  // Latest episodes (if any – you can keep your existing .epDivHome logic later)
+  // For now, we return only movies
   return { movies, episodes };
 };
 
+// Search
 export const search = async (query) => {
-  // Correct search endpoint
   const html = await fetchHTML(`/?s=${encodeURIComponent(query)}`);
   if (!html) return [];
   const $ = cheerio.load(html);
@@ -76,12 +73,13 @@ export const search = async (query) => {
   $('.blockMovie').each((i, el) => {
     const link = $(el).find('a').first().attr('href');
     const title = $(el).find('.h5').text().trim();
-    const img = $(el).find('img').first().attr('data-src') || $(el).find('img').first().attr('src');
+    const img = $(el).find('img').first();
+    const poster = img.attr('data-src') || img.attr('src');
     if (link && title) {
       results.push({
         id: link,
         title,
-        poster: img?.startsWith('http') ? img : `${BASE_URL}${img}`,
+        poster: poster?.startsWith('http') ? poster : `${BASE_URL}${poster}`,
         type: 'movie'
       });
     }
@@ -89,22 +87,23 @@ export const search = async (query) => {
   return results;
 };
 
+// Get details from a movie/series page (including video sources)
 export const getDetails = async (url) => {
   const html = await fetchHTML(url);
   if (!html) return null;
   const $ = cheerio.load(html);
 
   const title = $('h1').text().trim() || $('.h1').text().trim();
-  const poster = $('.poster-img img').attr('src') || $('img[itemprop="image"]').attr('src') || '';
+  const poster = $('.posterImg img').attr('src') || '';
   const desc = $('.story, .overview, .description').text().trim();
 
   const sources = [];
 
-  // Direct video links (MP4, M3U8)
-  $('a').each((i, el) => {
+  // 1. Look for direct download links (usually inside .download-links or similar)
+  $('.download-links a, a[href*=".mp4"], a[href*=".m3u8"]').each((i, el) => {
     const href = $(el).attr('href');
     const text = $(el).text().trim();
-    if (href && (href.includes('.mp4') || href.includes('.m3u8') || href.includes('download') || href.includes('dl='))) {
+    if (href && (href.includes('.mp4') || href.includes('.m3u8') || href.includes('download'))) {
       let quality = '';
       if (text.includes('1080')) quality = '1080p';
       else if (text.includes('720')) quality = '720p';
@@ -118,27 +117,19 @@ export const getDetails = async (url) => {
     }
   });
 
-  // Iframe servers (fallback)
-  $('.server-list a, iframe, .download-links a').each((i, el) => {
-    const src = $(el).attr('data-link') || $(el).attr('src') || $(el).attr('href');
-    if (src && !src.includes('.mp4') && !src.includes('.m3u8') && src.startsWith('http')) {
-      sources.push({
-        url: src,
-        label: `Server ${i + 1}`,
-        type: 'iframe'
-      });
-    }
-  });
-
-  // Remove duplicates by URL
-  const unique = {};
-  const finalSources = [];
-  for (const src of sources) {
-    if (!unique[src.url]) {
-      unique[src.url] = true;
-      finalSources.push(src);
-    }
+  // 2. Fallback: iframes (embedded players)
+  if (sources.length === 0) {
+    $('iframe').each((i, el) => {
+      const src = $(el).attr('src');
+      if (src && src.startsWith('http')) {
+        sources.push({
+          url: src,
+          label: `Server ${i + 1}`,
+          type: 'iframe'
+        });
+      }
+    });
   }
 
-  return { title, poster, desc, sources: finalSources };
+  return { title, poster, desc, sources };
 };
