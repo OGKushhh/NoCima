@@ -1,44 +1,43 @@
-﻿name: Build APK
+name: Build APK
 
 on:
   push:
-      branches: [ "master", "main" ]
+    branches: [ "master", "main" ]
   pull_request:
-      branches: [ "master", "main" ]
+    branches: [ "master", "main" ]
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v2
-    
-    - uses: actions/setup-node@v2
-      with:
+      - uses: actions/checkout@v2
+      
+      - uses: actions/setup-node@v2
+        with:
           node-version: '18'
-        
-    - name: Fix JSON Files
-      run: |
-        for file in package.json app.json; do
-          if [ -f "$file" ]; then
-            sed -i '1s/^\xEF\xBB\xBF//' "$file"
-            echo "Cleaned $file"
-          fi
-        done
-    
-    - name: Install Dependencies
-      run: npm install
+          
+      - name: Fix JSON Files
+        run: |
+          for file in package.json app.json; do
+            if [ -f "$file" ]; then
+              sed -i '1s/^\xEF\xBB\xBF//' "$file"
+              echo "Cleaned $file"
+            fi
+          done
+      
+      - name: Install Dependencies
+        run: npm install
 
-    - name: Install Expo CLI
-      run: npm install -g expo-cli
+      - name: Install Expo CLI
+        run: npm install -g expo-cli
 
-    - name: Build Android APK
-      run: expo build:android --type apk --non-interactive
-      env:
-        EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-    
-    # FIXED: Updated to v3 and changed path to catch any APK file
-    - name: Upload APK
-      uses: actions/upload-artifact@v3
-      with:
-        name: app-apk
-        path: *.apk
+      - name: Build Android APK
+        run: expo build:android --type apk --non-interactive
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+      
+      - name: Upload APK
+        uses: actions/upload-artifact@v3
+        with:
+          name: app-apk
+          path: *.apk
