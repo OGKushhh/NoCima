@@ -1,0 +1,23 @@
+name: Build APK
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm install
+      - run: npm install -g eas-cli
+      - run: for f in eas.json app.json; do [ -f "$f" ] && tail -c +4 "$f" > "$f.tmp" && mv "$f.tmp" "$f"; done
+      - run: eas build --platform android --profile preview --non-interactive
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: khafif-app
+          path: app-*.apk
