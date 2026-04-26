@@ -5,7 +5,7 @@ buildscript {
         compileSdkVersion = 35
         targetSdkVersion = 34
         ndkVersion = "26.1.10909125"
-        kotlinVersion = "1.8.22"
+        kotlinVersion = "1.8.22"   // enforced
     }
     repositories {
         google()
@@ -14,27 +14,39 @@ buildscript {
     dependencies {
         classpath("com.android.tools.build:gradle")
         classpath("com.facebook.react:react-native-gradle-plugin")
-        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin")
+        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:${kotlinVersion}")
     }
 }
 
 apply plugin: "com.facebook.react.rootproject"
 
+// Force all Kotlin compile tasks to use JVM 17 and compatibility flags
 subprojects {
     tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).all {
         kotlinOptions {
-            jvmTarget = "17" // Nitro 0.35+ requires Java 17 target
+            jvmTarget = "17"
             freeCompilerArgs += [
-                "-Xskip-prerelease-check", 
+                "-Xskip-prerelease-check",
                 "-Xallow-unstable-dependencies"
             ]
         }
     }
 }
 
-// Force all modules to use your 1.9.25 version
+// Global resolution: pin every Kotlin dependency to 1.8.22
 configurations.all {
     resolutionStrategy {
-        force "org.jetbrains.kotlin:kotlin-stdlib:1.9.25"
+        eachDependency { DependencyResolveDetails details ->
+            if (details.requested.group == 'org.jetbrains.kotlin') {
+                details.useVersion kotlinVersion
+            }
+            if (details.requested.group == 'org.jetbrains.kotlinx') {
+                // Keep kotlinx coroutines at a compatible version (1.6.4 works with 1.8.22)
+                if (details.requested.name == 'kotlinx-coroutines-core' ||
+                    details.requested.name == 'kotlinx-coroutines-android') {
+                    details.useVersion '1.6.4'
+                }
+            }
+        }
     }
 }
