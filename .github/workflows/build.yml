@@ -34,26 +34,8 @@ jobs:
       - name: 📋 Install Node dependencies
         run: npm ci
 
-      - name: 🔍 Debug: Check paths
-        run: |
-          echo "=== Repo root contents ==="
-          ls -la
-          echo "=== node_modules/@react-native exists? ==="
-          ls -d node_modules/@react-native 2>/dev/null && echo "YES" || echo "NO"
-          echo "=== gradle-plugin exists? ==="
-          ls -d node_modules/@react-native/gradle-plugin 2>/dev/null && echo "YES" || echo "NO"
-          echo "=== Full path ==="
-          echo "$(pwd)/node_modules/@react-native/gradle-plugin"
-          echo "=== settings.gradle path test ==="
-          GRADLE_PLUGIN="$(pwd)/node_modules/@react-native/gradle-plugin"
-          if [ -d "$GRADLE_PLUGIN" ]; then
-            echo "EXISTS: $GRADLE_PLUGIN"
-            ls "$GRADLE_PLUGIN/settings-plugin/src/main/kotlin/com/facebook/react/"
-          else
-            echo "MISSING: $GRADLE_PLUGIN"
-            echo "=== What's in @react-native? ==="
-            ls node_modules/@react-native/
-          fi
+      - name: Debug check paths
+        run: echo "root=$(pwd)" && ls node_modules/@react-native/ 2>/dev/null || echo "MISSING @react-native"
 
       - name: 🐘 Setup Gradle 8.10.2
         uses: gradle/actions/setup-gradle@v4
