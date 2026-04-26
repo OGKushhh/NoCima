@@ -3,16 +3,19 @@ apply plugin: "org.jetbrains.kotlin.android"
 apply plugin: "com.facebook.react"
 
 react {
-    autolinkLibrariesWithApp()
+    /* * If you are using Nitro Modules, ensure autolinking is enabled here.
+     * This automatically handles the registration of Nitro/MMKV modules.
+     */
+    autolinkLibrariesWithApp() [cite: 2]
 }
 
-// Enable MMKV codegen
-project.ext.react = [
-    enableVmCleanup: false,
-]
-
-// Disable MMKV_SKIP_CODEGEN to enable code generation
-project.ext.set("MMKV_SKIP_CODEGEN", false)
+/**
+ * MMKV & Nitro Configuration
+ * Since you are on the Old Architecture (newArchEnabled=false), 
+ * we must prevent the New Arch codegen from running, as it often 
+ * triggers the Kotlin compilation crash you encountered.
+ */
+project.ext.set("MMKV_SKIP_CODEGEN", true) [cite: 2]
 
 def enableProguardInReleaseBuilds = false
 def jscFlavor = 'org.webkit:android-jsc:+'
@@ -27,6 +30,26 @@ android {
         targetSdkVersion 34
         versionCode 1
         versionName "1.0"
+
+        // Nitro Modules require C++20 for the JSI bridge
+        externalNativeBuild {
+            cmake {
+                cppFlags "-std=c++20" [cite: 2]
+            }
+        }
+    }
+
+    // Lock the NDK version seen in your CI logs to prevent licensing hangs
+    ndkVersion = "26.1.10909125" [cite: 2]
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        // Must match the JDK 17 used in your GitHub Actions runner
+        jvmTarget = "17" [cite: 2]
     }
 
     signingConfigs {
@@ -40,20 +63,30 @@ android {
 
     buildTypes {
         debug {
-            signingConfig signingConfigs.debug
+            signingConfig signingConfigs.debug [cite: 4]
         }
         release {
-            signingConfig signingConfigs.debug
+            signingConfig signingConfigs.debug [cite: 4]
             minifyEnabled enableProguardInReleaseBuilds
             proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
         }
     }
+
+    packagingOptions {
+        // Prevents conflicts between React Native and Nitro/MMKV shared libraries
+        pickFirst 'lib/x86/libc++_shared.so'
+        pickFirst 'lib/x86_64/libc++_shared.so'
+        pickFirst 'lib/armeabi-v7a/libc++_shared.so'
+        pickFirst 'lib/arm64-v8a/libc++_shared.so' [cite: 2]
+    }
 }
 
+// Force Kotlin 1.8.22 consistency across all dependencies
 configurations.all {
     resolutionStrategy {
         force "org.jetbrains.kotlin:kotlin-stdlib:$kotlinVersion"
         force "org.jetbrains.kotlin:kotlin-reflect:$kotlinVersion"
+        force "org.jetbrains.kotlin:kotlin-stdlib-jdk8:$kotlinVersion" [cite: 5]
     }
 }
 
