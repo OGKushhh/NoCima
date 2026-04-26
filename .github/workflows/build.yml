@@ -25,13 +25,18 @@ jobs:
           node-version: '18'
           cache: 'npm'
       - run: npm install
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.10.2'
-      - name: Build APK
+
+      - name: Clean and Build APK
         working-directory: android
-        run: gradle assembleRelease --no-daemon
+        run: |
+          # Remove any problematic jvmargs from gradle.properties
+          sed -i '/org.gradle.jvmargs/d' gradle.properties 2>/dev/null || true
+          # Override the environment variables that cause the -Xmx64m error
+          export JAVA_TOOL_OPTIONS="-Xmx4096m -XX:MaxMetaspaceSize=1024m"
+          export _JAVA_OPTIONS=""
+          chmod +x gradlew
+          ./gradlew clean assembleRelease --no-daemon
+
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
