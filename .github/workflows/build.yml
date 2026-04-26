@@ -12,7 +12,7 @@ jobs:
     permissions:
       contents: write
     env:
-      # Keep only Node 24 opt‑in; remove Java opts that break Gradle
+      # Keep only Node 24 opt‑in
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
     steps:
@@ -36,7 +36,12 @@ jobs:
 
       - name: Build Release APK
         working-directory: android
-        run: chmod +x gradlew && ./gradlew assembleRelease --no-daemon
+        run: |
+          # Unset the problematic environment variables that interfere with Gradle
+          unset JAVA_TOOL_OPTIONS
+          unset _JAVA_OPTIONS
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
