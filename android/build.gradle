@@ -5,7 +5,7 @@ buildscript {
         compileSdkVersion = 35
         targetSdkVersion = 34
         ndkVersion = "26.1.10909125"
-        kotlinVersion = "1.8.22"   // enforced
+        kotlinVersion = "1.8.22"
     }
     repositories {
         google()
@@ -20,7 +20,6 @@ buildscript {
 
 apply plugin: "com.facebook.react.rootproject"
 
-// Force all Kotlin compile tasks to use JVM 17 and compatibility flags
 subprojects {
     tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).all {
         kotlinOptions {
@@ -33,7 +32,6 @@ subprojects {
     }
 }
 
-// Global resolution: pin every Kotlin dependency to 1.8.22
 configurations.all {
     resolutionStrategy {
         eachDependency { DependencyResolveDetails details ->
@@ -41,7 +39,6 @@ configurations.all {
                 details.useVersion kotlinVersion
             }
             if (details.requested.group == 'org.jetbrains.kotlinx') {
-                // Keep kotlinx coroutines at a compatible version (1.6.4 works with 1.8.22)
                 if (details.requested.name == 'kotlinx-coroutines-core' ||
                     details.requested.name == 'kotlinx-coroutines-android') {
                     details.useVersion '1.6.4'
