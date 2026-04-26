@@ -34,14 +34,13 @@ jobs:
       - name: 📋 Install Node dependencies
         run: npm ci
 
-      - name: 🐘 Setup Gradle 8.10.2
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.10.2'
+      - name: 🔧 Generate Gradle Wrapper
+        working-directory: android
+        run: gradle wrapper --gradle-version=8.10.2
 
       - name: 🏗️ Build Release APK
         working-directory: android
-        run: gradle assembleRelease --no-daemon
+        run: ./gradlew assembleRelease --no-daemon
 
       - name: 📤 Upload APK Artifact
         uses: actions/upload-artifact@v4

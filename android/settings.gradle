@@ -1,13 +1,16 @@
 pluginManagement {
-    includeBuild("../node_modules/@react-native/gradle-plugin")
+    def reactNativeGradlePlugin = new File(rootProject.projectDir.parentFile, "node_modules/@react-native/gradle-plugin")
+    if (reactNativeGradlePlugin.exists()) {
+        includeBuild(reactNativeGradlePlugin)
+    }
 }
 
 plugins {
     id("com.facebook.react.settings")
 }
 
-extensions.configure(com.facebook.react.ReactSettingsExtension){ settings ->
-    settings.autolinkLibrariesFromCommand()
+extensions.configure(com.facebook.react.ReactSettingsExtension){ ex ->
+    ex.autolinkLibrariesFromCommand()
 }
 
 rootProject.name = 'AbdoBest'
