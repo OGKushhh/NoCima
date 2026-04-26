@@ -4,7 +4,7 @@ import Icon from 'react-native-vector-icons/Ionicons';
 import {Colors} from '../theme/colors';
 import {Typography} from '../theme/typography';
 import {useTranslation} from 'react-i18next';
-import {getDownloadState} from '../services/videoService';
+import {getDownloadState} from '../services/videoService'; // This should point to your download manager
 
 export const DownloadsScreen: React.FC = () => {
   const {t} = useTranslation();

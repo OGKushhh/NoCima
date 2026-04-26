@@ -6,6 +6,14 @@ react {
     autolinkLibrariesWithApp()
 }
 
+// Enable MMKV codegen
+project.ext.react = [
+    enableVmCleanup: false,
+]
+
+// Disable MMKV_SKIP_CODEGEN to enable code generation
+project.ext.set("MMKV_SKIP_CODEGEN", false)
+
 def enableProguardInReleaseBuilds = false
 def jscFlavor = 'org.webkit:android-jsc:+'
 

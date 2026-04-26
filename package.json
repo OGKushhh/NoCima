@@ -16,13 +16,15 @@
     "react-native-screens": "~4.4.0",
     "react-native-safe-area-context": "^5.0.0",
     "react-native-video": "^6.1.2",
-    "react-native-mmkv": "^3.1.0",
+    "react-native-mmkv": "^4.3.1",
     "@react-native-community/netinfo": "^11.3.0",
     "react-native-vector-icons": "^10.2.0",
     "react-native-fast-image": "^8.6.3",
     "i18next": "^24.2.2",
     "react-i18next": "^15.4.1",
-    "axios": "^1.7.9"
+    "axios": "^1.7.9",
+    "react-native-nitro-fs": "^0.8.2",
+    "react-native-nitro-modules": "^0.35.5"
   },
   "devDependencies": {
     "@react-native-community/cli": "^15.1.2",
