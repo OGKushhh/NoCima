@@ -4,8 +4,7 @@ on:
   push:
     branches: [main, video-download-update]
     tags: ['v*']
-  # This line adds the "Run workflow" button in the Actions tab
-  workflow_dispatch: 
+  workflow_dispatch:
 
 jobs:
   build:
@@ -13,11 +12,8 @@ jobs:
     permissions:
       contents: write
     env:
-      JAVA_TOOL_OPTIONS: "-Xmx4096m -XX:MaxMetaspaceSize=1024m"
-      _JAVA_OPTIONS: "-Xmx4096m -XX:MaxMetaspaceSize=1024m"
-      GRADLE_OPTS: ""
-      # Opts into Node 24 to clear the deprecation warnings in your logs
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true 
+      # Keep only Node 24 opt‑in; remove Java opts that break Gradle
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
     steps:
       - name: Checkout code
@@ -38,14 +34,8 @@ jobs:
       - name: Install Node dependencies
         run: npm install
 
-      - name: Setup Gradle 8.10.2 (optional – wrapper is used)
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.10.2'
-
       - name: Build Release APK
         working-directory: android
-        # Use the gradle wrapper for reliability
         run: chmod +x gradlew && ./gradlew assembleRelease --no-daemon
 
       - name: Upload APK Artifact
