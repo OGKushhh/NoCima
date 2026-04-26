@@ -35,6 +35,8 @@ jobs:
 
       - name: 🔧 Generate Gradle Wrapper (if missing)
         working-directory: android
+        env:
+          JAVA_TOOL_OPTIONS: ""
         run: |
           if [ ! -f gradlew ]; then
             gradle wrapper --gradle-version=8.10.2
@@ -43,6 +45,8 @@ jobs:
 
       - name: 🏗️ Build Release APK
         working-directory: android
+        env:
+          JAVA_TOOL_OPTIONS: ""
         run: ./gradlew assembleRelease
 
       - name: 📤 Upload APK Artifact
