@@ -2,15 +2,18 @@ apply plugin: "com.android.application"
 apply plugin: "org.jetbrains.kotlin.android"
 apply plugin: "com.facebook.react"
 
+/**
+ * React Native Configuration
+ */
 react {
-    // Correct syntax: no citations or extra characters inside the block
+    /* * Automatically link libraries. This handles Nitro and MMKV registration.
+     */
     autolinkLibrariesWithApp()
 }
 
 /**
- * MMKV & Nitro Fix: 
- * Since you have newArchEnabled=false in gradle.properties, 
- * you MUST set this to true to prevent Kotlin compiler crashes.
+ * MMKV & Nitro Architecture Fix
+ * Since newArchEnabled=false, we must skip codegen to avoid Kotlin compiler crashes.
  */
 project.ext.set("MMKV_SKIP_CODEGEN", true)
 
@@ -19,16 +22,21 @@ def jscFlavor = 'org.webkit:android-jsc:+'
 
 android {
     compileSdk 35
-    namespace "com.abdobest"
+    namespace "com.abdobest" [cite: 2]
 
     defaultConfig {
-        applicationId "com.abdobest"
-        minSdkVersion 24
-        targetSdkVersion 34
-        versionCode 1
-        versionName "1.0"
+        applicationId "com.abdobest" [cite: 2]
+        minSdkVersion 24 [cite: 2]
+        targetSdkVersion 34 [cite: 2]
+        versionCode 1 [cite: 2]
+        versionName "1.0" [cite: 2]
 
-        // Required for Nitro Modules C++ support
+        // Fix for the BuildConfig deprecation warning in AGP 8+
+        buildFeatures {
+            buildConfig = true
+        }
+
+        // Nitro Modules require C++20 for JSI support
         externalNativeBuild {
             cmake {
                 cppFlags "-std=c++20"
@@ -36,7 +44,7 @@ android {
         }
     }
 
-    // Matches your runner's NDK to prevent licensing hangs
+    // Matches the NDK version in your GitHub Actions runner
     ndkVersion = "26.1.10909125"
 
     compileOptions {
@@ -50,47 +58,45 @@ android {
 
     signingConfigs {
         debug {
-            storeFile file('debug.keystore')
-            storePassword 'android'
-            keyAlias 'androiddebugkey'
-            keyPassword 'android'
+            storeFile file('debug.keystore') [cite: 3]
+            storePassword 'android' [cite: 3]
+            keyAlias 'androiddebugkey' [cite: 3]
+            keyPassword 'android' [cite: 3]
         }
     }
 
     buildTypes {
         debug {
-            signingConfig signingConfigs.debug
+            signingConfig signingConfigs.debug [cite: 4]
         }
         release {
-            signingConfig signingConfigs.debug
-            minifyEnabled enableProguardInReleaseBuilds
-            proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
+            signingConfig signingConfigs.debug [cite: 4]
+            minifyEnabled enableProguardInReleaseBuilds [cite: 2]
+            proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro" [cite: 2]
         }
     }
 
     packagingOptions {
-        pickFirst 'lib/x86/libc++_shared.so'
-        pickFirst 'lib/x86_64/libc++_shared.so'
-        pickFirst 'lib/armeabi-v7a/libc++_shared.so'
-        pickFirst 'lib/arm64-v8a/libc++_shared.so'
+        // Prevents duplicate library conflicts between Nitro/MMKV and React Native
+        pickFirst '**/libc++_shared.so'
+    }
+}
+
+// Ensure the Kotlin 1.8.22 downgrade is applied consistently
+configurations.all {
+    resolutionStrategy {
+        force "org.jetbrains.kotlin:kotlin-stdlib:$kotlinVersion" [cite: 5]
+        force "org.jetbrains.kotlin:kotlin-reflect:$kotlinVersion" [cite: 5]
+        force "org.jetbrains.kotlin:kotlin-stdlib-jdk8:$kotlinVersion"
     }
 }
 
 dependencies {
-    implementation("com.facebook.react:react-android")
+    implementation("com.facebook.react:react-android") [cite: 2]
 
     if (hermesEnabled.toBoolean()) {
-        implementation("com.facebook.react:hermes-android")
+        implementation("com.facebook.react:hermes-android") [cite: 2]
     } else {
-        implementation jscFlavor
-    }
-}
-
-// Force the Kotlin version downgrade consistency
-configurations.all {
-    resolutionStrategy {
-        force "org.jetbrains.kotlin:kotlin-stdlib:$kotlinVersion"
-        force "org.jetbrains.kotlin:kotlin-reflect:$kotlinVersion"
-        force "org.jetbrains.kotlin:kotlin-stdlib-jdk8:$kotlinVersion"
+        implementation jscFlavor [cite: 2]
     }
 }

@@ -1,7 +1,18 @@
-pluginManagement { includeBuild("../node_modules/@react-native/gradle-plugin") }
-plugins { id("com.facebook.react.settings") }
-extensions.configure(com.facebook.react.ReactSettingsExtension){ ex -> ex.autolinkLibrariesFromCommand() }
+pluginManagement { 
+    // Fix for Issue #46046: Ensures the React settings plugin is found
+    includeBuild("../node_modules/@react-native/gradle-plugin") 
+}
+
+plugins { 
+    id("com.facebook.react.settings") 
+}
+
+extensions.configure(com.facebook.react.ReactSettingsExtension){ ex -> 
+    ex.autolinkLibrariesFromCommand() 
+}
 
 rootProject.name = 'AbdoBest'
 include ':app'
+
+// Double-inclusion is required by some RN versions to stabilize the build
 includeBuild('../node_modules/@react-native/gradle-plugin')
