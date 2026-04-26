@@ -25,6 +25,8 @@
     "axios": "^1.7.9"
   },
   "devDependencies": {
+    "@react-native-community/cli": "^15.1.2",
+    "@react-native-community/cli-platform-android": "^15.1.2",
     "@types/react": "^18.3.0",
     "@babel/core": "^7.25.0",
     "@babel/preset-env": "^7.25.0",
