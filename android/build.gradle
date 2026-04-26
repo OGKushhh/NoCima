@@ -19,3 +19,22 @@ buildscript {
 }
 
 apply plugin: "com.facebook.react.rootproject"
+
+subprojects {
+    tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).all {
+        kotlinOptions {
+            jvmTarget = "17" // Nitro 0.35+ requires Java 17 target
+            freeCompilerArgs += [
+                "-Xskip-prerelease-check", 
+                "-Xallow-unstable-dependencies"
+            ]
+        }
+    }
+}
+
+// Force all modules to use your 1.9.25 version
+configurations.all {
+    resolutionStrategy {
+        force "org.jetbrains.kotlin:kotlin-stdlib:1.9.25"
+    }
+}
