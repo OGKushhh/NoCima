@@ -3,19 +3,16 @@ apply plugin: "org.jetbrains.kotlin.android"
 apply plugin: "com.facebook.react"
 
 react {
-    /* * If you are using Nitro Modules, ensure autolinking is enabled here.
-     * This automatically handles the registration of Nitro/MMKV modules.
-     */
-    autolinkLibrariesWithApp() [cite: 2]
+    // Correct syntax: no citations or extra characters inside the block
+    autolinkLibrariesWithApp()
 }
 
 /**
- * MMKV & Nitro Configuration
- * Since you are on the Old Architecture (newArchEnabled=false), 
- * we must prevent the New Arch codegen from running, as it often 
- * triggers the Kotlin compilation crash you encountered.
+ * MMKV & Nitro Fix: 
+ * Since you have newArchEnabled=false in gradle.properties, 
+ * you MUST set this to true to prevent Kotlin compiler crashes.
  */
-project.ext.set("MMKV_SKIP_CODEGEN", true) [cite: 2]
+project.ext.set("MMKV_SKIP_CODEGEN", true)
 
 def enableProguardInReleaseBuilds = false
 def jscFlavor = 'org.webkit:android-jsc:+'
@@ -31,16 +28,16 @@ android {
         versionCode 1
         versionName "1.0"
 
-        // Nitro Modules require C++20 for the JSI bridge
+        // Required for Nitro Modules C++ support
         externalNativeBuild {
             cmake {
-                cppFlags "-std=c++20" [cite: 2]
+                cppFlags "-std=c++20"
             }
         }
     }
 
-    // Lock the NDK version seen in your CI logs to prevent licensing hangs
-    ndkVersion = "26.1.10909125" [cite: 2]
+    // Matches your runner's NDK to prevent licensing hangs
+    ndkVersion = "26.1.10909125"
 
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
@@ -48,8 +45,7 @@ android {
     }
 
     kotlinOptions {
-        // Must match the JDK 17 used in your GitHub Actions runner
-        jvmTarget = "17" [cite: 2]
+        jvmTarget = "17"
     }
 
     signingConfigs {
@@ -63,30 +59,20 @@ android {
 
     buildTypes {
         debug {
-            signingConfig signingConfigs.debug [cite: 4]
+            signingConfig signingConfigs.debug
         }
         release {
-            signingConfig signingConfigs.debug [cite: 4]
+            signingConfig signingConfigs.debug
             minifyEnabled enableProguardInReleaseBuilds
             proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
         }
     }
 
     packagingOptions {
-        // Prevents conflicts between React Native and Nitro/MMKV shared libraries
         pickFirst 'lib/x86/libc++_shared.so'
         pickFirst 'lib/x86_64/libc++_shared.so'
         pickFirst 'lib/armeabi-v7a/libc++_shared.so'
-        pickFirst 'lib/arm64-v8a/libc++_shared.so' [cite: 2]
-    }
-}
-
-// Force Kotlin 1.8.22 consistency across all dependencies
-configurations.all {
-    resolutionStrategy {
-        force "org.jetbrains.kotlin:kotlin-stdlib:$kotlinVersion"
-        force "org.jetbrains.kotlin:kotlin-reflect:$kotlinVersion"
-        force "org.jetbrains.kotlin:kotlin-stdlib-jdk8:$kotlinVersion" [cite: 5]
+        pickFirst 'lib/arm64-v8a/libc++_shared.so'
     }
 }
 
@@ -97,5 +83,14 @@ dependencies {
         implementation("com.facebook.react:hermes-android")
     } else {
         implementation jscFlavor
+    }
+}
+
+// Force the Kotlin version downgrade consistency
+configurations.all {
+    resolutionStrategy {
+        force "org.jetbrains.kotlin:kotlin-stdlib:$kotlinVersion"
+        force "org.jetbrains.kotlin:kotlin-reflect:$kotlinVersion"
+        force "org.jetbrains.kotlin:kotlin-stdlib-jdk8:$kotlinVersion"
     }
 }
