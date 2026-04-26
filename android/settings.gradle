@@ -1,19 +1,4 @@
-pluginManagement {
-    def reactNativeGradlePlugin = new File(
-        ["node", "--print", "require.resolve('@react-native/gradle-plugin/package.json')"].execute(null, rootDir).text.trim()
-    ).parentFile
-    if (reactNativeGradlePlugin.exists()) {
-        includeBuild(reactNativeGradlePlugin)
-    }
-}
-
-plugins {
-    id("com.facebook.react.settings")
-}
-
-extensions.configure(com.facebook.react.ReactSettingsExtension){ settings ->
-    settings.autolinkLibrariesFromCommand()
-}
-
 rootProject.name = 'AbdoBest'
+
+includeBuild('../node_modules/@react-native/gradle-plugin')
 include ':app'

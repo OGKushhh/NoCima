@@ -3,7 +3,7 @@ apply plugin: "org.jetbrains.kotlin.android"
 apply plugin: "com.facebook.react"
 
 react {
-    autolinkLibrariesWithApp()
+    autolinkLibrariesFromCommand()
 }
 
 android {
@@ -33,7 +33,8 @@ android {
         targetCompatibility JavaVersion.VERSION_17
     }
 }
+
 dependencies {
     implementation("com.facebook.react:react-android")
-    implementation("com.facebook.react:flipper-integration")
+    implementation("com.facebook.react:hermes-android")
 }
