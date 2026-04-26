@@ -2,106 +2,60 @@ name: Build Android APK
 
 on:
   push:
-    branches: [main, master]
-    tags:
-      - 'v*'
-  pull_request:
-    branches: [main, master]
-  workflow_dispatch:
+    branches: [main]
+    tags: ['v*']
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
-      - name: Checkout code
+      - name: 📥 Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
+      - name: ☕ Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: 📦 Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '18'
           cache: 'npm'
 
-      - name: Setup Java (for Gradle)
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'zulu'
-          java-version: '17'
-          cache: 'gradle'
-
-      - name: Install npm dependencies
+      - name: 📋 Install Node dependencies
         run: npm install
 
-      - name: Install Gradle wrapper
+      - name: 🐘 Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: 🔧 Generate Gradle Wrapper (if missing)
+        working-directory: android
         run: |
-          cd android
-          gradle wrapper --gradle-version=8.3
+          if [ ! -f gradlew ]; then
+            gradle wrapper --gradle-version=8.10.2
+          fi
+          chmod +x gradlew
 
-      - name: Make gradlew executable
-        run: chmod +x android/gradlew
+      - name: 🏗️ Build Release APK
+        working-directory: android
+        run: ./gradlew assembleRelease
 
-      - name: Cache Gradle dependencies
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: gradle-${{ runner.os }}-${{ hashFiles('android/**/*.gradle*', 'android/gradle-wrapper.properties') }}
-          restore-keys: |
-            gradle-${{ runner.os }}-
-
-      - name: Build Release APK
-        run: |
-          cd android
-          ./gradlew assembleRelease --no-daemon --warning-mode=all
-
-      - name: Sign APK (if keystore available)
-        if: env.KEYSTORE_BASE64 != ''
-        env:
-          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
-          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: |
-          echo "$KEYSTORE_BASE64" | base64 --decode > android/app/release.keystore
-          cd android
-          ./gradlew bundleRelease --no-daemon \
-            -PMYAPP_UPLOAD_STORE_FILE=release.keystore \
-            -PMYAPP_UPLOAD_STORE_PASSWORD=$KEYSTORE_PASSWORD \
-            -PMYAPP_UPLOAD_KEY_ALIAS=$KEY_ALIAS \
-            -PMYAPP_UPLOAD_KEY_PASSWORD=$KEY_PASSWORD
-
-      - name: Upload Debug APK
+      - name: 📤 Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: AbdoBest-debug-apk
-          path: android/app/build/outputs/apk/debug/*.apk
-          if-no-files-found: ignore
-
-      - name: Upload Release APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: AbdoBest-release-apk
+          name: AbdoBest-APK
           path: android/app/build/outputs/apk/release/*.apk
-          if-no-files-found: ignore
 
-      # ─── Auto-publish to GitHub Releases on version tags ─────────
-      - name: Get version from tag
-        id: version
-        if: startsWith(github.ref, 'refs/tags/')
-        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
-
-      - name: Create GitHub Release
-        if: startsWith(github.ref, 'refs/tags/')
+      - name: 🚀 Create Release (on tag push only)
+        if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.version.outputs.VERSION }}
-          name: "AbdoBest ${{ steps.version.outputs.VERSION }}"
-          body_path: CHANGELOG.md
-          files: |
-            android/app/build/outputs/apk/release/*.apk
-          draft: false
-          prerelease: false
+          files: android/app/build/outputs/apk/release/*.apk
+          generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
