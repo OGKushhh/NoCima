@@ -14,12 +14,12 @@ export const getVideoUrlCache = (key: string): {url: string; qualities: string[]
   try {
     const entry = JSON.parse(raw);
     if (Date.now() - entry.timestamp > VIDEO_URL_TTL_MS) {
-      storage.delete(storageKeys.VIDEO_URL_CACHE + key);
+      storage.remove(storageKeys.VIDEO_URL_CACHE + key);
       return null;
     }
     return {url: entry.url, qualities: entry.qualities};
   } catch {
-    storage.delete(storageKeys.VIDEO_URL_CACHE + key);
+    storage.remove(storageKeys.VIDEO_URL_CACHE + key);
     return null;
   }
 };
@@ -106,8 +106,8 @@ export const isAnyCategoryStale = (): boolean => {
 export const clearAllMetadataCache = () => {
   for (const category of Object.keys(CATEGORY_KEYS)) {
     const keys = CATEGORY_KEYS[category];
-    storage.delete(keys.data);
-    storage.delete(keys.timestamp);
+    storage.remove(keys.data);
+    storage.remove(keys.timestamp);
   }
 };
 
