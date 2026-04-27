@@ -1,63 +1,70 @@
-import {createMMKV} from 'react-native-mmkv';
+export interface ContentItem {
+  id: string;
+  Title: string;
+  Category: string;
+  'Image Source': string;
+  Source: string;
+  Genres: string[];
+  GenresAr: string[];
+  Format: string;
+  Runtime: number | null;
+  Country: string | null;
+  'TMDb ID'?: number | null;
+  Description?: string;
+  DescriptionAr?: string;
+  // Series / Anime specific
+  Seasons?: Record<string, any>;
+  Episodes?: Record<string, any>;
+  'Number Of Episodes'?: number;
+}
 
-export const storage = createMMKV({
-  id: 'abdobest-storage',
-  encryptionKey: 'abdobest-secure-key-2024',
-});
+export interface TrendingItem {
+  title: string;
+  link: string;
+  image: string;
+  quality?: string;
+  imdb_rating?: string;
+  views?: string;
+  content_type: string;
+}
 
-// ─── Storage Keys ───────────────────────────────────────────────────
-export const storageKeys = {
-  LANGUAGE: 'user_language',
-  THEME: 'user_theme',
-  SETTINGS: 'user_settings',
-  VIDEO_URL_CACHE: 'video_url_cache_',
-  DOWNLOADS_LIST: 'downloads_list',
-  SKIPPED_UPDATE_VERSION: 'skipped_update_version',
+export interface TrendingContent {
+  movies: TrendingItem[];
+  episodes: TrendingItem[];
+  most_viewed: TrendingItem[];
+}
 
-  // Per-category metadata data blobs
-  METADATA_MOVIES: 'metadata_movies',
-  METADATA_ANIME: 'metadata_anime',
-  METADATA_SERIES: 'metadata_series',
-  METADATA_TVSHOWS: 'metadata_tvshows',
-  METADATA_ASIAN_SERIES: 'metadata_asian_series',
-  METADATA_TRENDING: 'metadata_trending',
-  METADATA_FEATURED: 'metadata_featured',
+export interface VideoStreamInfo {
+  video_url: string;
+  quality_options: string[];
+}
 
-  // Per-category timestamps (when last fetched)
-  META_TS_MOVIES: 'meta_ts_movies',
-  META_TS_ANIME: 'meta_ts_anime',
-  META_TS_SERIES: 'meta_ts_series',
-  META_TS_TVSHOWS: 'meta_ts_tvshows',
-  META_TS_ASIAN_SERIES: 'meta_ts_asian_series',
-  META_TS_TRENDING: 'meta_ts_trending',
-  META_TS_FEATURED: 'meta_ts_featured',
-};
+export interface DownloadItem {
+  id: string;
+  contentId: string;
+  title: string;
+  imageUrl: string;
+  videoUrl: string;
+  format: string;
+  quality: string;
+  progress: number;
+  status: 'pending' | 'downloading' | 'paused' | 'completed' | 'failed';
+  localPath?: string;
+  totalBytes?: number;
+  downloadedBytes?: number;
+  timestamp: number;
+  /** Platform-specific file path where the downloaded file is saved */
+  destinationPath?: string;
+  /** Error message if download failed */
+  errorMessage?: string;
+}
 
-// Map category name → storage key pair
-export const CATEGORY_KEYS: Record<string, {data: string; timestamp: string}> = {
-  movies: {data: storageKeys.METADATA_MOVIES, timestamp: storageKeys.META_TS_MOVIES},
-  anime: {data: storageKeys.METADATA_ANIME, timestamp: storageKeys.META_TS_ANIME},
-  series: {data: storageKeys.METADATA_SERIES, timestamp: storageKeys.META_TS_SERIES},
-  tvshows: {data: storageKeys.METADATA_TVSHOWS, timestamp: storageKeys.META_TS_TVSHOWS},
-  'asian-series': {data: storageKeys.METADATA_ASIAN_SERIES, timestamp: storageKeys.META_TS_ASIAN_SERIES},
-  trending: {data: storageKeys.METADATA_TRENDING, timestamp: storageKeys.META_TS_TRENDING},
-  featured: {data: storageKeys.METADATA_FEATURED, timestamp: storageKeys.META_TS_FEATURED},
-};
+export interface UserSettings {
+  language: 'ar' | 'en';
+  defaultQuality: string;
+  mobileDataWarning: boolean;
+  autoPlay: boolean;
+  showArabicTitles: boolean;
+}
 
-// ─── User Settings ──────────────────────────────────────────────────
-const DEFAULT_SETTINGS = {
-  language: 'ar',
-  defaultQuality: '1080p',
-  mobileDataWarning: true,
-  autoPlay: false,
-  showArabicTitles: true,
-};
-
-export const getSettings = (): any => {
-  const raw = storage.getString(storageKeys.SETTINGS);
-  return raw ? JSON.parse(raw) : DEFAULT_SETTINGS;
-};
-
-export const saveSettings = (settings: any) => {
-  storage.set(storageKeys.SETTINGS, JSON.stringify(settings));
-};
+export type ContentCategory = 'movies' | 'anime' | 'series' | 'tvshows' | 'asian-series';

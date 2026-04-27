@@ -1,8 +1,8 @@
 import axios from 'axios';
 import {GITHUB_RELEASES_URL, APP_VERSION} from '../constants/endpoints';
-import {createMMKV} from 'react-native-mmkv';
+import {MMKV} from 'react-native-mmkv';
 
-const storage = createMMKV();
+const storage = new MMKV();
 
 export interface ReleaseInfo {
   version: string;
