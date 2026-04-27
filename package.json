@@ -21,6 +21,7 @@
     "react-native-fast-image": "^8.6.3",
     "react-native-mmkv": "^3.1.0",
     "react-native-nitro-fs": "^0.8.2",
+    "react-native-nitro-modules": "^0.31.5",
     "react-native-safe-area-context": "^5.0.0",
     "react-native-screens": "~4.4.0",
     "react-native-vector-icons": "^10.2.0",
@@ -44,6 +45,12 @@
   "overrides": {
     "@rajeev02/media": {
       "react-native": "$react-native"
+    },
+    "react-native-nitro-modules": {
+      "react-native": "$react-native"
+    },
+    "react-native-nitro-fs": {
+      "react-native-nitro-modules": "$react-native-nitro-modules"
     }
   }
 }
