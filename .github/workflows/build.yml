@@ -4,7 +4,6 @@ on:
   push:
     branches: [main]
     tags: ['v*']
-  # This line adds the "Run workflow" button in the Actions tab
   workflow_dispatch:
 
 jobs:
@@ -16,7 +15,6 @@ jobs:
       JAVA_TOOL_OPTIONS: "-Xmx4096m -XX:MaxMetaspaceSize=1024m"
       _JAVA_OPTIONS: "-Xmx4096m -XX:MaxMetaspaceSize=1024m"
       GRADLE_OPTS: ""
-      # Opts into Node 24 to clear the deprecation warnings in your logs
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
     steps:
@@ -54,10 +52,10 @@ jobs:
             exit 1
           fi
           if grep -q "gradle:9.2.0" "$BG"; then
-            echo "ERROR: AGP 9.2.0 buildscript block still present in nitro-modules!"
+            echo "ERROR: AGP 9.2.0 still present!"
             exit 1
           fi
-          echo "Both nitro-modules patches verified"
+          echo "Both patches verified"
 
       - name: Setup Gradle 8.10.2
         uses: gradle/actions/setup-gradle@v4
