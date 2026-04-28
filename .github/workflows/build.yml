@@ -40,24 +40,24 @@ jobs:
         with:
           node-version: '18'
 
-      - name: Clean install (postinstall patches nitro-modules automatically)
+      - name: Clean install (postinstall patches nitro-modules)
         run: |
           rm -rf node_modules package-lock.json
           npm install
 
-      - name: Patch NitroModulesPackage (sed safety net)
+      - name: Verify nitro-modules patches
         run: |
-          sed -i 's/isTurboModule = isTurboModule,/isTurboModule = isTurboModule,\n          hasConstants = false,/' \
-            node_modules/react-native-nitro-modules/android/src/main/java/com/margelo/nitro/NitroModulesPackage.kt
-
-      - name: Verify nitro-modules patch was applied
-        run: |
-          if grep -q "hasConstants" node_modules/react-native-nitro-modules/android/src/main/java/com/margelo/nitro/NitroModulesPackage.kt; then
-            echo "NitroModulesPackage.kt patch verified"
-          else
+          PKG=node_modules/react-native-nitro-modules/android/src/main/java/com/margelo/nitro/NitroModulesPackage.kt
+          BG=node_modules/react-native-nitro-modules/android/build.gradle
+          if ! grep -q "hasConstants" "$PKG"; then
             echo "ERROR: NitroModulesPackage.kt patch NOT applied!"
             exit 1
           fi
+          if grep -q "gradle:9.2.0" "$BG"; then
+            echo "ERROR: AGP 9.2.0 buildscript block still present in nitro-modules!"
+            exit 1
+          fi
+          echo "Both nitro-modules patches verified"
 
       - name: Setup Gradle 8.10.2
         uses: gradle/actions/setup-gradle@v4
@@ -66,7 +66,7 @@ jobs:
 
       - name: Build Release APK
         working-directory: android
-        run: gradle assembleRelease --no-daemon
+        run: ./gradlew assembleRelease --no-daemon
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4

@@ -18,13 +18,5 @@ buildscript {
     }
 }
 
-apply plugin: "com.facebook.react.rootproject"
 
-subprojects { subproject ->
-    subproject.plugins.withId("com.android.application") {
-        subproject.android.ndkVersion = rootProject.ext.ndkVersion
-    }
-    subproject.plugins.withId("com.android.library") {
-        subproject.android.ndkVersion = rootProject.ext.ndkVersion
-    }
-}
+apply plugin: "com.facebook.react.rootproject"
