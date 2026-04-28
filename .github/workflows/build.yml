@@ -29,6 +29,7 @@ jobs:
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
+        accept-android-sdk-licenses: true  # This must be true
 
       - name: Install NDK 26
         run: sdkmanager --install "ndk;26.1.10909125"
