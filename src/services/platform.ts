@@ -32,8 +32,8 @@ export const getDownloadDirectory = (): string => {
 
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const RNFSTurbo = require('react-native-fs-turbo').default;
-    return `${RNFSTurbo.DocumentDirectoryPath}/AbdoBest/`;
+    const RNFS = require('react-native-fs').default;
+    return `${RNFS.DocumentDirectoryPath}/AbdoBest/`;
   } catch {
     return 'AbdoBest/';
   }

@@ -1,16 +1,16 @@
-import RNFSTurbo from 'react-native-fs-turbo';
+import RNFS from 'react-native-fs';
 import {storage, storageKeys, CATEGORY_KEYS} from './index';
 import {METADATA_TTL_MS, VIDEO_URL_TTL_MS} from '../constants/endpoints';
 
 // ─── Metadata Directory ─────────────────────────────────────────────
 
-const METADATA_DIR = `${RNFSTurbo.DocumentDirectoryPath}/metadata`;
+const METADATA_DIR = `${RNFS.DocumentDirectoryPath}/metadata`;
 
 /** Ensure the metadata directory exists. */
 const ensureMetadataDir = (): void => {
   try {
-    if (!RNFSTurbo.exists(METADATA_DIR)) {
-      RNFSTurbo.mkdir(METADATA_DIR);
+    if (!RNFS.exists(METADATA_DIR)) {
+      RNFS.mkdir(METADATA_DIR);
     }
   } catch (e) {
     console.warn('[Cache] Failed to create metadata dir:', e);
@@ -63,7 +63,7 @@ export const setMetadataWithTimestamp = (category: string, data: any) => {
 
   try {
     const filePath = getCategoryFilePath(category);
-    RNFSTurbo.writeFile(filePath, JSON.stringify(data), 'utf8');
+    RNFS.writeFile(filePath, JSON.stringify(data), 'utf8');
     storage.set(keys.timestamp, Date.now());
   } catch (e) {
     console.warn(`[Cache] Failed to write metadata for ${category}:`, e);
@@ -88,9 +88,9 @@ export const getMetadataIfFresh = (category: string): any | null => {
   // Read from disk
   try {
     const filePath = getCategoryFilePath(category);
-    if (!RNFSTurbo.exists(filePath)) return null;
+    if (!RNFS.exists(filePath)) return null;
 
-    const raw = RNFSTurbo.readFile(filePath, 'utf8');
+    const raw = RNFS.readFile(filePath, 'utf8');
     return JSON.parse(raw);
   } catch {
     return null;
@@ -103,9 +103,9 @@ export const getMetadataIfFresh = (category: string): any | null => {
 export const getMetadataAnyAge = (category: string): any | null => {
   try {
     const filePath = getCategoryFilePath(category);
-    if (!RNFSTurbo.exists(filePath)) return null;
+    if (!RNFS.exists(filePath)) return null;
 
-    const raw = RNFSTurbo.readFile(filePath, 'utf8');
+    const raw = RNFS.readFile(filePath, 'utf8');
     return JSON.parse(raw);
   } catch {
     return null;
@@ -145,8 +145,8 @@ export const clearAllMetadataCache = () => {
 
     try {
       const filePath = getCategoryFilePath(category);
-      if (RNFSTurbo.exists(filePath)) {
-        RNFSTurbo.unlink(filePath);
+      if (RNFS.exists(filePath)) {
+        RNFS.unlink(filePath);
       }
     } catch {
       // Ignore cleanup errors
@@ -160,7 +160,7 @@ export const setMetadata = (key: string, data: any) => {
   ensureMetadataDir();
   try {
     const filePath = `${METADATA_DIR}/${key}.json`;
-    RNFSTurbo.writeFile(filePath, JSON.stringify(data), 'utf8');
+    RNFS.writeFile(filePath, JSON.stringify(data), 'utf8');
   } catch {
     // Silently fail
   }
@@ -169,8 +169,8 @@ export const setMetadata = (key: string, data: any) => {
 export const getMetadata = (key: string): any | null => {
   try {
     const filePath = `${METADATA_DIR}/${key}.json`;
-    if (!RNFSTurbo.exists(filePath)) return null;
-    const raw = RNFSTurbo.readFile(filePath, 'utf8');
+    if (!RNFS.exists(filePath)) return null;
+    const raw = RNFS.readFile(filePath, 'utf8');
     return JSON.parse(raw);
   } catch {
     return null;

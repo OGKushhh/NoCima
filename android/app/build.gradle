@@ -19,11 +19,6 @@ android {
         targetCompatibility JavaVersion.VERSION_17
     }
 
-    // Enable prefab for New Architecture
-    buildFeatures {
-        prefab true
-    }
-
     defaultConfig {
         applicationId "com.abdobest"
         minSdkVersion 24
@@ -31,7 +26,6 @@ android {
         versionCode 1
         versionName "1.0"
 
-        // Include all ABIs for device compatibility
         ndk {
             abiFilters "armeabi-v7a", "arm64-v8a", "x86", "x86_64"
         }
@@ -72,23 +66,7 @@ android {
         pickFirst '**/libjsi.so'
         pickFirst '**/libreact_nativemodule_core.so'
         pickFirst '**/libturbomodulejsijni.so'
-        pickFirst '**/libreact_featureflagsjni.so'
     }
-}
-
-configurations.all {
-    resolutionStrategy {
-        force 'androidx.core:core:1.15.0'
-        force 'androidx.core:core-ktx:1.15.0'
-        // Fix duplicate AndroidSVG (JAR vs AAR) from @d11/react-native-fast-image
-        eachDependency { details ->
-            if (details.requested.group == 'com.caverock' && details.requested.name == 'androidsvg-aar') {
-                details.useTarget 'com.caverock:androidsvg-aar:1.4'
-            }
-        }
-    }
-    // Exclude the JAR variant — only use AAR
-    exclude group: 'com.caverock', module: 'androidsvg'
 }
 
 dependencies {
