@@ -8,7 +8,6 @@ import com.facebook.react.ReactPackage;
 import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint;
 import com.facebook.react.defaults.DefaultReactNativeHost;
 import com.facebook.soloader.SoLoader;
-import com.facebook.react.ReactNativeFlipper;
 import java.util.List;
 
 public class MainApplication extends Application implements ReactApplication {
@@ -34,7 +33,7 @@ public class MainApplication extends Application implements ReactApplication {
 
                 @Override
                 protected boolean isNewArchEnabled() {
-                    return true;   // ✅ New Architecture enabled
+                    return true;   // New Architecture enabled
                 }
 
                 @Override
@@ -56,9 +55,6 @@ public class MainApplication extends Application implements ReactApplication {
             // If you opted-in for the New Architecture, we load the native entry point for this app.
             DefaultNewArchitectureEntryPoint.load();
         }
-        // ✅ Only initialize Flipper in debug builds
-        if (BuildConfig.DEBUG) {
-            ReactNativeFlipper.initializeFlipper(this, getReactNativeHost().getReactInstanceManager());
-        }
+        // Flipper is removed – it was only for debugging and not needed in release builds.
     }
 }
