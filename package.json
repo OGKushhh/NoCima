@@ -8,7 +8,6 @@
     "test": "jest"
   },
   "dependencies": {
-    "@rajeev02/media": "^0.2.1",
     "@react-native-community/netinfo": "^11.3.0",
     "@react-navigation/bottom-tabs": "^7.0.0",
     "@react-navigation/native": "^7.0.0",
@@ -19,9 +18,9 @@
     "react-i18next": "^15.4.1",
     "react-native": "0.76.8",
     "react-native-fast-image": "^8.6.3",
-    "react-native-mmkv": "4.3.1",
-    "react-native-nitro-fs": "^0.8.2",
-    "react-native-nitro-modules": "0.35.4",
+    "react-native-fs-turbo": "^0.5.1",
+    "react-native-mmkv": "^4.3.1",
+    "react-native-nitro-modules": "^0.35.5",
     "react-native-safe-area-context": "^5.0.0",
     "react-native-screens": "~4.4.0",
     "react-native-vector-icons": "^10.2.0",
@@ -43,15 +42,11 @@
     "typescript": "^5.3.3"
   },
   "overrides": {
-    "@rajeev02/media": {
+    "react-native-nitro-modules": {
       "react-native": "$react-native"
     },
-    "react-native-nitro-modules": "0.35.4",
-    "react-native-nitro-fs": {
-      "react-native-nitro-modules": "0.35.4"
-    },
     "react-native-mmkv": {
-      "react-native-nitro-modules": "0.35.4"
+      "react-native-nitro-modules": "$react-native-nitro-modules"
     }
   }
 }

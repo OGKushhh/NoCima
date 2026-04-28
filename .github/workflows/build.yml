@@ -32,27 +32,15 @@ jobs:
         with:
           node-version: '18'
 
-      - name: Install Node dependencies
+      - name: Clean install
         run: |
           rm -rf node_modules package-lock.json
           npm install
-
-      - name: Inspect NitroModulesPackage
-        run: |
-          cat node_modules/react-native-nitro-modules/android/src/main/java/com/margelo/nitro/NitroModulesPackage.kt
-          echo "---VERSION---"
-          cat node_modules/react-native-nitro-modules/package.json | grep '"version"'
-
-      - name: Patch NitroModulesPackage (add missing hasConstants)
-        run: |
-          sed -i 's/isCxxModule = false,/hasConstants = false, isCxxModule = false,/' \
-            node_modules/react-native-nitro-modules/android/src/main/java/com/margelo/nitro/NitroModulesPackage.kt
 
       - name: Setup Gradle 8.10.2
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.10.2'
-          cache-disabled: true
 
       - name: Build Release APK
         working-directory: android

@@ -4,9 +4,11 @@ import {Platform} from 'react-native';
  * Platform-specific utilities for AbdoBest.
  *
  * Both Android and iOS are fully supported:
- *  - Video downloads via @rajeev02/media (HLS → .mp4, cross-platform)
- *  - File operations via react-native-nitro-fs (large file I/O, cross-platform)
- *  - Metadata & cache via react-native-mmkv (cross-platform)
+ *  - File operations via react-native-fs-turbo (pure C++ TurboModule)
+ *  - Metadata & cache via react-native-mmkv (Nitro Module)
+ *
+ * Download feature is currently disabled. When re-enabled,
+ * HLS downloads will require a compatible media library.
  *
  * The ONLY platform-specific logic is the download destination path:
  *  - Android: /storage/emulated/0/Download/AbdoBest/
@@ -22,38 +24,30 @@ export const isIOS = Platform.OS === 'ios';
  * On Android, downloads go to the public Downloads folder so users
  * can access them from any file manager. On iOS, the app sandbox
  * restricts access to the document directory.
- *
- * NOTE: Background downloads on iOS require `UIBackgroundModes` in
- * Info.plist. @rajeev02/media handles this automatically when
- * configured properly.
  */
 export const getDownloadDirectory = (): string => {
   if (isAndroid) {
     return '/storage/emulated/0/Download/AbdoBest/';
   }
 
-  // iOS — @rajeev02/media / nitro-fs resolves the document directory at runtime.
-  // We import lazily to avoid issues on Android where the module may not be needed.
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const {dirs} = require('react-native-nitro-fs');
-    return `${dirs.DocumentDir}/AbdoBest/`;
+    const RNFSTurbo = require('react-native-fs-turbo').default;
+    return `${RNFSTurbo.DocumentDirectoryPath}/AbdoBest/`;
   } catch {
-    // Fallback: let @rajeev02/media handle the path
     return 'AbdoBest/';
   }
 };
 
 /**
  * Sanitize a filename by removing invalid characters.
- * Works for both platforms (Android ext4/fat32 and iOS APFS).
  */
 export const sanitizeFileName = (name: string): string => {
   return name
-    .replace(/[<>:"/\\|?*\x00-\x1F]/g, '')   // Remove invalid chars
-    .replace(/\s+/g, '_')                       // Spaces → underscores
-    .replace(/_{2,}/g, '_')                     // Collapse multiple underscores
-    .substring(0, 200);                         // Limit length
+    .replace(/[<>:"/\\|?*\x00-\x1F]/g, '')
+    .replace(/\s+/g, '_')
+    .replace(/_{2,}/g, '_')
+    .substring(0, 200);
 };
 
 /**

@@ -1,7 +1,28 @@
+import RNFSTurbo from 'react-native-fs-turbo';
 import {storage, storageKeys, CATEGORY_KEYS} from './index';
 import {METADATA_TTL_MS, VIDEO_URL_TTL_MS} from '../constants/endpoints';
 
-// ─── Video URL Cache (6hr TTL) ──────────────────────────────────────
+// ─── Metadata Directory ─────────────────────────────────────────────
+
+const METADATA_DIR = `${RNFSTurbo.DocumentDirectoryPath}/metadata`;
+
+/** Ensure the metadata directory exists. */
+const ensureMetadataDir = (): void => {
+  try {
+    if (!RNFSTurbo.exists(METADATA_DIR)) {
+      RNFSTurbo.mkdir(METADATA_DIR);
+    }
+  } catch (e) {
+    console.warn('[Cache] Failed to create metadata dir:', e);
+  }
+};
+
+/** Get the file path for a category's JSON file. */
+const getCategoryFilePath = (category: string): string => {
+  return `${METADATA_DIR}/${category}.json`;
+};
+
+// ─── Video URL Cache (6hr TTL) ── stays in MMKV ─────────────────────
 
 export const setVideoUrlCache = (key: string, url: string, qualities: string[]) => {
   const entry = {url, qualities, timestamp: Date.now()};
@@ -24,17 +45,26 @@ export const getVideoUrlCache = (key: string): {url: string; qualities: string[]
   }
 };
 
-// ─── Metadata Cache (per-category, 24hr TTL) ───────────────────────
+// ─── Metadata Cache (per-category, 24hr TTL) ── now on disk ────────
 
 /**
- * Store metadata for a specific category with a timestamp.
+ * Store metadata for a specific category.
+ * - JSON data → written to disk as a file
+ * - Timestamp → stored in MMKV for fast staleness checks
  */
 export const setMetadataWithTimestamp = (category: string, data: any) => {
   const keys = CATEGORY_KEYS[category];
   if (!keys) return;
 
-  storage.set(keys.data, JSON.stringify(data));
-  storage.set(keys.timestamp, Date.now());
+  ensureMetadataDir();
+
+  try {
+    const filePath = getCategoryFilePath(category);
+    RNFSTurbo.writeFile(filePath, JSON.stringify(data), 'utf8');
+    storage.set(keys.timestamp, Date.now());
+  } catch (e) {
+    console.warn(`[Cache] Failed to write metadata for ${category}:`, e);
+  }
 };
 
 /**
@@ -48,13 +78,13 @@ export const getMetadataIfFresh = (category: string): any | null => {
   const ts = storage.getNumber(keys.timestamp);
   if (!ts) return null;
 
-  // Expired?
   if (Date.now() - ts > METADATA_TTL_MS) return null;
 
-  const raw = storage.getString(keys.data);
-  if (!raw) return null;
-
   try {
+    const filePath = getCategoryFilePath(category);
+    if (!RNFSTurbo.exists(filePath)) return null;
+
+    const raw = RNFSTurbo.readFile(filePath, 'utf8');
     return JSON.parse(raw);
   } catch {
     return null;
@@ -65,13 +95,11 @@ export const getMetadataIfFresh = (category: string): any | null => {
  * Get cached metadata regardless of age (fallback when offline).
  */
 export const getMetadataAnyAge = (category: string): any | null => {
-  const keys = CATEGORY_KEYS[category];
-  if (!keys) return null;
-
-  const raw = storage.getString(keys.data);
-  if (!raw) return null;
-
   try {
+    const filePath = getCategoryFilePath(category);
+    if (!RNFSTurbo.exists(filePath)) return null;
+
+    const raw = RNFSTurbo.readFile(filePath, 'utf8');
     return JSON.parse(raw);
   } catch {
     return null;
@@ -101,29 +129,48 @@ export const isAnyCategoryStale = (): boolean => {
 };
 
 /**
- * Clear all cached metadata and timestamps.
+ * Clear all cached metadata files and timestamps.
  */
 export const clearAllMetadataCache = () => {
   for (const category of Object.keys(CATEGORY_KEYS)) {
     const keys = CATEGORY_KEYS[category];
-    storage.remove(keys.data);
     storage.remove(keys.timestamp);
+
+    try {
+      const filePath = getCategoryFilePath(category);
+      if (RNFSTurbo.exists(filePath)) {
+        RNFSTurbo.unlink(filePath);
+      }
+    } catch {
+      // Ignore cleanup errors
+    }
   }
 };
 
 // ─── Legacy helpers (kept for SettingsScreen compatibility) ─────────
 
 export const setMetadata = (key: string, data: any) => {
-  storage.set(key, JSON.stringify(data));
+  ensureMetadataDir();
+  try {
+    const filePath = `${METADATA_DIR}/${key}.json`;
+    RNFSTurbo.writeFile(filePath, JSON.stringify(data), 'utf8');
+  } catch {
+    // Silently fail
+  }
 };
 
 export const getMetadata = (key: string): any | null => {
-  const raw = storage.getString(key);
-  return raw ? JSON.parse(raw) : null;
+  try {
+    const filePath = `${METADATA_DIR}/${key}.json`;
+    if (!RNFSTurbo.exists(filePath)) return null;
+    const raw = RNFSTurbo.readFile(filePath, 'utf8');
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
 };
 
 export const getLastSync = (): number => {
-  // Return the most recent timestamp across all categories
   let latest = 0;
   for (const cat of Object.keys(CATEGORY_KEYS)) {
     const ts = getCategoryTimestamp(cat);
