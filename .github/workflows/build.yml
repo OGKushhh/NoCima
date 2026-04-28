@@ -30,8 +30,8 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install NDK 25
-        run: sdkmanager --install "ndk;25.1.8937393"
+      - name: Install NDK 26
+        run: sdkmanager --install "ndk;26.1.10909125"
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -43,10 +43,18 @@ jobs:
           rm -rf node_modules package-lock.json
           npm install
 
+      - name: Clean stale Android build cache
+        run: |
+          rm -rf android/.gradle
+          rm -rf android/app/.cxx
+          rm -rf android/app/build
+          rm -rf ~/.gradle/caches/transforms-*
+
       - name: Setup Gradle 8.10.2
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.10.2'
+          cache-disabled: true
 
       - name: Build Release APK
         working-directory: android
