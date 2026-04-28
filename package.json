@@ -3,7 +3,6 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "postinstall": "node scripts/patch-nitro-modules.js"
     "android": "react-native run-android",
     "start": "react-native start",
     "test": "jest"
