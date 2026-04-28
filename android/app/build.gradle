@@ -31,6 +31,11 @@ android {
         versionCode 1
         versionName "1.0"
 
+        // Include 32-bit ABIs for older devices
+        ndk {
+            abiFilters "armeabi-v7a", "arm64-v8a", "x86", "x86_64"
+        }
+
         // Force all ABIs and explicit CMake arguments
         externalNativeBuild {
             cmake {
@@ -58,6 +63,16 @@ android {
             signingConfig signingConfigs.debug
             minifyEnabled enableProguardInReleaseBuilds
             proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
+        }
+    }
+
+    // Build separate APKs per ABI
+    splits {
+        abi {
+            enable true
+            reset()
+            include "armeabi-v7a", "arm64-v8a", "x86", "x86_64"
+            universalApk true
         }
     }
 
