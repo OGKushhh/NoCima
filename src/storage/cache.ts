@@ -23,6 +23,7 @@ const getCategoryFilePath = (category: string): string => {
 };
 
 // ─── Video URL Cache (6hr TTL) ── stays in MMKV ─────────────────────
+// URL cache entries are small (url + qualities + timestamp) → MMKV is ideal.
 
 export const setVideoUrlCache = (key: string, url: string, qualities: string[]) => {
   const entry = {url, qualities, timestamp: Date.now()};
@@ -35,17 +36,19 @@ export const getVideoUrlCache = (key: string): {url: string; qualities: string[]
   try {
     const entry = JSON.parse(raw);
     if (Date.now() - entry.timestamp > VIDEO_URL_TTL_MS) {
-      storage.remove(storageKeys.VIDEO_URL_CACHE + key);
+      storage.delete(storageKeys.VIDEO_URL_CACHE + key);
       return null;
     }
     return {url: entry.url, qualities: entry.qualities};
   } catch {
-    storage.remove(storageKeys.VIDEO_URL_CACHE + key);
+    storage.delete(storageKeys.VIDEO_URL_CACHE + key);
     return null;
   }
 };
 
 // ─── Metadata Cache (per-category, 24hr TTL) ── now on disk ────────
+// Large JSON blobs (13,500+ items) are stored as files via react-native-fs-turbo.
+// Only timestamps stay in MMKV for fast staleness checks.
 
 /**
  * Store metadata for a specific category.
@@ -75,11 +78,14 @@ export const getMetadataIfFresh = (category: string): any | null => {
   const keys = CATEGORY_KEYS[category];
   if (!keys) return null;
 
+  // Fast check: timestamp from MMKV
   const ts = storage.getNumber(keys.timestamp);
   if (!ts) return null;
 
+  // Expired?
   if (Date.now() - ts > METADATA_TTL_MS) return null;
 
+  // Read from disk
   try {
     const filePath = getCategoryFilePath(category);
     if (!RNFSTurbo.exists(filePath)) return null;
@@ -108,6 +114,7 @@ export const getMetadataAnyAge = (category: string): any | null => {
 
 /**
  * Get the timestamp for a category's last fetch (epoch ms).
+ * Stored in MMKV for O(1) access — no disk read needed.
  */
 export const getCategoryTimestamp = (category: string): number => {
   const keys = CATEGORY_KEYS[category];
@@ -134,7 +141,7 @@ export const isAnyCategoryStale = (): boolean => {
 export const clearAllMetadataCache = () => {
   for (const category of Object.keys(CATEGORY_KEYS)) {
     const keys = CATEGORY_KEYS[category];
-    storage.remove(keys.timestamp);
+    storage.delete(keys.timestamp);
 
     try {
       const filePath = getCategoryFilePath(category);

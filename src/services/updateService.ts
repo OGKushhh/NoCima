@@ -2,7 +2,7 @@ import axios from 'axios';
 import {GITHUB_RELEASES_URL, APP_VERSION} from '../constants/endpoints';
 import {MMKV} from 'react-native-mmkv';
 
-const storage = new MMKV();
+const storage = new MMKV({id: 'abdobest-update'});
 
 export interface ReleaseInfo {
   version: string;

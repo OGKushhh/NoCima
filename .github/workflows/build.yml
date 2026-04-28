@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
     tags: ['v*']
+  # This line adds the "Run workflow" button in the Actions tab
   workflow_dispatch:
 
 jobs:
@@ -15,6 +16,7 @@ jobs:
       JAVA_TOOL_OPTIONS: "-Xmx4096m -XX:MaxMetaspaceSize=1024m"
       _JAVA_OPTIONS: "-Xmx4096m -XX:MaxMetaspaceSize=1024m"
       GRADLE_OPTS: ""
+      # Opts into Node 24 to clear the deprecation warnings in your logs
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
     steps:
@@ -30,41 +32,21 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install NDK 27
-        run: sdkmanager --install "ndk;27.1.12297006"
-
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '18'
 
-      - name: Clean install (postinstall patches nitro-modules)
+      - name: Clean install
         run: |
           rm -rf node_modules package-lock.json
           npm install
 
-      - name: Verify nitro-modules patches
-        run: |
-          PKG=node_modules/react-native-nitro-modules/android/src/main/java/com/margelo/nitro/NitroModulesPackage.kt
-          BG=node_modules/react-native-nitro-modules/android/build.gradle
-          if ! grep -q "hasConstants" "$PKG"; then
-            echo "ERROR: NitroModulesPackage.kt patch NOT applied!"
-            exit 1
-          fi
-          if grep -q "gradle:9.2.0" "$BG"; then
-            echo "ERROR: AGP 9.2.0 still present!"
-            exit 1
-          fi
-          echo "Both patches verified"
-
-      - name: Setup Gradle 8.10.2
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.10.2'
-
       - name: Build Release APK
         working-directory: android
-        run: gradle assembleRelease --no-daemon
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
