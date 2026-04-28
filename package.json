@@ -5,8 +5,7 @@
   "scripts": {
     "android": "react-native run-android",
     "start": "react-native start",
-    "test": "jest",
-    "postinstall": "node scripts/patch-fs-turbo.js"
+    "test": "jest"
   },
   "dependencies": {
     "@react-native-community/netinfo": "^11.3.0",
@@ -22,7 +21,7 @@
     "react-native-fs-turbo": "^0.5.1",
     "react-native-mmkv": "^2.12.2",
     "react-native-safe-area-context": "^5.0.0",
-    "react-native-screens": "3.34.0",
+    "react-native-screens": "~4.4.0",
     "react-native-vector-icons": "^10.2.0",
     "react-native-video": "^6.1.2"
   },
