@@ -21,7 +21,7 @@
     "react-native-fs": "^2.20.0",
     "react-native-mmkv": "^2.12.2",
     "react-native-safe-area-context": "^5.0.0",
-    "react-native-screens": "^3.31.1",
+    "react-native-screens": "4.13.1",
     "react-native-vector-icons": "^10.2.0",
     "react-native-video": "^6.1.2"
   },
