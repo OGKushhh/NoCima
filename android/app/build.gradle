@@ -69,6 +69,13 @@ android {
     }
 }
 
+// Force-disable CMake for all subprojects (prevents CXX1210)
+tasks.configureEach {
+    if (it.name.contains('configureCMake')) {
+        it.enabled = false
+    }
+}
+
 dependencies {
     implementation("com.facebook.react:react-android")
 

@@ -30,6 +30,9 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
+      - name: Install NDK
+        run: sdkmanager --install "ndk;26.1.10909125"
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
