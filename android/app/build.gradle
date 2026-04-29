@@ -19,8 +19,8 @@ android {
         targetCompatibility JavaVersion.VERSION_17
     }
 
-    // Enable Prefab so native modules (screens, mmkv, video) can find
-    // ReactAndroid's prebuilt libraries via CMake
+    // Prefab enabled automatically by RN's gradle plugin with newArchEnabled=true,
+    // but we also declare it here explicitly for subproject CMake builds
     buildFeatures {
         prefab true
     }
