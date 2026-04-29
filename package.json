@@ -19,7 +19,7 @@
     "react-native": "0.76.8",
     "react-native-fast-image": "^8.6.3",
     "react-native-fs": "^2.20.0",
-    "react-native-gesture-handler": "^2.20.2",
+    "react-native-gesture-handler": "2.21.2",
     "react-native-mmkv": "^2.12.2",
     "react-native-safe-area-context": "^5.0.0",
     "react-native-screens": "4.13.1",
