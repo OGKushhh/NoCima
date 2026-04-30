@@ -1,10 +1,7 @@
 apply plugin: "com.android.application"
 apply plugin: "org.jetbrains.kotlin.android"
-apply plugin: "com.facebook.react"
 
-react {
-    // RN 0.72 autolinking - no extra config needed
-}
+import com.android.build.OutputFile
 
 android {
     namespace "com.abdobest"
@@ -63,6 +60,19 @@ android {
 
 dependencies {
     implementation fileTree(dir: "libs", include: ["*.jar"])
-    implementation("com.facebook.react:react-android")
-    implementation("com.facebook.react:hermes-android")
+
+    implementation("com.facebook.react:react-native:+") {
+        exclude group: "com.facebook.fbjni"
+    }
+
+    def jscFlavor = 'org.webkit:android-jsc:+'
+    def enableHermes = project.ext.react.get("enableHermes", true)
+    if (enableHermes) {
+        implementation("com.facebook.react:hermes-android")
+    } else {
+        implementation jscFlavor
+    }
 }
+
+apply from: file("../../node_modules/@react-native-community/cli-platform-android/native_modules.gradle")
+applyNativeModulesAppBuildGradle(project)

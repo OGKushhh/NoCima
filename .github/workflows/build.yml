@@ -38,6 +38,19 @@ jobs:
           rm -rf node_modules package-lock.json
           npm install --legacy-peer-deps
 
+      - name: Verify RN Gradle plugin path
+        run: |
+          if [ -d "node_modules/react-native/node_modules/@react-native/gradle-plugin" ]; then
+            echo "✓ Found at node_modules/react-native/node_modules/@react-native/gradle-plugin"
+          elif [ -d "node_modules/@react-native/gradle-plugin" ]; then
+            echo "✓ Found at node_modules/@react-native/gradle-plugin"
+            echo "WARNING: settings.gradle path may need updating"
+          else
+            echo "✗ gradle-plugin not found in either location"
+            find node_modules -name "gradle-plugin" -type d 2>/dev/null || true
+            exit 1
+          fi
+
       - name: Clean stale Android build cache
         run: |
           rm -rf android/.gradle
