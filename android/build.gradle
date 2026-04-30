@@ -21,14 +21,15 @@ allprojects {
     repositories {
         google()
         mavenCentral()
-        maven { url 'https://www.jitpack.io' }
     }
+}
 
+subprojects {
     configurations.all {
-        resolutionStrategy.dependencySubstitution {
-            // RN 0.72 renamed react-native -> react-android on Maven Central
-            // Old native modules still ask for the old name, redirect them
-            substitute module("com.facebook.react:react-native") using module("com.facebook.react:react-android:0.72.17")
+        resolutionStrategy {
+            dependencySubstitution {
+                substitute module('com.facebook.react:react-native') using module('com.facebook.react:react-android:+')
+            }
         }
     }
 }
