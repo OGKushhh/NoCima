@@ -3,7 +3,6 @@ import {View, Text, StyleSheet, TouchableOpacity, Dimensions} from 'react-native
 import FastImage from 'react-native-fast-image';
 import {ContentItem} from '../types';
 import {Colors} from '../theme/colors';
-import {Typography} from '../theme/typography';
 
 interface MovieCardProps {
   item: ContentItem;
@@ -12,14 +11,16 @@ interface MovieCardProps {
   showTitle?: boolean;
 }
 
-const CARD_WIDTH = (Dimensions.get('window').width - 36) / 2;
+const SCREEN_WIDTH = Dimensions.get('window').width;
+// Slightly tighter gap between columns
+const CARD_WIDTH = (SCREEN_WIDTH - 40) / 2;
 const CARD_HEIGHT = CARD_WIDTH * 1.5;
 
 export const MovieCard: React.FC<MovieCardProps> = ({item, onPress, width = CARD_WIDTH, showTitle = true}) => {
   const imageUri = item['Image Source'];
   const firstGenre = item.Genres?.[0] || '';
-  const rating = item.Rating || item['imdb_rating'] || '';
-  const views = item.Views || item['views'] || '';
+  const rating = item.Rating || (item as any)['imdb_rating'] || '';
+  const views = item.Views || (item as any)['views'] || '';
   const formatText = item.Format ? item.Format.split(' ')[0] : '';
 
   return (
@@ -32,25 +33,25 @@ export const MovieCard: React.FC<MovieCardProps> = ({item, onPress, width = CARD
           fallback
         />
 
-        {/* Top left: Rating + Views */}
+        {/* Top LEFT: Rating + Views (with icons) */}
         {(rating || views) && (
           <View style={styles.topLeftBadges}>
             {rating ? (
               <View style={styles.ratingBadge}>
-                <Text style={styles.ratingIcon}>★</Text>
+                <Text style={styles.starIcon}>★</Text>
                 <Text style={styles.ratingText}>{rating}</Text>
               </View>
             ) : null}
             {views ? (
               <View style={styles.viewsBadge}>
-                <Text style={styles.viewsIcon}>👁</Text>
+                <Text style={styles.eyeIcon}>👁</Text>
                 <Text style={styles.viewsText}>{views}</Text>
               </View>
             ) : null}
           </View>
         )}
 
-        {/* Top right: Quality + Category */}
+        {/* Top RIGHT: Quality badge (cyan) + Category badge (yellow/black) */}
         <View style={styles.topRightBadges}>
           {formatText ? (
             <View style={styles.qualityBadge}>
@@ -67,7 +68,12 @@ export const MovieCard: React.FC<MovieCardProps> = ({item, onPress, width = CARD
 
       {showTitle && (
         <View style={styles.info}>
-          <Text style={styles.title} numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.7}>
+          <Text
+            style={styles.title}
+            numberOfLines={2}
+            adjustsFontSizeToFit
+            minimumFontScale={0.65}
+          >
             {item.Title}
           </Text>
         </View>
@@ -78,24 +84,24 @@ export const MovieCard: React.FC<MovieCardProps> = ({item, onPress, width = CARD
 
 const styles = StyleSheet.create({
   card: {
-    marginBottom: 12,
-    borderRadius: 10,
+    marginBottom: 14,
+    borderRadius: 12,
     overflow: 'hidden',
     backgroundColor: Colors.dark.card,
-    elevation: 4,
+    elevation: 5,
     shadowColor: '#000',
-    shadowOffset: {width: 0, height: 2},
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
+    shadowOffset: {width: 0, height: 3},
+    shadowOpacity: 0.35,
+    shadowRadius: 5,
   },
   imageContainer: {
     position: 'relative',
   },
   image: {
-    borderRadius: 10,
+    borderRadius: 12,
     backgroundColor: Colors.dark.surfaceLight,
   },
-  // Top left badges
+  // Top LEFT: rating + views
   topLeftBadges: {
     position: 'absolute',
     top: 6,
@@ -106,39 +112,41 @@ const styles = StyleSheet.create({
   ratingBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.75)',
+    backgroundColor: 'rgba(0,0,0,0.78)',
     paddingHorizontal: 5,
     paddingVertical: 2,
-    borderRadius: 4,
+    borderRadius: 5,
   },
-  ratingIcon: {
+  starIcon: {
     color: '#FFD700',
     fontSize: 10,
     marginRight: 2,
   },
   ratingText: {
     color: '#FFFFFF',
-    fontSize: Typography.sizes.xs,
-    fontWeight: Typography.weights.bold as any,
+    fontSize: 10,
+    fontWeight: '700',
+    fontFamily: 'Rubik',
   },
   viewsBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.75)',
+    backgroundColor: 'rgba(0,0,0,0.78)',
     paddingHorizontal: 5,
     paddingVertical: 2,
-    borderRadius: 4,
+    borderRadius: 5,
   },
-  viewsIcon: {
+  eyeIcon: {
     fontSize: 9,
     marginRight: 2,
   },
   viewsText: {
     color: '#FFFFFF',
-    fontSize: Typography.sizes.xs,
-    fontWeight: Typography.weights.medium as any,
+    fontSize: 10,
+    fontWeight: '500',
+    fontFamily: 'Rubik',
   },
-  // Top right badges
+  // Top RIGHT: quality + category
   topRightBadges: {
     position: 'absolute',
     top: 6,
@@ -147,38 +155,47 @@ const styles = StyleSheet.create({
     gap: 3,
   },
   qualityBadge: {
-    backgroundColor: 'rgba(0,0,0,0.8)',
+    backgroundColor: 'rgba(0,0,0,0.82)',
     paddingHorizontal: 6,
     paddingVertical: 2,
-    borderRadius: 4,
+    borderRadius: 5,
+    borderWidth: 1,
+    borderColor: '#00E5FF40',
   },
   qualityText: {
-    color: '#00E5FF',
-    fontSize: Typography.sizes.xs,
-    fontWeight: Typography.weights.bold as any,
+    color: Colors.dark.badge.quality,
+    fontSize: 10,
+    fontWeight: '700',
+    fontFamily: 'Rubik',
   },
   categoryBadge: {
     backgroundColor: '#FFD700',
     paddingHorizontal: 6,
     paddingVertical: 2,
-    borderRadius: 4,
+    borderRadius: 5,
     maxWidth: 80,
   },
   categoryText: {
     color: '#000000',
-    fontSize: Typography.sizes.xs,
-    fontWeight: Typography.weights.bold as any,
+    fontSize: 10,
+    fontWeight: '700',
+    fontFamily: 'Rubik',
   },
   info: {
-    padding: 6,
+    paddingHorizontal: 6,
+    paddingTop: 6,
+    paddingBottom: 7,
     alignItems: 'center',
+    minHeight: 38,
+    justifyContent: 'center',
   },
   title: {
     color: Colors.dark.text,
-    fontSize: Typography.sizes.sm,
-    fontWeight: Typography.weights.medium as any,
-    lineHeight: 18,
+    fontSize: 12,
+    fontWeight: '500',
+    lineHeight: 17,
     textAlign: 'center',
+    fontFamily: 'Rubik',
   },
 });
 

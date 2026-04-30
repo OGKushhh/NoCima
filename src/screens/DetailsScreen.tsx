@@ -1,7 +1,7 @@
 import React, {useState, useCallback, useMemo} from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  Alert, Share, ActivityIndicator, Dimensions,
+  Alert, Share, ActivityIndicator, Dimensions, StatusBar,
 } from 'react-native';
 import {useRoute, useNavigation} from '@react-navigation/native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
@@ -10,13 +10,12 @@ import FastImage from 'react-native-fast-image';
 import {ContentItem} from '../types';
 import {getStreamUrl} from '../services/videoService';
 import {Colors} from '../theme/colors';
-import {Typography} from '../theme/typography';
 import {useTranslation} from 'react-i18next';
 import {localizeGenres} from '../i18n/genres';
 import {getSettings} from '../storage';
 
 const {width: SCREEN_WIDTH} = Dimensions.get('window');
-const POSTER_WIDTH = Math.min(SCREEN_WIDTH * 0.6, 280);
+const POSTER_WIDTH = Math.min(SCREEN_WIDTH * 0.55, 240);
 const POSTER_HEIGHT = POSTER_WIDTH * 1.5;
 
 export const DetailsScreen: React.FC = () => {
@@ -31,16 +30,10 @@ export const DetailsScreen: React.FC = () => {
   const hasSource = item.Source && item.Source.length > 0;
   const lang = (i18n.language === 'ar' ? 'ar' : 'en') as 'ar' | 'en';
 
-  // Localize genres for the current language
-  const displayGenres = useMemo(() => {
-    return localizeGenres(item.Genres || [], lang);
-  }, [item.Genres, lang]);
+  const displayGenres = useMemo(() => localizeGenres(item.Genres || [], lang), [item.Genres, lang]);
 
-  // Get the appropriate description based on language
   const description = useMemo(() => {
-    if (lang === 'ar') {
-      return item.DescriptionAr || item.Description || '';
-    }
+    if (lang === 'ar') return item.DescriptionAr || item.Description || '';
     return item.Description || item.DescriptionAr || '';
   }, [item.Description, item.DescriptionAr, lang]);
 
@@ -57,18 +50,18 @@ export const DetailsScreen: React.FC = () => {
   };
 
   const handlePlay = useCallback(async () => {
-    if (!hasSource) {
-      Alert.alert(t('video_unavailable'), t('not_available'));
-      return;
-    }
-
+    if (!hasSource) { Alert.alert(t('video_unavailable'), t('not_available')); return; }
     setExtracting(true);
     setExtractError(null);
-
     try {
       const result = await getStreamUrl(item.id, item.Source);
       if (result.video_url) {
-        navigation.navigate('Player', {url: result.video_url, title: item.Title});
+        navigation.navigate('Player', {
+          url: result.video_url,
+          title: item.Title,
+          contentId: item.id,
+          category: item.Category || 'movies',
+        });
       } else {
         setExtractError(t('video_unavailable'));
       }
@@ -77,17 +70,12 @@ export const DetailsScreen: React.FC = () => {
     } finally {
       setExtracting(false);
     }
-  }, [hasSource, item.id, item.Source, item.Title, navigation, t]);
+  }, [hasSource, item, navigation, t]);
 
   const handleDownload = useCallback(async () => {
-    if (!hasSource) {
-      Alert.alert(t('video_unavailable'), t('not_available'));
-      return;
-    }
-
+    if (!hasSource) { Alert.alert(t('video_unavailable'), t('not_available')); return; }
     setExtracting(true);
     setExtractError(null);
-
     try {
       const result = await getStreamUrl(item.id, item.Source);
       if (result.video_url) {
@@ -98,79 +86,91 @@ export const DetailsScreen: React.FC = () => {
     } finally {
       setExtracting(false);
     }
-  }, [hasSource, item.id, item.Source, t]);
+  }, [hasSource, item, t]);
 
   const handleShare = useCallback(() => {
-    if (item.Source) {
-      Share.share({message: item.Title, url: item.Source});
-    }
+    if (item.Source) Share.share({message: item.Title, url: item.Source});
   }, [item.Source, item.Title]);
+
+  const rating = item.Rating || '';
+  const views = item.Views || '';
 
   return (
     <View style={styles.container}>
-      <StatusBarStyle />
+      <StatusBar barStyle="light-content" backgroundColor={Colors.dark.background} />
 
       <ScrollView
         style={styles.scrollView}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={[styles.scrollContent, {paddingBottom: insets.bottom + 40}]}
+        contentContainerStyle={[styles.scrollContent, {paddingBottom: insets.bottom + 50}]}
       >
-        {/* Back button */}
-        <TouchableOpacity style={[styles.backButton, {top: insets.top + 8}]} onPress={() => navigation.goBack()}>
-          <Icon name="arrow-back" size={26} color="#fff" />
-        </TouchableOpacity>
-
-        {/* Share button */}
-        <TouchableOpacity style={[styles.shareButton, {top: insets.top + 8}]} onPress={handleShare}>
-          <Icon name="share-outline" size={22} color="#fff" />
-        </TouchableOpacity>
+        {/* Header buttons */}
+        <View style={[styles.headerRow, {paddingTop: insets.top + 10}]}>
+          <TouchableOpacity style={styles.headerButton} onPress={() => navigation.goBack()}>
+            <Icon name="arrow-back" size={24} color="#fff" />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.headerButton} onPress={handleShare}>
+            <Icon name="share-outline" size={22} color="#fff" />
+          </TouchableOpacity>
+        </View>
 
         {/* Title */}
         <Text style={styles.title} numberOfLines={3}>{item.Title}</Text>
 
         {/* Poster */}
-        {item['Image Source'] ? (
-          <FastImage
-            source={{uri: item['Image Source']}}
-            style={[styles.poster, {width: POSTER_WIDTH, height: POSTER_HEIGHT}]}
-            resizeMode={FastImage.resizeMode.cover}
-            fallback
-          />
-        ) : (
-          <View style={[styles.posterPlaceholder, {width: POSTER_WIDTH, height: POSTER_HEIGHT}]} />
-        )}
+        <View style={styles.posterContainer}>
+          {item['Image Source'] ? (
+            <FastImage
+              source={{uri: item['Image Source']}}
+              style={styles.poster}
+              resizeMode={FastImage.resizeMode.cover}
+              fallback
+            />
+          ) : (
+            <View style={styles.posterPlaceholder}>
+              <Icon name="film-outline" size={60} color={Colors.dark.textMuted} />
+            </View>
+          )}
+          {/* Floating quality badge on poster */}
+          {item.Format && (
+            <View style={styles.posterQualityBadge}>
+              <Text style={styles.posterQualityText}>{item.Format.split(' ')[0]}</Text>
+            </View>
+          )}
+        </View>
 
-        {/* Play / Download buttons */}
+        {/* Play + Download buttons */}
         <View style={styles.actions}>
           <TouchableOpacity
-            style={[styles.actionButton, styles.playButton]}
+            style={[styles.playButton, !hasSource && styles.disabledButton]}
             onPress={handlePlay}
-            disabled={extracting}
+            disabled={extracting || !hasSource}
           >
             {extracting ? (
               <ActivityIndicator color="#fff" size="small" />
             ) : (
               <>
                 <Icon name="play" size={22} color="#fff" />
-                <Text style={styles.actionText}>{t('play')}</Text>
+                <Text style={styles.playText}>{t('play')}</Text>
               </>
             )}
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.actionButton, styles.downloadButton]}
+            style={[styles.downloadButton, !hasSource && styles.disabledButton]}
             onPress={handleDownload}
-            disabled={extracting}
+            disabled={extracting || !hasSource}
           >
-            <Icon name="download-outline" size={22} color="#fff" />
-            <Text style={styles.actionText}>{t('download')}</Text>
+            <Icon name="download-outline" size={22} color={Colors.dark.accentLight} />
+            <Text style={styles.downloadText}>{t('download')}</Text>
           </TouchableOpacity>
         </View>
 
-        {/* Error state */}
+        {/* Extract error */}
         {extractError && (
-          <View style={styles.errorContainer}>
-            <Text style={styles.errorText}>{extractError}</Text>
+          <View style={styles.errorBanner}>
+            <Icon name="alert-circle-outline" size={16} color={Colors.dark.error} />
+            <Text style={styles.errorBannerText}>{extractError}</Text>
             <TouchableOpacity onPress={handlePlay}>
               <Text style={styles.retryText}>{t('retry')}</Text>
             </TouchableOpacity>
@@ -178,46 +178,53 @@ export const DetailsScreen: React.FC = () => {
         )}
 
         {!hasSource && (
-          <View style={styles.availabilityNotice}>
-            <Icon name="information-circle-outline" size={18} color={Colors.dark.warning} />
-            <Text style={styles.availabilityText}>{t('not_available')}</Text>
+          <View style={styles.unavailableBanner}>
+            <Icon name="information-circle-outline" size={16} color={Colors.dark.warning} />
+            <Text style={styles.unavailableText}>{t('not_available')}</Text>
           </View>
         )}
 
-        {/* Info Box */}
+        {/* Info box */}
         <View style={styles.infoBox}>
-          {/* Meta row: Quality + Runtime + Country */}
+          {/* Quick meta chips */}
           <View style={styles.metaRow}>
-            {item.Format && (
-              <View style={styles.metaBadge}>
-                <Text style={styles.metaBadgeText}>{item.Format.split(' ')[0]}</Text>
-              </View>
-            )}
-            {item.Rating && (
-              <View style={styles.metaBadge}>
+            {rating ? (
+              <View style={styles.metaChip}>
                 <Text style={styles.starIcon}>★</Text>
-                <Text style={styles.metaBadgeText}>{item.Rating}</Text>
+                <Text style={styles.metaChipText}>{rating}</Text>
               </View>
-            )}
-            {item.Runtime && (
-              <View style={styles.metaBadge}>
-                <Text style={styles.metaBadgeText}>{formatRuntime(item.Runtime)}</Text>
+            ) : null}
+            {views ? (
+              <View style={styles.metaChip}>
+                <Text style={styles.eyeIcon}>👁</Text>
+                <Text style={styles.metaChipText}>{views}</Text>
               </View>
-            )}
-            {item.Country && (
-              <View style={styles.metaBadge}>
-                <Text style={styles.metaBadgeText}>{item.Country}</Text>
+            ) : null}
+            {item.Runtime ? (
+              <View style={styles.metaChip}>
+                <Icon name="time-outline" size={12} color={Colors.dark.textSecondary} />
+                <Text style={styles.metaChipText}>{formatRuntime(item.Runtime)}</Text>
               </View>
-            )}
+            ) : null}
+            {item.Country ? (
+              <View style={styles.metaChip}>
+                <Icon name="location-outline" size={12} color={Colors.dark.textSecondary} />
+                <Text style={styles.metaChipText}>{item.Country}</Text>
+              </View>
+            ) : null}
+            {item.Year ? (
+              <View style={styles.metaChip}>
+                <Icon name="calendar-outline" size={12} color={Colors.dark.textSecondary} />
+                <Text style={styles.metaChipText}>{item.Year}</Text>
+              </View>
+            ) : null}
           </View>
 
-          {/* Episode count */}
+          {/* Episodes count */}
           {item['Number Of Episodes'] ? (
             <View style={styles.infoRow}>
-              <Icon name="tv-outline" size={16} color={Colors.dark.textSecondary} />
-              <Text style={styles.infoText}>
-                {item['Number Of Episodes']} {t('episodes')}
-              </Text>
+              <Icon name="tv-outline" size={15} color={Colors.dark.accentLight} />
+              <Text style={styles.infoText}>{item['Number Of Episodes']} {t('episodes')}</Text>
             </View>
           ) : null}
 
@@ -243,19 +250,11 @@ export const DetailsScreen: React.FC = () => {
             </View>
           )}
 
-          {/* Quality info */}
+          {/* Quality */}
           {item.Format && (
             <View style={styles.infoSection}>
               <Text style={styles.sectionLabel}>{t('quality')}</Text>
               <Text style={styles.infoValue}>{item.Format}</Text>
-            </View>
-          )}
-
-          {/* Duration */}
-          {item.Runtime && (
-            <View style={styles.infoSection}>
-              <Text style={styles.sectionLabel}>{t('duration')}</Text>
-              <Text style={styles.infoValue}>{formatRuntime(item.Runtime)}</Text>
             </View>
           )}
         </View>
@@ -264,186 +263,223 @@ export const DetailsScreen: React.FC = () => {
   );
 };
 
-const StatusBarStyle = () => {
-  const {StatusBar} = require('react-native');
-  return <StatusBar barStyle="light-content" backgroundColor={Colors.dark.background} />;
-};
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: Colors.dark.background,
   },
-  scrollView: {
-    flex: 1,
+  scrollView: {flex: 1},
+  scrollContent: {paddingTop: 0},
+  headerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingBottom: 6,
   },
-  scrollContent: {
-    paddingTop: 0,
-  },
-  backButton: {
-    position: 'absolute',
-    left: 16,
-    width: 40,
-    height: 40,
+  headerButton: {
+    width: 40, height: 40,
     borderRadius: 20,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    backgroundColor: 'rgba(255,255,255,0.1)',
     justifyContent: 'center',
     alignItems: 'center',
-    zIndex: 10,
-  },
-  shareButton: {
-    position: 'absolute',
-    right: 16,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 10,
   },
   title: {
     color: Colors.dark.text,
-    fontSize: Typography.sizes.heading,
-    fontWeight: Typography.weights.bold as any,
+    fontSize: 22,
+    fontWeight: '800',
     textAlign: 'center',
-    paddingHorizontal: 60,
-    marginTop: 60,
-    marginBottom: 16,
+    paddingHorizontal: 20,
+    marginBottom: 18,
     fontFamily: 'Rubik',
+    lineHeight: 30,
+  },
+  posterContainer: {
+    alignSelf: 'center',
+    marginBottom: 22,
+    position: 'relative',
   },
   poster: {
-    borderRadius: 16,
-    alignSelf: 'center',
+    width: POSTER_WIDTH,
+    height: POSTER_HEIGHT,
+    borderRadius: 18,
     backgroundColor: Colors.dark.surfaceLight,
-    marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: 8},
+    shadowOpacity: 0.5,
+    shadowRadius: 12,
+    elevation: 12,
   },
   posterPlaceholder: {
-    borderRadius: 16,
-    alignSelf: 'center',
+    width: POSTER_WIDTH,
+    height: POSTER_HEIGHT,
+    borderRadius: 18,
     backgroundColor: Colors.dark.surface,
-    marginBottom: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  posterQualityBadge: {
+    position: 'absolute',
+    bottom: 10,
+    right: 10,
+    backgroundColor: 'rgba(0,0,0,0.85)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: `${Colors.dark.accentLight}50`,
+  },
+  posterQualityText: {
+    color: Colors.dark.accentLight,
+    fontSize: 11,
+    fontWeight: '700',
+    fontFamily: 'Rubik',
   },
   actions: {
     flexDirection: 'row',
-    paddingHorizontal: 16,
-    marginBottom: 20,
+    paddingHorizontal: 20,
+    marginBottom: 16,
     gap: 12,
   },
-  actionButton: {
+  playButton: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    height: 52,
-    borderRadius: 14,
-  },
-  playButton: {
+    height: 54,
+    borderRadius: 16,
     backgroundColor: Colors.dark.primary,
+    gap: 8,
+    shadowColor: Colors.dark.primary,
+    shadowOffset: {width: 0, height: 4},
+    shadowOpacity: 0.45,
+    shadowRadius: 8,
+    elevation: 8,
   },
-  downloadButton: {
-    backgroundColor: Colors.dark.surface,
-    borderWidth: 1.5,
-    borderColor: Colors.dark.primary,
-  },
-  actionText: {
+  playText: {
     color: '#fff',
-    fontSize: Typography.sizes.lg,
-    fontWeight: Typography.weights.semibold as any,
-    marginLeft: 8,
+    fontSize: 17,
+    fontWeight: '700',
     fontFamily: 'Rubik',
   },
-  errorContainer: {
-    marginHorizontal: 16,
-    padding: 12,
-    backgroundColor: 'rgba(239,68,68,0.1)',
-    borderRadius: 8,
+  downloadButton: {
+    flex: 1,
+    flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 16,
+    justifyContent: 'center',
+    height: 54,
+    borderRadius: 16,
+    backgroundColor: Colors.dark.surface,
+    borderWidth: 1.5,
+    borderColor: Colors.dark.accentLight,
+    gap: 8,
   },
-  errorText: {
+  downloadText: {
+    color: Colors.dark.accentLight,
+    fontSize: 17,
+    fontWeight: '700',
+    fontFamily: 'Rubik',
+  },
+  disabledButton: {opacity: 0.45},
+  errorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 20,
+    padding: 12,
+    backgroundColor: `${Colors.dark.error}18`,
+    borderRadius: 10,
+    marginBottom: 12,
+    gap: 8,
+  },
+  errorBannerText: {
+    flex: 1,
     color: Colors.dark.error,
-    fontSize: Typography.sizes.sm,
-    textAlign: 'center',
+    fontSize: 13,
   },
   retryText: {
     color: Colors.dark.primary,
-    fontSize: Typography.sizes.sm,
-    fontWeight: Typography.weights.semibold as any,
-    marginTop: 4,
+    fontSize: 13,
+    fontWeight: '700',
+    fontFamily: 'Rubik',
   },
-  availabilityNotice: {
+  unavailableBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginHorizontal: 16,
+    marginHorizontal: 20,
     padding: 12,
-    backgroundColor: 'rgba(245,158,11,0.1)',
-    borderRadius: 8,
-    marginBottom: 16,
+    backgroundColor: `${Colors.dark.warning}15`,
+    borderRadius: 10,
+    marginBottom: 12,
+    gap: 8,
   },
-  availabilityText: {
+  unavailableText: {
     color: Colors.dark.warning,
-    fontSize: Typography.sizes.sm,
-    marginLeft: 8,
+    fontSize: 13,
+    fontFamily: 'Rubik',
   },
   infoBox: {
     marginHorizontal: 16,
     backgroundColor: Colors.dark.surface,
-    borderRadius: 16,
-    padding: 16,
+    borderRadius: 18,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
   },
   metaRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
-    marginBottom: 12,
+    marginBottom: 14,
   },
-  metaBadge: {
+  metaChip: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: Colors.dark.background,
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 8,
+    gap: 4,
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
   },
-  starIcon: {
-    color: '#FFD700',
-    fontSize: 12,
-    marginRight: 4,
-  },
-  metaBadgeText: {
+  starIcon: {color: '#FFD700', fontSize: 11},
+  eyeIcon: {fontSize: 11},
+  metaChipText: {
     color: Colors.dark.text,
-    fontSize: Typography.sizes.sm,
-    fontWeight: Typography.weights.medium as any,
+    fontSize: 12,
+    fontWeight: '600',
+    fontFamily: 'Rubik',
   },
   infoRow: {
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 12,
+    gap: 6,
   },
   infoText: {
     color: Colors.dark.textSecondary,
-    fontSize: Typography.sizes.md,
-    marginLeft: 6,
+    fontSize: 14,
+    fontFamily: 'Rubik',
   },
   infoSection: {
-    marginTop: 12,
-    paddingTop: 12,
+    marginTop: 14,
+    paddingTop: 14,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: Colors.dark.border,
   },
   sectionLabel: {
-    color: Colors.dark.textSecondary,
-    fontSize: Typography.sizes.sm,
-    fontWeight: Typography.weights.semibold as any,
+    color: Colors.dark.textMuted,
+    fontSize: 11,
+    fontWeight: '700',
     textTransform: 'uppercase',
-    letterSpacing: 0.5,
+    letterSpacing: 1.2,
     marginBottom: 8,
+    fontFamily: 'Rubik',
   },
   descriptionText: {
     color: Colors.dark.textSecondary,
-    fontSize: Typography.sizes.md,
+    fontSize: 14,
     lineHeight: 22,
+    fontFamily: 'Rubik',
   },
   genreChips: {
     flexDirection: 'row',
@@ -451,17 +487,22 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   genreChip: {
-    backgroundColor: Colors.dark.background,
+    backgroundColor: `${Colors.dark.accent}25`,
     paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 16,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: `${Colors.dark.accentLight}40`,
   },
   genreChipText: {
-    color: Colors.dark.textSecondary,
-    fontSize: Typography.sizes.sm,
+    color: Colors.dark.accentLight,
+    fontSize: 12,
+    fontWeight: '600',
+    fontFamily: 'Rubik',
   },
   infoValue: {
     color: Colors.dark.text,
-    fontSize: Typography.sizes.md,
+    fontSize: 14,
+    fontFamily: 'Rubik',
   },
 });

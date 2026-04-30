@@ -1,8 +1,11 @@
 import React, {useState, useCallback, useMemo, memo, useRef} from 'react';
-import {View, StyleSheet, FlatList, RefreshControl, StatusBar, SafeAreaView} from 'react-native';
+import {
+  View, StyleSheet, FlatList, RefreshControl,
+  StatusBar, Text, TouchableOpacity,
+} from 'react-native';
 import {useFocusEffect, useNavigation} from '@react-navigation/native';
-import {loadCategory, loadFeatured, getMoviesArray, searchContent} from '../services/metadataService';
-import {ContentItem, TrendingContent, TrendingItem} from '../types';
+import {loadCategory, getMoviesArray, searchContent} from '../services/metadataService';
+import {ContentItem} from '../types';
 import {MovieCard, CARD_WIDTH} from '../components/MovieCard';
 import {SectionHeader} from '../components/SectionHeader';
 import {SearchBar} from '../components/SearchBar';
@@ -11,8 +14,9 @@ import {ErrorView} from '../components/ErrorView';
 import {Colors} from '../theme/colors';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {useTranslation} from 'react-i18next';
+import Icon from 'react-native-vector-icons/Ionicons';
 
-// ─── Memoized horizontal row for performance ──────────────────────
+// ─── Stable section (prevents flickering) ─────────────────────────
 interface HorizontalSectionProps {
   title: string;
   items: ContentItem[];
@@ -33,12 +37,19 @@ const HorizontalSection = memo<HorizontalSectionProps>(
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.horizontalList}
           keyExtractor={(item) => item.id}
-          initialNumToRender={4}
-          maxToRenderPerBatch={4}
-          windowSize={5}
+          initialNumToRender={5}
+          maxToRenderPerBatch={5}
+          windowSize={7}
           removeClippedSubviews={true}
+          getItemLayout={(_, index) => ({
+            length: (cardWidth || CARD_WIDTH) + 10,
+            offset: ((cardWidth || CARD_WIDTH) + 10) * index,
+            index,
+          })}
           renderItem={({item}) => (
-            <MovieCard item={item} onPress={onPressItem} width={cardWidth || CARD_WIDTH} />
+            <View style={styles.horizontalCardWrapper}>
+              <MovieCard item={item} onPress={onPressItem} width={cardWidth || CARD_WIDTH} />
+            </View>
           )}
         />
       </View>
@@ -51,14 +62,34 @@ const HorizontalSection = memo<HorizontalSectionProps>(
 );
 HorizontalSection.displayName = 'HorizontalSection';
 
+// ─── Build sections from local data (no trending/featured API) ────
+const buildLocalSections = (allMovies: ContentItem[]) => {
+  if (!allMovies.length) return {trending: [], mostViewed: [], latestMovies: [], recentAdded: []};
+
+  // "Trending" = first 20 items (newest additions assumed first in list)
+  const trending = allMovies.slice(0, 20);
+
+  // "Most Viewed" = pick items that have a views field, or last 20
+  const withViews = allMovies.filter(m => m.Views && m.Views !== '0');
+  const mostViewed = withViews.length >= 10
+    ? withViews.slice(0, 20)
+    : allMovies.slice(-20).reverse();
+
+  // Latest = next 20 after trending
+  const latestMovies = allMovies.slice(20, 40);
+
+  // Recently added = reversed slice
+  const recentAdded = allMovies.slice(40, 60);
+
+  return {trending, mostViewed, latestMovies, recentAdded};
+};
+
 export const HomeScreen: React.FC = () => {
   const {t} = useTranslation();
   const navigation = useNavigation<any>();
   const insets = useSafeAreaInsets();
 
   const [movies, setMovies] = useState<ContentItem[]>([]);
-  const [trending, setTrending] = useState<TrendingContent | null>(null);
-  const [featured, setFeatured] = useState<TrendingContent | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -73,14 +104,8 @@ export const HomeScreen: React.FC = () => {
   const loadData = useCallback(async (forceRefresh = false) => {
     try {
       setError(null);
-      const [moviesDict, trendingData, featuredData] = await Promise.all([
-        loadCategory('movies', forceRefresh),
-        loadCategory('trending', forceRefresh),
-        loadFeatured(forceRefresh),
-      ]);
+      const moviesDict = await loadCategory('movies', forceRefresh);
       setMovies(getMoviesArray(moviesDict as Record<string, any>));
-      setTrending(trendingData as TrendingContent);
-      setFeatured(featuredData as TrendingContent);
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -108,17 +133,14 @@ export const HomeScreen: React.FC = () => {
     navigation.navigate('Category', {category});
   }, [navigation]);
 
-  // Search handler with debounce
   const handleSearch = useCallback((query: string) => {
     setSearchQuery(query);
     if (searchTimeout.current) clearTimeout(searchTimeout.current);
-
     if (!query.trim()) {
       setSearchResults([]);
       setSearching(false);
       return;
     }
-
     searchTimeout.current = setTimeout(async () => {
       setSearching(true);
       try {
@@ -132,41 +154,12 @@ export const HomeScreen: React.FC = () => {
     }, 400);
   }, []);
 
-  const trendingToItems = useCallback((items: TrendingItem[], prefix: string): ContentItem[] => {
-    return items.slice(0, 20).map((tItem, i) => ({
-      id: `${prefix}_${i}`,
-      Title: tItem.title,
-      Category: tItem.content_type || 'movies',
-      'Image Source': tItem.image,
-      Source: tItem.link,
-      Genres: [],
-      GenresAr: [],
-      Format: tItem.quality || '',
-      Runtime: null,
-      Country: null,
-      Rating: tItem.imdb_rating || '',
-      Views: tItem.views || '',
-    }));
-  }, []);
-
-  // Use useRef-based stable data to prevent flickering
-  const stableTrending = useMemo(
-    () => (trending?.movies ? trendingToItems(trending.movies, 'trending') : []),
-    [trending?.movies, trendingToItems],
-  );
-
-  const stableFeatured = useMemo(
-    () => (featured?.movies ? trendingToItems(featured.movies, 'featured') : []),
-    [featured?.movies, trendingToItems],
-  );
-
-  const latestMovies = useMemo(() => movies.slice(0, 20), [movies]);
-  const recentAdded = useMemo(() => movies.slice(-20).reverse(), [movies]);
+  const sections = useMemo(() => buildLocalSections(movies), [movies]);
 
   if (loading) return <LoadingSpinner />;
   if (error && movies.length === 0) return <ErrorView message={error} onRetry={() => loadData(true)} />;
 
-  // If searching, show search results
+  // Search overlay
   if (searchVisible && (searchQuery.length > 0 || searchResults.length > 0)) {
     return (
       <View style={styles.container}>
@@ -177,7 +170,11 @@ export const HomeScreen: React.FC = () => {
             onChangeText={handleSearch}
             placeholder={t('search_placeholder')}
             show={true}
-            onToggle={() => setSearchVisible(false)}
+            onToggle={() => {
+              setSearchVisible(false);
+              setSearchQuery('');
+              setSearchResults([]);
+            }}
           />
         </View>
         {searching ? (
@@ -204,18 +201,16 @@ export const HomeScreen: React.FC = () => {
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor={Colors.dark.background} />
-      {/* Top bar with title and search icon */}
-      <View style={[styles.topBar, {paddingTop: insets.top + 8}]}>
-        <View style={styles.titleContainer}>
-          <Text style={styles.appTitle}>{t('app_name')}</Text>
-        </View>
-        <SearchBar
-          value={searchQuery}
-          onChangeText={handleSearch}
-          placeholder={t('search_placeholder')}
-          show={searchVisible}
-          onToggle={() => setSearchVisible(!searchVisible)}
-        />
+
+      {/* Top bar */}
+      <View style={[styles.topBar, {paddingTop: insets.top + 6}]}>
+        <Text style={styles.appTitle}>{t('app_name')}</Text>
+        <TouchableOpacity
+          style={styles.searchButton}
+          onPress={() => setSearchVisible(true)}
+        >
+          <Icon name="search-outline" size={24} color={Colors.dark.text} />
+        </TouchableOpacity>
       </View>
 
       <FlatList
@@ -224,28 +219,30 @@ export const HomeScreen: React.FC = () => {
           <View>
             <HorizontalSection
               title={t('trending_now')}
-              items={stableTrending}
-              onSeeAll={() => navigateToCategory('trending')}
-              cardWidth={140}
-              onPressItem={navigateToDetails}
-            />
-            <HorizontalSection
-              title={t('featured_now')}
-              items={stableFeatured}
-              onSeeAll={() => navigateToCategory('trending')}
-              cardWidth={140}
-              onPressItem={navigateToDetails}
-            />
-            <HorizontalSection
-              title={t('latest_movies')}
-              items={latestMovies}
+              items={sections.trending}
               onSeeAll={() => navigateToCategory('movies')}
+              cardWidth={148}
               onPressItem={navigateToDetails}
             />
             <HorizontalSection
               title={t('most_viewed')}
-              items={recentAdded}
+              items={sections.mostViewed}
               onSeeAll={() => navigateToCategory('movies')}
+              cardWidth={148}
+              onPressItem={navigateToDetails}
+            />
+            <HorizontalSection
+              title={t('latest_movies')}
+              items={sections.latestMovies}
+              onSeeAll={() => navigateToCategory('movies')}
+              cardWidth={148}
+              onPressItem={navigateToDetails}
+            />
+            <HorizontalSection
+              title={t('featured_now')}
+              items={sections.recentAdded}
+              onSeeAll={() => navigateToCategory('movies')}
+              cardWidth={148}
               onPressItem={navigateToDetails}
             />
           </View>
@@ -260,14 +257,11 @@ export const HomeScreen: React.FC = () => {
           />
         }
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={[styles.content, {paddingBottom: insets.bottom + 80}]}
+        contentContainerStyle={[styles.content, {paddingBottom: insets.bottom + 90}]}
       />
     </View>
   );
 };
-
-// Need Text import for the title
-import {Text} from 'react-native';
 
 const styles = StyleSheet.create({
   container: {
@@ -278,35 +272,45 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingBottom: 4,
-  },
-  titleContainer: {
-    flexShrink: 1,
+    paddingHorizontal: 18,
+    paddingBottom: 8,
   },
   appTitle: {
     color: Colors.dark.primary,
-    fontSize: 24,
+    fontSize: 26,
     fontWeight: '900',
     fontFamily: 'Rubik',
+    letterSpacing: 0.3,
+  },
+  searchButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: Colors.dark.surface,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   searchBarRow: {
     paddingHorizontal: 16,
     paddingBottom: 4,
   },
   content: {
-    paddingTop: 12,
+    paddingTop: 8,
   },
   section: {
-    marginBottom: 8,
+    marginBottom: 6,
   },
   horizontalList: {
-    paddingLeft: 16,
-    paddingRight: 16,
+    paddingLeft: 14,
+    paddingRight: 14,
+  },
+  horizontalCardWrapper: {
+    marginRight: 10,
   },
   searchGrid: {
-    paddingHorizontal: 12,
+    paddingHorizontal: 14,
     paddingBottom: 80,
+    paddingTop: 8,
   },
   row: {
     justifyContent: 'space-between',

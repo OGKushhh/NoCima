@@ -8,44 +8,50 @@ const api = axios.create({
 });
 
 export const extractVideoUrl = async (pageUrl: string): Promise<{video_url: string; quality_options: string[]}> => {
-  // Check local cache first (6hr TTL)
+  // 1. Check local 6h cache first
   const cached = getVideoUrlCache(pageUrl);
   if (cached) {
+    console.log('[API] Cache hit for:', pageUrl);
     return {video_url: cached.url, quality_options: cached.qualities};
   }
 
   try {
-    // Backend uses POST /extract with JSON body {url: ...}
+    // 2. Call backend /extract
     const response = await api.post('/extract', {url: pageUrl});
     const data = response.data;
 
-    if (data.stream_url || data.video_url) {
-      const streamUrl = data.stream_url || data.video_url;
-
-      // Determine quality from URL
-      const qualities = streamUrl.includes('master')
-        ? ['1080p', '720p', '480p', '360p']
-        : ['Auto'];
-
-      setVideoUrlCache(pageUrl, streamUrl, qualities);
-      return {video_url: streamUrl, quality_options: qualities};
+    // Backend returns stream_url (not video_url)
+    const streamUrl = data.stream_url || data.video_url;
+    if (!streamUrl) {
+      throw new Error(data.error || 'No video stream returned from server');
     }
 
-    throw new Error(data.error || 'No video URL returned');
+    // Determine available qualities from m3u8 URL
+    const qualities: string[] = streamUrl.includes('master')
+      ? ['1080p', '720p', '480p', '360p']
+      : ['Auto'];
+
+    // 3. Cache with 6h TTL
+    setVideoUrlCache(pageUrl, streamUrl, qualities);
+    console.log('[API] Extracted & cached:', streamUrl.substring(0, 60) + '...');
+
+    return {video_url: streamUrl, quality_options: qualities};
   } catch (error: any) {
-    throw new Error(error.response?.data?.error || error.message || 'Failed to extract video');
+    const msg = error.response?.data?.error || error.message || 'Failed to extract video';
+    console.error('[API] Extract error:', msg);
+    throw new Error(msg);
   }
 };
 
 export const refreshVideoUrl = async (pageUrl: string) => {
-  // Add cache-bust parameter to bypass server-side cache
-  const bustUrl = `${pageUrl}${pageUrl.includes('?') ? '&' : '?'}_refresh=${Date.now()}`;
+  // Bypass server cache by adding cache-bust query param
+  const bustUrl = `${pageUrl}${pageUrl.includes('?') ? '&' : '?'}_r=${Date.now()}`;
   return extractVideoUrl(bustUrl);
 };
 
 export const checkApiHealth = async (): Promise<boolean> => {
   try {
-    const response = await api.get('/health');
+    const response = await api.get('/health', {timeout: 10000});
     return response.data?.status === 'healthy';
   } catch {
     return false;

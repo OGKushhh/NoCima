@@ -1,9 +1,11 @@
 import React, {useState} from 'react';
-import {View, StyleSheet, Text, TouchableOpacity, Switch, Linking, Alert} from 'react-native';
+import {
+  View, StyleSheet, Text, TouchableOpacity, Switch,
+  Linking, Alert, ScrollView, ActivityIndicator,
+} from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/Ionicons';
 import {Colors} from '../theme/colors';
-import {Typography} from '../theme/typography';
 import {useTranslation} from 'react-i18next';
 import {getSettings, saveSettings} from '../storage';
 import {syncIfNeeded, getLastSyncTime} from '../services/metadataService';
@@ -14,6 +16,7 @@ export const SettingsScreen: React.FC = () => {
   const {t, i18n} = useTranslation();
   const [settings, setSettings] = useState(getSettings());
   const [checkingUpdate, setCheckingUpdate] = useState(false);
+  const [syncing, setSyncing] = useState(false);
 
   const updateSetting = (key: string, value: any) => {
     const updated = {...settings, [key]: value};
@@ -28,7 +31,9 @@ export const SettingsScreen: React.FC = () => {
   };
 
   const handleSync = async () => {
-    const updated = await syncIfNeeded();
+    setSyncing(true);
+    await syncIfNeeded();
+    setSyncing(false);
     Alert.alert(t('metadata_updated'));
   };
 
@@ -36,7 +41,7 @@ export const SettingsScreen: React.FC = () => {
     Alert.alert(
       t('clear_cache'),
       t('cache_cleared'),
-      [{text: 'OK'}]
+      [{text: 'OK', onPress: () => {}}]
     );
   };
 
@@ -44,7 +49,6 @@ export const SettingsScreen: React.FC = () => {
     setCheckingUpdate(true);
     const update = await checkForUpdate();
     setCheckingUpdate(false);
-
     if (update) {
       openUpdateUrl(update.downloadUrl);
     } else {
@@ -55,195 +59,230 @@ export const SettingsScreen: React.FC = () => {
   const lastSync = getLastSyncTime();
   const lastSyncDate = lastSync ? new Date(lastSync).toLocaleDateString() : t('never');
 
-  const SettingRow = ({
-    icon, label, value, onPress, toggle,
-  }: {
-    icon: string;
-    label: string;
-    value?: string;
-    onPress?: () => void;
-    toggle?: boolean;
-  }) => (
-    <TouchableOpacity style={styles.row} onPress={toggle ? () => updateSetting(label, !settings[label]) : onPress} activeOpacity={0.7}>
-      <View style={styles.rowIconContainer}>
-        <Icon name={icon as any} size={22} color={Colors.dark.primary} />
-      </View>
-      <Text style={styles.rowLabel}>{label}</Text>
-      {toggle ? (
-        <Switch
-          value={settings[label]}
-          onValueChange={(v) => updateSetting(label, v)}
-          trackColor={{false: Colors.dark.border, true: Colors.dark.primary}}
-          thumbColor="#fff"
-        />
-      ) : (
-        <View style={styles.rowRight}>
-          <Text style={styles.rowValue}>{value}</Text>
-          <Icon name="chevron-forward" size={20} color={Colors.dark.textMuted} />
-        </View>
-      )}
-    </TouchableOpacity>
-  );
+  const cycleQuality = () => {
+    const prefs = ['auto', 'high', 'medium', 'low'] as const;
+    const current = prefs.indexOf(settings.qualityPreference as any);
+    updateSetting('qualityPreference', prefs[(current + 1) % prefs.length]);
+  };
 
   return (
     <View style={styles.container}>
-      <SafeAreaView style={styles.content}>
+      <SafeAreaView style={styles.safe} edges={['top']}>
+        {/* Header */}
         <View style={styles.header}>
-          <View style={styles.headerIconContainer}>
-            <Icon name="settings" size={28} color={Colors.dark.primary} />
-          </View>
           <Text style={styles.headerTitle}>{t('settings')}</Text>
           <Text style={styles.version}>v{APP_VERSION}</Text>
         </View>
 
-        {/* Appearance */}
-        <Text style={styles.sectionTitle}>{t('appearance')}</Text>
-        <View style={styles.section}>
-          <SettingRow
-            icon="globe-outline"
-            label={t('language')}
-            value={settings.language === 'ar' ? t('arabic') : t('english')}
-            onPress={toggleLanguage}
-          />
-          <SettingRow
-            icon="moon-outline"
-            label={t('dark_mode')}
-            toggle
-          />
-        </View>
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
 
-        {/* Playback */}
-        <Text style={styles.sectionTitle}>{t('playback')}</Text>
-        <View style={styles.section}>
-          <SettingRow icon="wifi-outline" label={t('mobile_data_warning')} toggle />
-          <SettingRow icon="play-circle-outline" label={t('auto_play')} toggle />
-          <TouchableOpacity style={styles.row} onPress={() => {
-            const prefs = ['auto', 'high', 'medium', 'low'] as const;
-            const current = prefs.indexOf(settings.qualityPreference as any);
-            const next = prefs[(current + 1) % prefs.length];
-            updateSetting('qualityPreference', next);
-          }}>
-            <View style={styles.rowIconContainer}>
-              <Icon name="options-outline" size={22} color={Colors.dark.primary} />
-            </View>
-            <Text style={styles.rowLabel}>{t('quality_preference')}</Text>
-            <View style={styles.rowRight}>
-              <Text style={styles.rowValue}>{t(`quality_${settings.qualityPreference || 'auto'}`)}</Text>
-              <Icon name="chevron-forward" size={20} color={Colors.dark.textMuted} />
-            </View>
-          </TouchableOpacity>
-          <SettingRow icon="subtitles-outline" label={t('subtitles_enabled')} toggle />
-        </View>
+          {/* ── APPEARANCE ── */}
+          <SectionTitle label={t('appearance')} />
+          <View style={styles.section}>
+            <Row
+              icon="globe-outline"
+              label={t('language')}
+              value={settings.language === 'ar' ? t('arabic') : t('english')}
+              onPress={toggleLanguage}
+              accent
+            />
+            <Row
+              icon="moon-outline"
+              label={t('dark_mode')}
+              rightElement={
+                <Switch
+                  value={settings.darkMode !== false}
+                  onValueChange={v => updateSetting('darkMode', v)}
+                  trackColor={{false: Colors.dark.border, true: Colors.dark.primary}}
+                  thumbColor="#fff"
+                />
+              }
+            />
+          </View>
 
-        {/* Data */}
-        <Text style={styles.sectionTitle}>{t('data')}</Text>
-        <View style={styles.section}>
-          <TouchableOpacity style={styles.row} onPress={handleSync}>
-            <View style={styles.rowIconContainer}>
-              <Icon name="sync-outline" size={22} color={Colors.dark.primary} />
-            </View>
-            <View style={styles.syncInfo}>
-              <Text style={styles.rowLabel}>{t('sync_database')}</Text>
-              <Text style={styles.syncDate}>{t('last_sync')}: {lastSyncDate}</Text>
-            </View>
-            <Icon name="chevron-forward" size={20} color={Colors.dark.textMuted} />
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.row} onPress={handleClearCache}>
-            <View style={styles.rowIconContainer}>
-              <Icon name="trash-outline" size={22} color={Colors.dark.primary} />
-            </View>
-            <Text style={styles.rowLabel}>{t('clear_cache')}</Text>
-            <Icon name="chevron-forward" size={20} color={Colors.dark.textMuted} />
-          </TouchableOpacity>
-        </View>
+          {/* ── PLAYBACK ── */}
+          <SectionTitle label={t('playback')} />
+          <View style={styles.section}>
+            <Row
+              icon="options-outline"
+              label={t('quality_preference')}
+              value={t(`quality_${settings.qualityPreference || 'auto'}`)}
+              onPress={cycleQuality}
+              accent
+            />
+            <Row
+              icon="play-circle-outline"
+              label={t('auto_play')}
+              rightElement={
+                <Switch
+                  value={!!settings.autoPlay}
+                  onValueChange={v => updateSetting('autoPlay', v)}
+                  trackColor={{false: Colors.dark.border, true: Colors.dark.primary}}
+                  thumbColor="#fff"
+                />
+              }
+            />
+            <Row
+              icon="wifi-outline"
+              label={t('mobile_data_warning')}
+              rightElement={
+                <Switch
+                  value={settings.mobileDataWarning !== false}
+                  onValueChange={v => updateSetting('mobileDataWarning', v)}
+                  trackColor={{false: Colors.dark.border, true: Colors.dark.primary}}
+                  thumbColor="#fff"
+                />
+              }
+            />
+            <Row
+              icon="text-outline"
+              label={t('subtitles_enabled')}
+              rightElement={
+                <Switch
+                  value={!!settings.subtitleEnabled}
+                  onValueChange={v => updateSetting('subtitleEnabled', v)}
+                  trackColor={{false: Colors.dark.border, true: Colors.dark.primary}}
+                  thumbColor="#fff"
+                />
+              }
+            />
+          </View>
 
-        {/* About */}
-        <Text style={styles.sectionTitle}>{t('about')}</Text>
-        <View style={styles.section}>
-          <TouchableOpacity style={styles.row} onPress={handleCheckUpdate}>
-            <View style={styles.rowIconContainer}>
-              <Icon name="cloud-download-outline" size={22} color={Colors.dark.primary} />
-            </View>
-            <View style={styles.syncInfo}>
-              <Text style={styles.rowLabel}>{t('check_for_updates')}</Text>
-              <Text style={styles.syncDate}>{t('current_version')}: v{APP_VERSION}</Text>
-            </View>
-            {checkingUpdate ? (
-              <ActivityIndicator size="small" color={Colors.dark.primary} />
-            ) : (
-              <Icon name="chevron-forward" size={20} color={Colors.dark.textMuted} />
-            )}
-          </TouchableOpacity>
-        </View>
+          {/* ── DATA ── */}
+          <SectionTitle label={t('data')} />
+          <View style={styles.section}>
+            <TouchableOpacity style={styles.row} onPress={handleSync} activeOpacity={0.7}>
+              <View style={styles.rowIcon}>
+                <Icon name="sync-outline" size={22} color={Colors.dark.primaryLight} />
+              </View>
+              <View style={styles.rowContent}>
+                <Text style={styles.rowLabel}>{t('sync_database')}</Text>
+                <Text style={styles.rowSub}>{t('last_sync')}: {lastSyncDate}</Text>
+              </View>
+              {syncing
+                ? <ActivityIndicator size="small" color={Colors.dark.primary} />
+                : <Icon name="chevron-forward" size={18} color={Colors.dark.textMuted} />
+              }
+            </TouchableOpacity>
+            <Row
+              icon="trash-outline"
+              label={t('clear_cache')}
+              onPress={handleClearCache}
+            />
+          </View>
 
-        {/* Support */}
-        <Text style={styles.sectionTitle}>{t('support_us')}</Text>
-        <View style={styles.section}>
+          {/* ── ABOUT ── */}
+          <SectionTitle label={t('about')} />
+          <View style={styles.section}>
+            <TouchableOpacity style={styles.row} onPress={handleCheckUpdate} activeOpacity={0.7}>
+              <View style={styles.rowIcon}>
+                <Icon name="cloud-download-outline" size={22} color={Colors.dark.primaryLight} />
+              </View>
+              <View style={styles.rowContent}>
+                <Text style={styles.rowLabel}>{t('check_for_updates')}</Text>
+                <Text style={styles.rowSub}>{t('current_version')}: v{APP_VERSION}</Text>
+              </View>
+              {checkingUpdate
+                ? <ActivityIndicator size="small" color={Colors.dark.primary} />
+                : <Icon name="chevron-forward" size={18} color={Colors.dark.textMuted} />
+              }
+            </TouchableOpacity>
+          </View>
+
+          {/* ── SUPPORT ── */}
+          <SectionTitle label={t('support_us')} />
           <TouchableOpacity
             style={styles.kofiButton}
+            activeOpacity={0.85}
             onPress={() => Linking.openURL('https://ko-fi.com/abdobest')}
           >
-            <Icon name="heart" size={22} color="#fff" />
-            <Text style={styles.kofiText}>Ko-fi</Text>
+            <Icon name="heart" size={20} color="#fff" />
+            <Text style={styles.kofiText}>Support on Ko-fi ☕</Text>
           </TouchableOpacity>
-        </View>
+
+          <View style={{height: 30}} />
+        </ScrollView>
       </SafeAreaView>
     </View>
   );
 };
 
-// Need ActivityIndicator
-import {ActivityIndicator} from 'react-native';
+// ── Sub-components ──────────────────────────────────────────────────
+
+const SectionTitle = ({label}: {label: string}) => (
+  <Text style={styles.sectionTitle}>{label}</Text>
+);
+
+interface RowProps {
+  icon: string;
+  label: string;
+  value?: string;
+  onPress?: () => void;
+  rightElement?: React.ReactNode;
+  accent?: boolean;
+}
+
+const Row = ({icon, label, value, onPress, rightElement, accent}: RowProps) => (
+  <TouchableOpacity style={styles.row} onPress={onPress} activeOpacity={onPress ? 0.7 : 1}>
+    <View style={styles.rowIcon}>
+      <Icon name={icon as any} size={22} color={accent ? Colors.dark.accentLight : Colors.dark.primaryLight} />
+    </View>
+    <Text style={styles.rowLabel}>{label}</Text>
+    {rightElement || (
+      <View style={styles.rowRight}>
+        {value ? <Text style={styles.rowValue}>{value}</Text> : null}
+        {onPress ? <Icon name="chevron-forward" size={18} color={Colors.dark.textMuted} /> : null}
+      </View>
+    )}
+  </TouchableOpacity>
+);
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: Colors.dark.background,
   },
-  content: {
-    flex: 1,
-  },
+  safe: {flex: 1},
   header: {
-    paddingHorizontal: 16,
-    paddingTop: 20,
-    paddingBottom: 16,
-    alignItems: 'center',
-  },
-  headerIconContainer: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: `${Colors.dark.primary}20`,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 12,
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 8,
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
   },
   headerTitle: {
     color: Colors.dark.text,
-    fontSize: Typography.sizes.heading,
-    fontWeight: Typography.weights.bold as any,
+    fontSize: 28,
+    fontWeight: '800',
     fontFamily: 'Rubik',
   },
   version: {
     color: Colors.dark.textMuted,
-    fontSize: Typography.sizes.md,
-    marginTop: 4,
+    fontSize: 13,
+    fontFamily: 'Rubik',
+  },
+  scrollContent: {
+    paddingBottom: 100,
   },
   sectionTitle: {
-    color: Colors.dark.textSecondary,
-    fontSize: Typography.sizes.sm,
-    fontWeight: Typography.weights.semibold as any,
+    color: Colors.dark.textMuted,
+    fontSize: 11,
+    fontWeight: '700',
     textTransform: 'uppercase',
-    letterSpacing: 1,
-    paddingHorizontal: 16,
+    letterSpacing: 1.5,
+    paddingHorizontal: 20,
     marginTop: 24,
-    marginBottom: 10,
+    marginBottom: 8,
+    fontFamily: 'Rubik',
   },
   section: {
     backgroundColor: Colors.dark.surface,
-    borderRadius: 14,
+    borderRadius: 16,
     marginHorizontal: 16,
     overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
   },
   row: {
     flexDirection: 'row',
@@ -253,52 +292,57 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: Colors.dark.border,
   },
-  rowIconContainer: {
-    width: 38,
-    height: 38,
+  rowIcon: {
+    width: 38, height: 38,
     borderRadius: 10,
-    backgroundColor: `${Colors.dark.primary}15`,
+    backgroundColor: `${Colors.dark.primary}18`,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 14,
   },
+  rowContent: {flex: 1},
   rowLabel: {
     flex: 1,
     color: Colors.dark.text,
-    fontSize: Typography.sizes.md,
-    fontWeight: Typography.weights.medium as any,
+    fontSize: 15,
+    fontWeight: '500',
+    fontFamily: 'Rubik',
+  },
+  rowSub: {
+    color: Colors.dark.textMuted,
+    fontSize: 12,
+    marginTop: 2,
+    fontFamily: 'Rubik',
   },
   rowValue: {
     color: Colors.dark.textSecondary,
-    fontSize: Typography.sizes.sm,
+    fontSize: 13,
     marginRight: 4,
+    fontFamily: 'Rubik',
   },
   rowRight: {
     flexDirection: 'row',
     alignItems: 'center',
   },
-  syncInfo: {
-    flex: 1,
-  },
-  syncDate: {
-    color: Colors.dark.textMuted,
-    fontSize: Typography.sizes.xs,
-    marginTop: 2,
-  },
   kofiButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#29ABE2',
-    margin: 16,
-    paddingVertical: 16,
-    borderRadius: 14,
+    backgroundColor: '#FF5E5B',
+    marginHorizontal: 16,
+    paddingVertical: 18,
+    borderRadius: 16,
+    gap: 10,
+    shadowColor: '#FF5E5B',
+    shadowOffset: {width: 0, height: 4},
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+    elevation: 6,
   },
   kofiText: {
     color: '#fff',
-    fontSize: Typography.sizes.lg,
-    fontWeight: Typography.weights.semibold as any,
-    marginLeft: 10,
+    fontSize: 16,
+    fontWeight: '700',
     fontFamily: 'Rubik',
   },
 });
