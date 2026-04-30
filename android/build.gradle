@@ -25,3 +25,22 @@ allprojects {
         maven { url 'https://www.jitpack.io' }
     }
 }
+
+// Redirect old artifact name to new one for subprojects like blob-util
+subprojects {
+    configurations.all {
+        resolutionStrategy {
+            dependencySubstitution {
+                substitute module('com.facebook.react:react-native') using module('com.facebook.react:react-android:+')
+            }
+        }
+    }
+    // Disable CMake tasks — not needed with newArchEnabled=false, prevents StackOverflowError
+    afterEvaluate {
+        tasks.configureEach { task ->
+            if (task.name.contains("CMake")) {
+                task.enabled = false
+            }
+        }
+    }
+}
