@@ -22,17 +22,6 @@ public class MainApplication extends Application implements ReactApplication {
                     @SuppressWarnings("UnnecessaryLocalVariable")
                     List<ReactPackage> packages = new PackageList(this).getPackages();
                     return packages;
-                }
-
-                @Override
-                protected String getJSMainModuleName() {
-                    return "index";
-                }
-
-                @Override
-                protected boolean isNewArchEnabled() {
-                    return false;
-                }
 
                 @Override
                 protected Boolean isHermesEnabled() {
