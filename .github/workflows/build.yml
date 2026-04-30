@@ -24,6 +24,8 @@ jobs:
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
+        env:
+          SKIP_JDK_VERSION_CHECK: true
 
       - name: Install NDK
         run: sdkmanager --install "ndk;23.1.7779620"
@@ -67,6 +69,7 @@ jobs:
           JAVA_TOOL_OPTIONS: ""
           _JAVA_OPTIONS: ""
           JDK_JAVA_OPTIONS: ""
+          CMAKE_JAVA_TOOL_OPTIONS: ""
         run: |
           chmod +x gradlew
           ./gradlew assembleRelease --no-daemon \
