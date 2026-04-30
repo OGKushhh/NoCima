@@ -1,8 +1,6 @@
-import {MMKV} from 'react-native-mmkv';
+import {storage} from './Storage';
 
-export const storage = new MMKV({
-  id: 'abdobest-storage',
-});
+export {storage};
 
 // ─── Storage Keys ───────────────────────────────────────────────────
 export const storageKeys = {

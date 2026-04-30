@@ -22,9 +22,9 @@ type ContentDict = Record<string, ContentItem>;
  * Load metadata for ONE category only.
  *
  * Flow:
- *  1. Check MMKV cache — if fresh (<24hr), return immediately
+ *  1. Check cache — if fresh (<24hr), return immediately
  *  2. Otherwise fetch from HF Spaces API  (e.g. /api/movies)
- *  3. Store in MMKV with timestamp
+ *  3. Store on disk with timestamp in AsyncStorage
  *  4. On network error, return stale cache if available
  */
 export const loadCategory = async (

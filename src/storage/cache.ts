@@ -1,145 +1,212 @@
+/**
+ * Cache layer for AbdoBest.
+ *
+ * Architecture:
+ *   - react-native-blob-util  →  large JSON blobs on disk (metadata per category)
+ *   - Storage (AsyncStorage)   →  timestamps + small URL cache entries
+ *
+ * Metadata persistence:
+ *   - Cached metadata (movies, series, anime catalogs) stored as files on disk
+ *   - 24h TTL controls when to RE-FETCH from server
+ *   - 6h TTL for extracted video URLs
+ *   - Data persists until user clears cache or uninstalls
+ */
+
 import ReactNativeBlobUtil from 'react-native-blob-util';
+import {storage, storageKeys, CATEGORY_KEYS} from './index';
+import {METADATA_TTL_MS, VIDEO_URL_TTL_MS} from '../constants/endpoints';
 
-const CACHE_DIR = ReactNativeBlobUtil.fs.dirs.CacheDir;
+// ─── Metadata Directory ─────────────────────────────────────────────
 
-export const CACHE_KEY_AUDIO = 'cached_audio';
-export const CACHE_KEY_VIDEO = 'cached_video';
-export const CACHE_KEY_IMAGE = 'cached_image';
+const METADATA_DIR = `${ReactNativeBlobUtil.fs.dirs.DocumentDir}/metadata`;
 
-interface CacheEntry {
-  url: string;
-  localPath: string;
-  timestamp: number;
-  size: number;
-}
-
-function getCacheMap(): Record<string, CacheEntry[]> {
+/** Ensure the metadata directory exists. */
+const ensureMetadataDir = async (): Promise<void> => {
   try {
-    const map = localStorage.getItem('cacheMap');
-    return map ? JSON.parse(map) : {};
-  } catch {
-    return {};
+    const exists = await ReactNativeBlobUtil.fs.exists(METADATA_DIR);
+    if (!exists) {
+      await ReactNativeBlobUtil.fs.mkdir(METADATA_DIR);
+    }
+  } catch (e) {
+    console.warn('[Cache] Failed to create metadata dir:', e);
   }
-}
+};
 
-async function saveCacheMap(map: Record<string, CacheEntry[]>): Promise<void> {
+/** Get the file path for a category's JSON file. */
+const getCategoryFilePath = (category: string): string => {
+  return `${METADATA_DIR}/${category}.json`;
+};
+
+// ─── Video URL Cache (6hr TTL) ── stays in Storage ─────────────────
+// URL cache entries are small (url + qualities + timestamp) → Storage is ideal.
+
+export const setVideoUrlCache = (key: string, url: string, qualities: string[]) => {
+  const entry = {url, qualities, timestamp: Date.now()};
+  storage.set(storageKeys.VIDEO_URL_CACHE + key, JSON.stringify(entry));
+};
+
+export const getVideoUrlCache = (key: string): {url: string; qualities: string[]} | null => {
+  const raw = storage.getString(storageKeys.VIDEO_URL_CACHE + key);
+  if (!raw) return null;
   try {
-    localStorage.setItem('cacheMap', JSON.stringify(map));
+    const entry = JSON.parse(raw);
+    if (Date.now() - entry.timestamp > VIDEO_URL_TTL_MS) {
+      storage.delete(storageKeys.VIDEO_URL_CACHE + key);
+      return null;
+    }
+    return {url: entry.url, qualities: entry.qualities};
   } catch {
-    // ignore
+    storage.delete(storageKeys.VIDEO_URL_CACHE + key);
+    return null;
   }
-}
+};
 
-export async function cacheFile(
-  url: string,
-  type: string,
-  progressCallback?: (progress: number) => void
-): Promise<string> {
-  const map = getCacheMap();
-  const entries = map[type] || [];
-  const existing = entries.find((e) => e.url === url);
+// ─── Metadata Cache (per-category, 24hr TTL) ── on disk ───────────
+// Large JSON blobs (13,500+ items) are stored as files via react-native-blob-util.
+// Only timestamps stay in Storage for fast staleness checks.
 
-  if (existing) {
-    const exists = await ReactNativeBlobUtil.fs.exists(existing.localPath);
-    if (exists) {
-      return existing.localPath;
+/**
+ * Store metadata for a specific category.
+ * - JSON data → written to disk as a file
+ * - Timestamp → stored in Storage for fast staleness checks
+ */
+export const setMetadataWithTimestamp = async (category: string, data: any) => {
+  const keys = CATEGORY_KEYS[category];
+  if (!keys) return;
+
+  await ensureMetadataDir();
+
+  try {
+    const filePath = getCategoryFilePath(category);
+    await ReactNativeBlobUtil.fs.writeFile(filePath, JSON.stringify(data), 'utf8');
+    storage.set(keys.timestamp, Date.now());
+  } catch (e) {
+    console.warn(`[Cache] Failed to write metadata for ${category}:`, e);
+  }
+};
+
+/**
+ * Get cached metadata for a category.
+ * Returns null if not cached OR if older than 24 hours.
+ */
+export const getMetadataIfFresh = async (category: string): Promise<any | null> => {
+  const keys = CATEGORY_KEYS[category];
+  if (!keys) return null;
+
+  // Fast check: timestamp from Storage
+  const ts = storage.getNumber(keys.timestamp);
+  if (!ts) return null;
+
+  // Expired?
+  if (Date.now() - ts > METADATA_TTL_MS) return null;
+
+  // Read from disk
+  try {
+    const filePath = getCategoryFilePath(category);
+    const exists = await ReactNativeBlobUtil.fs.exists(filePath);
+    if (!exists) return null;
+
+    const raw = await ReactNativeBlobUtil.fs.readFile(filePath, 'utf8');
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * Get cached metadata regardless of age (fallback when offline).
+ */
+export const getMetadataAnyAge = async (category: string): Promise<any | null> => {
+  try {
+    const filePath = getCategoryFilePath(category);
+    const exists = await ReactNativeBlobUtil.fs.exists(filePath);
+    if (!exists) return null;
+
+    const raw = await ReactNativeBlobUtil.fs.readFile(filePath, 'utf8');
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * Get the timestamp for a category's last fetch (epoch ms).
+ * Stored in Storage for O(1) access — no disk read needed.
+ */
+export const getCategoryTimestamp = (category: string): number => {
+  const keys = CATEGORY_KEYS[category];
+  if (!keys) return 0;
+  return storage.getNumber(keys.timestamp) || 0;
+};
+
+/**
+ * Check if ANY category is older than 24 hours.
+ */
+export const isAnyCategoryStale = (): boolean => {
+  for (const category of Object.keys(CATEGORY_KEYS)) {
+    const ts = getCategoryTimestamp(category);
+    if (ts === 0 || Date.now() - ts > METADATA_TTL_MS) {
+      return true;
     }
   }
+  return false;
+};
 
-  const ext = url.split('.').pop() || 'tmp';
-  const fileName = `${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
-  const localPath = `${CACHE_DIR}/${fileName}`;
+/**
+ * Clear all cached metadata files and timestamps.
+ */
+export const clearAllMetadataCache = async () => {
+  for (const category of Object.keys(CATEGORY_KEYS)) {
+    const keys = CATEGORY_KEYS[category];
+    storage.delete(keys.timestamp);
 
-  await ReactNativeBlobUtil.config({
-    path: localPath,
-    fileCache: true,
-  }).fetch('GET', url, {});
-
-  const newEntry: CacheEntry = {
-    url,
-    localPath,
-    timestamp: Date.now(),
-    size: 0,
-  };
-
-  try {
-    const stat = await ReactNativeBlobUtil.fs.stat(localPath);
-    newEntry.size = parseInt(stat.size, 10) || 0;
-  } catch {
-    // ignore
-  }
-
-  map[type] = [newEntry, ...entries.filter((e) => e.url !== url)];
-  await saveCacheMap(map);
-
-  return localPath;
-}
-
-export async function getCachedFile(
-  url: string,
-  type: string
-): Promise<string | null> {
-  const map = getCacheMap();
-  const entries = map[type] || [];
-  const existing = entries.find((e) => e.url === url);
-
-  if (!existing) return null;
-
-  try {
-    const exists = await ReactNativeBlobUtil.fs.exists(existing.localPath);
-    if (exists) {
-      return existing.localPath;
-    }
-  } catch {
-    // ignore
-  }
-
-  return null;
-}
-
-export async function clearCache(type?: string): Promise<void> {
-  const map = getCacheMap();
-
-  if (type) {
-    const entries = map[type] || [];
-    for (const entry of entries) {
-      try {
-        const exists = await ReactNativeBlobUtil.fs.exists(entry.localPath);
-        if (exists) {
-          await ReactNativeBlobUtil.fs.unlink(entry.localPath);
-        }
-      } catch {
-        // ignore
+    try {
+      const filePath = getCategoryFilePath(category);
+      const exists = await ReactNativeBlobUtil.fs.exists(filePath);
+      if (exists) {
+        await ReactNativeBlobUtil.fs.unlink(filePath);
       }
-    }
-    map[type] = [];
-  } else {
-    for (const key of Object.keys(map)) {
-      for (const entry of map[key]) {
-        try {
-          const exists = await ReactNativeBlobUtil.fs.exists(entry.localPath);
-          if (exists) {
-            await ReactNativeBlobUtil.fs.unlink(entry.localPath);
-          }
-        } catch {
-          // ignore
-        }
-      }
+    } catch {
+      // Ignore cleanup errors
     }
   }
+};
 
-  await saveCacheMap(map);
-}
+// ─── Legacy helpers (kept for SettingsScreen compatibility) ─────────
 
-export async function getCacheSize(): Promise<number> {
-  const map = getCacheMap();
-  let totalSize = 0;
-
-  for (const key of Object.keys(map)) {
-    for (const entry of map[key]) {
-      totalSize += entry.size || 0;
-    }
+export const setMetadata = async (key: string, data: any) => {
+  await ensureMetadataDir();
+  try {
+    const filePath = `${METADATA_DIR}/${key}.json`;
+    await ReactNativeBlobUtil.fs.writeFile(filePath, JSON.stringify(data), 'utf8');
+  } catch {
+    // Silently fail
   }
+};
 
-  return totalSize;
-}
+export const getMetadata = async (key: string): Promise<any | null> => {
+  try {
+    const filePath = `${METADATA_DIR}/${key}.json`;
+    const exists = await ReactNativeBlobUtil.fs.exists(filePath);
+    if (!exists) return null;
+    const raw = await ReactNativeBlobUtil.fs.readFile(filePath, 'utf8');
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+};
+
+export const getLastSync = (): number => {
+  let latest = 0;
+  for (const cat of Object.keys(CATEGORY_KEYS)) {
+    const ts = getCategoryTimestamp(cat);
+    if (ts > latest) latest = ts;
+  }
+  return latest;
+};
+
+export const setLastSync = () => {
+  // No-op — timestamps are set per-category in setMetadataWithTimestamp
+};
+
+export const isSyncNeeded = (): boolean => isAnyCategoryStale();

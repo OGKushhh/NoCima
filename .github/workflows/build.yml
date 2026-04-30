@@ -22,12 +22,6 @@ jobs:
           distribution: 'zulu'
           java-version: '17'
 
-      - name: Clear JVM env vars
-        run: |
-          echo "JAVA_TOOL_OPTIONS=" >> $GITHUB_ENV
-          echo "_JAVA_OPTIONS=" >> $GITHUB_ENV
-          echo "JDK_JAVA_OPTIONS=" >> $GITHUB_ENV
-
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
         env:
@@ -35,9 +29,6 @@ jobs:
 
       - name: Install NDK
         run: sdkmanager --install "ndk;23.1.7779620"
-
-      - name: Remove cmake to prevent CMake-based errors
-        run: rm -rf $ANDROID_SDK_ROOT/cmake
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -65,10 +56,6 @@ jobs:
 
       - name: Build Release APK
         working-directory: android
-        env:
-          JAVA_TOOL_OPTIONS: ""
-          _JAVA_OPTIONS: ""
-          JDK_JAVA_OPTIONS: ""
         run: |
           chmod +x gradlew
           ./gradlew assembleRelease --no-daemon --stacktrace

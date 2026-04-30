@@ -1,8 +1,6 @@
 import axios from 'axios';
 import {GITHUB_RELEASES_URL, APP_VERSION} from '../constants/endpoints';
-import {MMKV} from 'react-native-mmkv';
-
-const storage = new MMKV({id: 'abdobest-update'});
+import {storage} from '../storage/Storage';
 
 export interface ReleaseInfo {
   version: string;
@@ -92,10 +90,8 @@ export const skipVersion = (version: string) => {
  * Open the update download URL in the device browser
  */
 export const openUpdateUrl = (url: string) => {
-  // Try opening directly — will open in browser
   const {Linking} = require('react-native');
   Linking.openURL(url).catch(() => {
-    // Fallback: just open in browser
     Linking.openURL(url);
   });
 };

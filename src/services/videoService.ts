@@ -2,15 +2,15 @@
  * Video Service for AbdoBest.
  *
  * Handles:
- *  - Stream URL resolution (with MMKV 6h URL cache)
- *  - Download state persistence (via MMKV)
+ *  - Stream URL resolution (with 6h URL cache via AsyncStorage)
+ *  - Download state persistence (via AsyncStorage)
  *
  * Download feature is currently disabled.
  * When re-enabled, HLS downloads will require a compatible media library.
  *
  * Storage architecture:
- *  - MMKV (Nitro) → download queue, settings, URL cache (6h TTL)
- *  - react-native-fs-turbo → metadata JSON files on disk, per-category (24h TTL)
+ *  - AsyncStorage → download queue, settings, URL cache (6h TTL)
+ *  - react-native-blob-util → metadata JSON files on disk, per-category (24h TTL)
  *
  * Metadata persistence:
  *  - Cached metadata (movies, series, anime catalogs) is stored on disk
@@ -33,10 +33,10 @@ export interface VideoServiceCallbacks {
 
 /**
  * Get a stream URL for a content item.
- * Uses MMKV cache (6h TTL) to avoid redundant /extract calls.
+ * Uses URL cache (6h TTL) to avoid redundant /extract calls.
  *
  * URL caching behavior:
- *  - First call → extract from backend → cache in MMKV with 6h timestamp
+ *  - First call → extract from backend → cache with 6h timestamp
  *  - Within 6h → return cached URL immediately (no network call)
  *  - After 6h → re-extract once, update cache
  *  - This is NOT session-based — the cache persists across app restarts
@@ -56,7 +56,7 @@ export const getRefreshedStreamUrl = async (cacheKey: string, sourceUrl: string)
 };
 
 /**
- * Persist download state to MMKV.
+ * Persist download state to AsyncStorage.
  * This data persists indefinitely (not session-based).
  */
 export const saveDownloadState = (downloads: any[]) => {
@@ -64,7 +64,7 @@ export const saveDownloadState = (downloads: any[]) => {
 };
 
 /**
- * Load download state from MMKV.
+ * Load download state from AsyncStorage.
  * Survives app restarts, device reboots, and process kills.
  */
 export const getDownloadState = (): any[] => {

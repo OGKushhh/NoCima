@@ -35,12 +35,4 @@ subprojects {
             }
         }
     }
-    // Disable CMake tasks — not needed with newArchEnabled=false, prevents StackOverflowError
-    afterEvaluate {
-        tasks.configureEach { task ->
-            if (task.name.contains("CMake")) {
-                task.enabled = false
-            }
-        }
-    }
 }
