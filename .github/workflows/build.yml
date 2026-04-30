@@ -22,6 +22,12 @@ jobs:
           distribution: 'zulu'
           java-version: '17'
 
+      - name: Clear JVM env vars
+        run: |
+          echo "JAVA_TOOL_OPTIONS=" >> $GITHUB_ENV
+          echo "_JAVA_OPTIONS=" >> $GITHUB_ENV
+          echo "JDK_JAVA_OPTIONS=" >> $GITHUB_ENV
+
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
         env:
