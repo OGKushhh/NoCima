@@ -52,6 +52,8 @@ jobs:
         working-directory: android
         run: |
           chmod +x gradlew
+          unset JAVA_TOOL_OPTIONS
+          unset _JAVA_OPTIONS
           ./gradlew assembleRelease --no-daemon
 
       - name: Upload APK Artifact
