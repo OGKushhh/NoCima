@@ -51,7 +51,7 @@ jobs:
           rm -rf android/.gradle
           rm -rf android/app/.cxx
           rm -rf android/app/build
-          rm -rf ~/.gradle/caches/transforms-*
+          rm -rf ~/.gradle/caches
 
       - name: Create local.properties
         run: echo "sdk.dir=$ANDROID_SDK_ROOT" > android/local.properties
