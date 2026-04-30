@@ -16,6 +16,10 @@ export interface ContentItem {
   Seasons?: Record<string, any>;
   Episodes?: Record<string, any>;
   'Number Of Episodes'?: number;
+  // Rating & views (for cards)
+  Rating?: string;
+  Views?: string;
+  Year?: string;
 }
 
 export interface TrendingItem {
@@ -65,6 +69,9 @@ export interface UserSettings {
   mobileDataWarning: boolean;
   autoPlay: boolean;
   showArabicTitles: boolean;
+  darkMode: boolean;
+  qualityPreference: 'high' | 'medium' | 'low' | 'auto';
+  subtitleEnabled: boolean;
 }
 
 export type ContentCategory = 'movies' | 'anime' | 'series' | 'tvshows' | 'asian-series';

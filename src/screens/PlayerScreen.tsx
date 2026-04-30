@@ -3,8 +3,9 @@ import {
   View, StyleSheet, Dimensions, TouchableOpacity, Text,
   ActivityIndicator, StatusBar,
 } from 'react-native';
-import Video, {VideoRef, OnProgressData, ResizeMode} from 'react-native-video';
+import Video, {VideoRef, OnProgressData, ResizeMode, OnBufferData} from 'react-native-video';
 import {useRoute, useNavigation} from '@react-navigation/native';
+import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/Ionicons';
 import {Colors} from '../theme/colors';
 import {Typography} from '../theme/typography';
@@ -17,6 +18,7 @@ export const PlayerScreen: React.FC = () => {
   const navigation = useNavigation<any>();
   const {url, title} = route.params || {};
   const {t} = useTranslation();
+  const insets = useSafeAreaInsets();
 
   const videoRef = useRef<VideoRef>(null);
   const [playing, setPlaying] = useState(true);
@@ -55,8 +57,8 @@ export const PlayerScreen: React.FC = () => {
     triggerHideControls();
   };
 
-  const handleBuffer = (e: any) => {
-    setBuffering(e.isBuffering);
+  const handleBuffer: (data: OnBufferData) => void = (data) => {
+    setBuffering(data.isBuffering);
   };
 
   const handleEnd = () => {
@@ -64,7 +66,8 @@ export const PlayerScreen: React.FC = () => {
     setShowControls(true);
   };
 
-  const handleError = () => {
+  const handleError = (err: any) => {
+    console.error('[Player] Video error:', err?.error?.errorString || err?.error || err);
     setError(t('video_unavailable'));
     setBuffering(false);
   };
@@ -87,6 +90,7 @@ export const PlayerScreen: React.FC = () => {
   if (error) {
     return (
       <View style={styles.errorContainer}>
+        <StatusBar barStyle="light-content" backgroundColor={Colors.dark.background} />
         <Icon name="alert-circle-outline" size={48} color={Colors.dark.error} />
         <Text style={styles.errorText}>{error}</Text>
         <TouchableOpacity style={styles.errorButton} onPress={() => navigation.goBack()}>
@@ -118,6 +122,10 @@ export const PlayerScreen: React.FC = () => {
           playWhenInactive={false}
           paused={!playing}
           style={styles.video}
+          // HLS-specific props for better compatibility
+          preventsDisplaySleepDuringVideoPlayback={true}
+          minLoadRetryCount={3}
+          maxBitRate={8000000}
         />
 
         {buffering && (
@@ -127,7 +135,13 @@ export const PlayerScreen: React.FC = () => {
         )}
 
         {!playing && !buffering && (
-          <TouchableOpacity style={styles.centerPlay} onPress={() => { setPlaying(true); triggerHideControls(); }}>
+          <TouchableOpacity
+            style={styles.centerPlay}
+            onPress={() => {
+              setPlaying(true);
+              triggerHideControls();
+            }}
+          >
             <Icon name="play" size={64} color="#fff" />
           </TouchableOpacity>
         )}
@@ -136,7 +150,7 @@ export const PlayerScreen: React.FC = () => {
       {showControls && (
         <>
           {/* Top bar */}
-          <View style={styles.topControls}>
+          <View style={[styles.topControls, {paddingTop: insets.top + 8}]}>
             <TouchableOpacity style={styles.topButton} onPress={() => navigation.goBack()}>
               <Icon name="arrow-back" size={28} color="#fff" />
             </TouchableOpacity>
@@ -145,7 +159,7 @@ export const PlayerScreen: React.FC = () => {
           </View>
 
           {/* Bottom controls */}
-          <View style={styles.bottomControls}>
+          <View style={[styles.bottomControls, {paddingBottom: insets.bottom + 16}]}>
             {/* Seek bar */}
             <TouchableOpacity
               style={styles.seekBarContainer}
@@ -171,7 +185,13 @@ export const PlayerScreen: React.FC = () => {
                 <Icon name="replay-10" size={32} color="#fff" />
               </TouchableOpacity>
 
-              <TouchableOpacity style={styles.playPauseButton} onPress={() => { setPlaying(!playing); triggerHideControls(); }}>
+              <TouchableOpacity
+                style={styles.playPauseButton}
+                onPress={() => {
+                  setPlaying(!playing);
+                  triggerHideControls();
+                }}
+              >
                 <Icon name={playing ? 'pause' : 'play'} size={36} color="#fff" />
               </TouchableOpacity>
 
@@ -222,7 +242,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingTop: 40,
     paddingBottom: 12,
     backgroundColor: 'rgba(0,0,0,0.6)',
   },
@@ -245,7 +264,6 @@ const styles = StyleSheet.create({
     right: 0,
     paddingHorizontal: 16,
     paddingTop: 16,
-    paddingBottom: 30,
     backgroundColor: 'rgba(0,0,0,0.6)',
   },
   seekBarContainer: {

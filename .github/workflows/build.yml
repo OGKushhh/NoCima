@@ -2,7 +2,7 @@ name: Build Android APK
 
 on:
   push:
-    branches: [main]
+    branches: [launch-fix]
     tags: ['v*']
   workflow_dispatch:
 
@@ -11,11 +11,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    env:
-      JAVA_TOOL_OPTIONS: "-Xmx4096m -XX:MaxMetaspaceSize=1024m"
-      _JAVA_OPTIONS: "-Xmx4096m -XX:MaxMetaspaceSize=1024m"
-      GRADLE_OPTS: ""
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
     steps:
       - name: Checkout code
@@ -29,6 +24,11 @@ jobs:
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
+        env:
+          SKIP_JDK_VERSION_CHECK: true
+
+      - name: Install NDK
+        run: sdkmanager --install "ndk;23.1.7779620"
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -38,27 +38,27 @@ jobs:
       - name: Clean install
         run: |
           rm -rf node_modules package-lock.json
-          npm install
+          npm install --legacy-peer-deps
 
       - name: Clean stale Android build cache
         run: |
           rm -rf android/.gradle
           rm -rf android/app/.cxx
           rm -rf android/app/build
-          rm -rf ~/.gradle/caches/transforms-*
+          rm -rf ~/.gradle/caches
 
       - name: Create local.properties
         run: echo "sdk.dir=$ANDROID_SDK_ROOT" > android/local.properties
 
-      - name: Setup Gradle 8.10.2
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.10.2'
-          cache-disabled: true
+      - name: Fix gradlew DEFAULT_JVM_OPTS
+        working-directory: android
+        run: sed -i 's/DEFAULT_JVM_OPTS=.*/DEFAULT_JVM_OPTS=""/' gradlew
 
       - name: Build Release APK
         working-directory: android
-        run: gradle assembleRelease --no-daemon
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon --stacktrace
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4

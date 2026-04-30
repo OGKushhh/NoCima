@@ -15,5 +15,11 @@ export const Typography = {
     semibold: '600' as const,
     bold: '700' as const,
     black: '900' as const,
-  }
+  },
+  // Font families
+  fonts: {
+    english: 'Rubik',
+    arabic: 'Rubik', // Will be updated when Arabic font is chosen
+    mono: 'monospace',
+  },
 };

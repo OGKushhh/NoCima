@@ -1,48 +1,42 @@
 apply plugin: "com.android.application"
-apply plugin: "org.jetbrains.kotlin.android"
 apply plugin: "com.facebook.react"
+apply plugin: "org.jetbrains.kotlin.android"
 
-react {
-    autolinkLibrariesWithApp()
-}
+import com.android.build.OutputFile
 
-def enableProguardInReleaseBuilds = false
+project.ext.vectoricons = [
+    iconFontNames: [ 'MaterialCommunityIcons.ttf', 'FontAwesome.ttf' ]
+]
+apply from: "../../node_modules/react-native-vector-icons/fonts.gradle"
+
+def enableSeparateBuildPerCPUArchitecture = false
+def enableProguardInReleaseBuilds = true
 def jscFlavor = 'org.webkit:android-jsc:+'
 
+def reactNativeArchitectures() {
+    def value = project.getProperties().get("reactNativeArchitectures")
+    return value ? value.split(",") : ["armeabi-v7a", "x86", "x86_64", "arm64-v8a"]
+}
+
 android {
-    compileSdk rootProject.ext.compileSdkVersion
-    namespace "com.abdobest"
     ndkVersion rootProject.ext.ndkVersion
-
-    compileOptions {
-        sourceCompatibility JavaVersion.VERSION_17
-        targetCompatibility JavaVersion.VERSION_17
-    }
-
-    // Enable prefab for New Architecture
-    buildFeatures {
-        prefab true
-    }
+    compileSdkVersion rootProject.ext.compileSdkVersion
+    namespace "com.abdobest"
 
     defaultConfig {
         applicationId "com.abdobest"
-        minSdkVersion 24
+        minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
         versionName "1.0"
+    }
 
-        // Include 32-bit ABIs for older devices
-        ndk {
-            abiFilters "armeabi-v7a", "arm64-v8a", "x86", "x86_64"
-        }
-
-        // Force all ABIs and explicit CMake arguments
-        externalNativeBuild {
-            cmake {
-                arguments "-DANDROID_STL=c++_shared",
-                          "-DANDROID_TOOLCHAIN=clang"
-                abiFilters "armeabi-v7a", "arm64-v8a", "x86", "x86_64"
-            }
+    splits {
+        abi {
+            reset()
+            enable enableSeparateBuildPerCPUArchitecture
+            universalApk false
+            include (*reactNativeArchitectures())
         }
     }
 
@@ -66,45 +60,35 @@ android {
         }
     }
 
-    // Build separate APKs per ABI
-    splits {
-        abi {
-            enable true
-            reset()
-            include "armeabi-v7a", "arm64-v8a", "x86", "x86_64"
-            universalApk true
-        }
-    }
-
-    packagingOptions {
-        pickFirst '**/libc++_shared.so'
-        pickFirst '**/libjsi.so'
-        pickFirst '**/libreact_nativemodule_core.so'
-        pickFirst '**/libturbomodulejsijni.so'
-    }
-}
-
-configurations.all {
-    resolutionStrategy {
-        force 'androidx.core:core:1.15.0'
-        force 'androidx.core:core-ktx:1.15.0'
-        // Fix duplicate AndroidSVG (JAR vs AAR) from @d11/react-native-fast-image
-        eachDependency { details ->
-            if (details.requested.group == 'com.caverock' && details.requested.name == 'androidsvg-aar') {
-                details.useTarget 'com.caverock:androidsvg-aar:1.4'
+    applicationVariants.all { variant ->
+        variant.outputs.each { output ->
+            def versionCodes = ["armeabi-v7a": 1, "x86": 2, "arm64-v8a": 3, "x86_64": 4]
+            def abi = output.getFilter(OutputFile.ABI)
+            if (abi != null) {
+                output.versionCodeOverride =
+                    defaultConfig.versionCode * 1000 + versionCodes.get(abi)
             }
         }
     }
-    // Exclude the JAR variant — only use AAR
-    exclude group: 'com.caverock', module: 'androidsvg'
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_11
+        targetCompatibility JavaVersion.VERSION_11
+    }
+
+    kotlinOptions {
+        jvmTarget = '11'
+    }
 }
 
 dependencies {
     implementation("com.facebook.react:react-android")
-
+    implementation("androidx.swiperefreshlayout:swiperefreshlayout:1.0.0")
     if (hermesEnabled.toBoolean()) {
         implementation("com.facebook.react:hermes-android")
     } else {
         implementation jscFlavor
     }
 }
+
+apply from: file("../../node_modules/@react-native-community/cli-platform-android/native_modules.gradle"); applyNativeModulesAppBuildGradle(project)

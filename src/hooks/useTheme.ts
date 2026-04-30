@@ -5,7 +5,7 @@ import {getSettings, saveSettings} from '../storage';
 export const useTheme = () => {
   const [mode, setMode] = useState<ThemeMode>(() => {
     const settings = getSettings();
-    return (settings.darkMode || false) ? 'dark' : 'light';
+    return settings.darkMode ? 'dark' : 'light';
   });
 
   const toggleTheme = useCallback(() => {

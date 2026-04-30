@@ -31,9 +31,6 @@ const HomeTabs: React.FC = () => {
             case 'BrowseTab':
               iconName = focused ? 'grid' : 'grid-outline';
               break;
-            case 'SearchTab':
-              iconName = focused ? 'search' : 'search-outline';
-              break;
             case 'DownloadsTab':
               iconName = focused ? 'download' : 'download-outline';
               break;
@@ -43,22 +40,25 @@ const HomeTabs: React.FC = () => {
             default:
               iconName = 'ellipse-outline';
           }
-          return <Icon name={iconName} size={size} color={color} />;
+          return <Icon name={iconName} size={24} color={color} />;
         },
         tabBarActiveTintColor: Colors.dark.primary,
         tabBarInactiveTintColor: Colors.dark.textMuted,
         tabBarStyle: {
           backgroundColor: Colors.dark.tabBar,
           borderTopColor: Colors.dark.border,
-          height: 60,
-          paddingBottom: 8,
-          paddingTop: 4,
+          height: 68,
+          paddingBottom: 10,
+          paddingTop: 6,
         },
         tabBarLabelStyle: {
-          fontSize: 11,
-          fontWeight: '500',
+          fontSize: 13,
+          fontWeight: '600',
+          fontFamily: 'Rubik',
         },
         headerShown: false,
+        // Force LTR direction so tabs appear in defined order
+        direction: 'ltr',
       })}
     >
       <Tab.Screen
@@ -71,11 +71,6 @@ const HomeTabs: React.FC = () => {
         component={CategoryScreen}
         initialParams={{category: 'movies'}}
         options={{tabBarLabel: t('browse')}}
-      />
-      <Tab.Screen
-        name="SearchTab"
-        component={SearchScreen}
-        options={{tabBarLabel: t('search')}}
       />
       <Tab.Screen
         name="DownloadsTab"
@@ -108,6 +103,10 @@ export const AppNavigator: React.FC = () => {
           name="Player"
           component={PlayerScreen}
           options={{animation: 'fade', orientation: 'all'}}
+        />
+        <Stack.Screen
+          name="SearchResults"
+          component={SearchScreen}
         />
       </Stack.Navigator>
     </NavigationContainer>

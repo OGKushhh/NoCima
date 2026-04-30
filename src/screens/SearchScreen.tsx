@@ -1,16 +1,16 @@
-import React, {useState, useCallback, useEffect, useMemo, useRef, memo} from 'react';
+import React, {useState, useCallback, useEffect, useMemo, memo} from 'react';
 import {View, StyleSheet, FlatList, Text, TextInput, TouchableOpacity} from 'react-native';
 import {useNavigation} from '@react-navigation/native';
+import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/Ionicons';
 import {searchContent} from '../services/metadataService';
 import {ContentItem} from '../types';
-import {MovieCard, CARD_WIDTH} from '../components/MovieCard';
+import {MovieCard} from '../components/MovieCard';
 import {LoadingSpinner} from '../components/LoadingSpinner';
 import {Colors} from '../theme/colors';
 import {Typography} from '../theme/typography';
 import {useTranslation} from 'react-i18next';
 
-// ─── Debounce hook for search input ────────────────────────────────
 function useDebounce<T>(value: T, delay: number): T {
   const [debouncedValue, setDebouncedValue] = useState<T>(value);
   useEffect(() => {
@@ -20,13 +20,7 @@ function useDebounce<T>(value: T, delay: number): T {
   return debouncedValue;
 }
 
-// ─── Memoized MovieCard row item ───────────────────────────────────
-interface MovieCardItemProps {
-  item: ContentItem;
-  onPress: (item: ContentItem) => void;
-}
-
-const MovieCardItem = memo<MovieCardItemProps>(
+const MovieCardItem = memo<{item: ContentItem; onPress: (item: ContentItem) => void}>(
   ({item, onPress}) => <MovieCard item={item} onPress={onPress} />,
   (prev, next) => prev.item.id === next.item.id,
 );
@@ -35,20 +29,18 @@ MovieCardItem.displayName = 'MovieCardItem';
 export const SearchScreen: React.FC = () => {
   const {t} = useTranslation();
   const navigation = useNavigation<any>();
+  const insets = useSafeAreaInsets();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<ContentItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
 
-  // Debounce search by 400ms to avoid excessive searches on fast typing
-  // This is critical with 13,000+ movies to prevent UI jank
   const debouncedQuery = useDebounce(query, 400);
 
   const navigateToDetails = useCallback((item: ContentItem) => {
     navigation.navigate('Details', {item});
   }, [navigation]);
 
-  // Auto-search when debounced query changes
   useEffect(() => {
     if (!debouncedQuery.trim()) {
       setResults([]);
@@ -57,7 +49,6 @@ export const SearchScreen: React.FC = () => {
     }
 
     let cancelled = false;
-
     const performSearch = async () => {
       setLoading(true);
       try {
@@ -67,53 +58,25 @@ export const SearchScreen: React.FC = () => {
           setHasSearched(true);
         }
       } catch {
-        if (!cancelled) {
-          setResults([]);
-        }
+        if (!cancelled) setResults([]);
       } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
+        if (!cancelled) setLoading(false);
       }
     };
-
     performSearch();
-
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [debouncedQuery]);
 
-  // ─── Memoized renderers ──────────────────────────────────────────
   const renderItem = useCallback(({item}: {item: ContentItem}) => (
     <MovieCardItem item={item} onPress={navigateToDetails} />
   ), [navigateToDetails]);
 
-  const keyExtractor = useCallback((item: ContentItem) => item.id, []);
-
-  const ListEmptyComponent = useMemo(() => {
-    if (loading) return null;
-
-    if (hasSearched) {
-      return (
-        <View style={styles.emptyContainer}>
-          <Icon name="search-outline" size={48} color={Colors.dark.textMuted} />
-          <Text style={styles.emptyText}>{t('no_results')}</Text>
-        </View>
-      );
-    }
-
-    return (
-      <View style={styles.emptyContainer}>
-        <Icon name="film-outline" size={48} color={Colors.dark.textMuted} />
-        <Text style={styles.emptyText}>{t('search_placeholder')}</Text>
-      </View>
-    );
-  }, [loading, hasSearched, t]);
-
   return (
     <View style={styles.container}>
-      <View style={styles.searchRow}>
+      <View style={[styles.searchRow, {paddingTop: insets.top + 8}]}>
+        <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
+          <Icon name="arrow-back" size={24} color={Colors.dark.text} />
+        </TouchableOpacity>
         <View style={styles.searchInputContainer}>
           <Icon name="search" size={20} color={Colors.dark.textSecondary} />
           <TextInput
@@ -131,9 +94,6 @@ export const SearchScreen: React.FC = () => {
             </TouchableOpacity>
           )}
         </View>
-        <TouchableOpacity style={styles.cancelButton} onPress={() => setQuery('')}>
-          <Text style={styles.cancelText}>{t('cancel')}</Text>
-        </TouchableOpacity>
       </View>
 
       {loading ? (
@@ -142,16 +102,27 @@ export const SearchScreen: React.FC = () => {
         <FlatList
           data={results}
           numColumns={2}
-          keyExtractor={keyExtractor}
-          contentContainerStyle={styles.grid}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={[styles.grid, {paddingBottom: insets.bottom + 20}]}
           columnWrapperStyle={styles.row}
           showsVerticalScrollIndicator={false}
-          // Performance optimizations for search results
           initialNumToRender={8}
           maxToRenderPerBatch={6}
           windowSize={5}
           removeClippedSubviews={true}
-          ListEmptyComponent={ListEmptyComponent}
+          ListEmptyComponent={
+            hasSearched ? (
+              <View style={styles.emptyContainer}>
+                <Icon name="search-outline" size={48} color={Colors.dark.textMuted} />
+                <Text style={styles.emptyText}>{t('no_results')}</Text>
+              </View>
+            ) : (
+              <View style={styles.emptyContainer}>
+                <Icon name="film-outline" size={48} color={Colors.dark.textMuted} />
+                <Text style={styles.emptyText}>{t('search_placeholder')}</Text>
+              </View>
+            )
+          }
           renderItem={renderItem}
         />
       )}
@@ -163,13 +134,19 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: Colors.dark.background,
-    paddingTop: 12,
   },
   searchRow: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
-    marginBottom: 8,
+    paddingBottom: 8,
+  },
+  backButton: {
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 8,
   },
   searchInputContainer: {
     flex: 1,
@@ -189,16 +166,8 @@ const styles = StyleSheet.create({
     marginLeft: 8,
     padding: 0,
   },
-  cancelButton: {
-    marginLeft: 12,
-  },
-  cancelText: {
-    color: Colors.dark.primary,
-    fontSize: Typography.sizes.md,
-  },
   grid: {
     paddingHorizontal: 12,
-    paddingBottom: 80,
   },
   row: {
     justifyContent: 'space-between',

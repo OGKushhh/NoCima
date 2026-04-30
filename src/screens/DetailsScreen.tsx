@@ -1,28 +1,30 @@
 import React, {useState, useCallback, useMemo} from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  Dimensions, Alert, Share, ActivityIndicator,
+  Alert, Share, ActivityIndicator, Dimensions,
 } from 'react-native';
 import {useRoute, useNavigation} from '@react-navigation/native';
+import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/Ionicons';
-import FastImage from '@d11/react-native-fast-image';
+import FastImage from 'react-native-fast-image';
 import {ContentItem} from '../types';
 import {getStreamUrl} from '../services/videoService';
 import {Colors} from '../theme/colors';
 import {Typography} from '../theme/typography';
-import {QualityBadge} from '../components/QualityBadge';
 import {useTranslation} from 'react-i18next';
 import {localizeGenres} from '../i18n/genres';
 import {getSettings} from '../storage';
 
-const {height: SCREEN_HEIGHT} = Dimensions.get('window');
-const BACKDROP_HEIGHT = SCREEN_HEIGHT * 0.45;
+const {width: SCREEN_WIDTH} = Dimensions.get('window');
+const POSTER_WIDTH = Math.min(SCREEN_WIDTH * 0.6, 280);
+const POSTER_HEIGHT = POSTER_WIDTH * 1.5;
 
 export const DetailsScreen: React.FC = () => {
   const route = useRoute<any>();
   const navigation = useNavigation<any>();
   const item: ContentItem = route.params?.item;
   const {t, i18n} = useTranslation();
+  const insets = useSafeAreaInsets();
   const [extracting, setExtracting] = useState(false);
   const [extractError, setExtractError] = useState<string | null>(null);
 
@@ -43,6 +45,16 @@ export const DetailsScreen: React.FC = () => {
   }, [item.Description, item.DescriptionAr, lang]);
 
   const hasDescription = description && description.trim().length > 0;
+
+  const formatRuntime = (minutes: number | null) => {
+    if (!minutes) return null;
+    if (minutes >= 60) {
+      const h = Math.floor(minutes / 60);
+      const m = minutes % 60;
+      return m > 0 ? `${h}${t('hours')} ${m}${t('minutes')}` : `${h}${t('hours')}`;
+    }
+    return `${minutes}${t('minutes')}`;
+  };
 
   const handlePlay = useCallback(async () => {
     if (!hasSource) {
@@ -79,11 +91,7 @@ export const DetailsScreen: React.FC = () => {
     try {
       const result = await getStreamUrl(item.id, item.Source);
       if (result.video_url) {
-        Alert.alert(
-          t('download'),
-          t('coming_soon'),
-          [{text: 'OK'}]
-        );
+        Alert.alert(t('download'), t('coming_soon'), [{text: 'OK'}]);
       }
     } catch (err: any) {
       setExtractError(err.message || t('server_error'));
@@ -98,99 +106,41 @@ export const DetailsScreen: React.FC = () => {
     }
   }, [item.Source, item.Title]);
 
-  const formatRuntime = (minutes: number | null) => {
-    if (!minutes) return null;
-    if (minutes >= 60) {
-      const h = Math.floor(minutes / 60);
-      const m = minutes % 60;
-      return m > 0 ? `${h}${t('hours')} ${m}${t('minutes')}` : `${h}${t('hours')}`;
-    }
-    return `${minutes}${t('minutes')}`;
-  };
-
   return (
     <View style={styles.container}>
-      <View style={styles.backdropContainer}>
+      <StatusBarStyle />
+
+      <ScrollView
+        style={styles.scrollView}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={[styles.scrollContent, {paddingBottom: insets.bottom + 40}]}
+      >
+        {/* Back button */}
+        <TouchableOpacity style={[styles.backButton, {top: insets.top + 8}]} onPress={() => navigation.goBack()}>
+          <Icon name="arrow-back" size={26} color="#fff" />
+        </TouchableOpacity>
+
+        {/* Share button */}
+        <TouchableOpacity style={[styles.shareButton, {top: insets.top + 8}]} onPress={handleShare}>
+          <Icon name="share-outline" size={22} color="#fff" />
+        </TouchableOpacity>
+
+        {/* Title */}
+        <Text style={styles.title} numberOfLines={3}>{item.Title}</Text>
+
+        {/* Poster */}
         {item['Image Source'] ? (
           <FastImage
-            source={{uri: item['Image Source'].replace('/posters/', '/backdrops/') || item['Image Source']}}
-            style={styles.backdrop}
+            source={{uri: item['Image Source']}}
+            style={[styles.poster, {width: POSTER_WIDTH, height: POSTER_HEIGHT}]}
             resizeMode={FastImage.resizeMode.cover}
             fallback
           />
         ) : (
-          <View style={[styles.backdrop, styles.backdropPlaceholder]} />
-        )}
-        <View style={styles.backdropOverlay}>
-          <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
-            <Icon name="arrow-back" size={28} color="#fff" />
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.shareButton} onPress={handleShare}>
-            <Icon name="share-outline" size={24} color="#fff" />
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      <ScrollView
-        style={styles.content}
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
-      >
-        {/* Poster + Info Row */}
-        <View style={styles.posterRow}>
-          <FastImage
-            source={item['Image Source'] ? {uri: item['Image Source']} : 0}
-            style={styles.poster}
-            resizeMode={FastImage.resizeMode.cover}
-            fallback
-          />
-          <View style={styles.posterInfo}>
-            <Text style={styles.title} numberOfLines={3}>{item.Title}</Text>
-            <View style={styles.metaRow}>
-              {item.Format && <QualityBadge quality={item.Format} />}
-              {item.Runtime && (
-                <Text style={styles.metaText}>{formatRuntime(item.Runtime)}</Text>
-              )}
-            </View>
-            {item.Country && (
-              <View style={styles.countryRow}>
-                <Icon name="location-outline" size={14} color={Colors.dark.textSecondary} />
-                <Text style={styles.countryText}>{item.Country}</Text>
-              </View>
-            )}
-            {/* Episode count for series/anime */}
-            {item['Number Of Episodes'] ? (
-              <View style={styles.countryRow}>
-                <Icon name="tv-outline" size={14} color={Colors.dark.textSecondary} />
-                <Text style={styles.countryText}>
-                  {item['Number Of Episodes']} {t('episodes')}
-                </Text>
-              </View>
-            ) : null}
-          </View>
-        </View>
-
-        {/* Description */}
-        {hasDescription && (
-          <View style={styles.descriptionContainer}>
-            <Text style={styles.descriptionText} numberOfLines={5}>
-              {description}
-            </Text>
-          </View>
+          <View style={[styles.posterPlaceholder, {width: POSTER_WIDTH, height: POSTER_HEIGHT}]} />
         )}
 
-        {/* Genre Chips */}
-        {displayGenres.length > 0 && (
-          <View style={styles.genresContainer}>
-            {displayGenres.map((genre, idx) => (
-              <View key={idx} style={styles.genreChip}>
-                <Text style={styles.genreText}>{genre}</Text>
-              </View>
-            ))}
-          </View>
-        )}
-
-        {/* Action Buttons */}
+        {/* Play / Download buttons */}
         <View style={styles.actions}>
           <TouchableOpacity
             style={[styles.actionButton, styles.playButton]}
@@ -217,7 +167,7 @@ export const DetailsScreen: React.FC = () => {
           </TouchableOpacity>
         </View>
 
-        {/* Error State */}
+        {/* Error state */}
         {extractError && (
           <View style={styles.errorContainer}>
             <Text style={styles.errorText}>{extractError}</Text>
@@ -230,36 +180,83 @@ export const DetailsScreen: React.FC = () => {
         {!hasSource && (
           <View style={styles.availabilityNotice}>
             <Icon name="information-circle-outline" size={18} color={Colors.dark.warning} />
-            <Text style={styles.availabilityText}>
-              {t('not_available')}
-            </Text>
+            <Text style={styles.availabilityText}>{t('not_available')}</Text>
           </View>
         )}
 
-        {/* Info Section */}
-        <View style={styles.infoSection}>
-          <Text style={styles.sectionTitle}>{t('quality')}</Text>
-          <Text style={styles.infoText}>{item.Format || 'N/A'}</Text>
+        {/* Info Box */}
+        <View style={styles.infoBox}>
+          {/* Meta row: Quality + Runtime + Country */}
+          <View style={styles.metaRow}>
+            {item.Format && (
+              <View style={styles.metaBadge}>
+                <Text style={styles.metaBadgeText}>{item.Format.split(' ')[0]}</Text>
+              </View>
+            )}
+            {item.Rating && (
+              <View style={styles.metaBadge}>
+                <Text style={styles.starIcon}>★</Text>
+                <Text style={styles.metaBadgeText}>{item.Rating}</Text>
+              </View>
+            )}
+            {item.Runtime && (
+              <View style={styles.metaBadge}>
+                <Text style={styles.metaBadgeText}>{formatRuntime(item.Runtime)}</Text>
+              </View>
+            )}
+            {item.Country && (
+              <View style={styles.metaBadge}>
+                <Text style={styles.metaBadgeText}>{item.Country}</Text>
+              </View>
+            )}
+          </View>
 
-          {item.Runtime && (
-            <>
-              <Text style={styles.sectionTitle}>{t('duration')}</Text>
-              <Text style={styles.infoText}>{formatRuntime(item.Runtime)}</Text>
-            </>
+          {/* Episode count */}
+          {item['Number Of Episodes'] ? (
+            <View style={styles.infoRow}>
+              <Icon name="tv-outline" size={16} color={Colors.dark.textSecondary} />
+              <Text style={styles.infoText}>
+                {item['Number Of Episodes']} {t('episodes')}
+              </Text>
+            </View>
+          ) : null}
+
+          {/* Description */}
+          {hasDescription && (
+            <View style={styles.infoSection}>
+              <Text style={styles.sectionLabel}>{t('description')}</Text>
+              <Text style={styles.descriptionText} numberOfLines={6}>{description}</Text>
+            </View>
           )}
 
-          {item.Country && (
-            <>
-              <Text style={styles.sectionTitle}>{t('country')}</Text>
-              <Text style={styles.infoText}>{item.Country}</Text>
-            </>
-          )}
-
+          {/* Genres */}
           {displayGenres.length > 0 && (
-            <>
-              <Text style={styles.sectionTitle}>{t('genres')}</Text>
-              <Text style={styles.infoText}>{displayGenres.join(', ')}</Text>
-            </>
+            <View style={styles.infoSection}>
+              <Text style={styles.sectionLabel}>{t('genres')}</Text>
+              <View style={styles.genreChips}>
+                {displayGenres.map((genre, idx) => (
+                  <View key={idx} style={styles.genreChip}>
+                    <Text style={styles.genreChipText}>{genre}</Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+          )}
+
+          {/* Quality info */}
+          {item.Format && (
+            <View style={styles.infoSection}>
+              <Text style={styles.sectionLabel}>{t('quality')}</Text>
+              <Text style={styles.infoValue}>{item.Format}</Text>
+            </View>
+          )}
+
+          {/* Duration */}
+          {item.Runtime && (
+            <View style={styles.infoSection}>
+              <Text style={styles.sectionLabel}>{t('duration')}</Text>
+              <Text style={styles.infoValue}>{formatRuntime(item.Runtime)}</Text>
+            </View>
           )}
         </View>
       </ScrollView>
@@ -267,33 +264,24 @@ export const DetailsScreen: React.FC = () => {
   );
 };
 
+const StatusBarStyle = () => {
+  const {StatusBar} = require('react-native');
+  return <StatusBar barStyle="light-content" backgroundColor={Colors.dark.background} />;
+};
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: Colors.dark.background,
   },
-  backdropContainer: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: BACKDROP_HEIGHT,
-    zIndex: 0,
+  scrollView: {
+    flex: 1,
   },
-  backdrop: {
-    width: '100%',
-    height: '100%',
-  },
-  backdropPlaceholder: {
-    backgroundColor: Colors.dark.surface,
-  },
-  backdropOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+  scrollContent: {
+    paddingTop: 0,
   },
   backButton: {
     position: 'absolute',
-    top: 50,
     left: 16,
     width: 40,
     height: 40,
@@ -305,7 +293,6 @@ const styles = StyleSheet.create({
   },
   shareButton: {
     position: 'absolute',
-    top: 50,
     right: 16,
     width: 40,
     height: 40,
@@ -315,109 +302,56 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     zIndex: 10,
   },
-  content: {
-    zIndex: 1,
-    marginTop: BACKDROP_HEIGHT - 60,
-  },
-  scrollContent: {
-    paddingBottom: 40,
-  },
-  posterRow: {
-    flexDirection: 'row',
-    paddingHorizontal: 16,
-    marginBottom: 16,
-  },
-  poster: {
-    width: 120,
-    height: 180,
-    borderRadius: 12,
-    backgroundColor: Colors.dark.surfaceLight,
-  },
-  posterInfo: {
-    flex: 1,
-    marginLeft: 16,
-    justifyContent: 'center',
-  },
   title: {
     color: Colors.dark.text,
-    fontSize: Typography.sizes.xxl,
-    fontWeight: Typography.weights.bold,
-    lineHeight: 30,
-  },
-  metaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  metaText: {
-    color: Colors.dark.textSecondary,
-    fontSize: Typography.sizes.sm,
-    marginLeft: 4,
-  },
-  countryRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 4,
-  },
-  countryText: {
-    color: Colors.dark.textSecondary,
-    fontSize: Typography.sizes.sm,
-    marginLeft: 4,
-  },
-  descriptionContainer: {
-    paddingHorizontal: 16,
+    fontSize: Typography.sizes.heading,
+    fontWeight: Typography.weights.bold as any,
+    textAlign: 'center',
+    paddingHorizontal: 60,
+    marginTop: 60,
     marginBottom: 16,
+    fontFamily: 'Rubik',
   },
-  descriptionText: {
-    color: Colors.dark.textSecondary,
-    fontSize: Typography.sizes.md,
-    lineHeight: 20,
-  },
-  genresContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    paddingHorizontal: 16,
+  poster: {
+    borderRadius: 16,
+    alignSelf: 'center',
+    backgroundColor: Colors.dark.surfaceLight,
     marginBottom: 20,
   },
-  genreChip: {
-    backgroundColor: Colors.dark.surface,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+  posterPlaceholder: {
     borderRadius: 16,
-    marginRight: 8,
-    marginBottom: 8,
-  },
-  genreText: {
-    color: Colors.dark.textSecondary,
-    fontSize: Typography.sizes.sm,
+    alignSelf: 'center',
+    backgroundColor: Colors.dark.surface,
+    marginBottom: 20,
   },
   actions: {
     flexDirection: 'row',
     paddingHorizontal: 16,
-    marginBottom: 24,
+    marginBottom: 20,
+    gap: 12,
   },
   actionButton: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    height: 50,
-    borderRadius: 12,
-    marginHorizontal: 6,
+    height: 52,
+    borderRadius: 14,
   },
   playButton: {
     backgroundColor: Colors.dark.primary,
   },
   downloadButton: {
     backgroundColor: Colors.dark.surface,
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: Colors.dark.primary,
   },
   actionText: {
     color: '#fff',
     fontSize: Typography.sizes.lg,
-    fontWeight: Typography.weights.semibold,
+    fontWeight: Typography.weights.semibold as any,
     marginLeft: 8,
+    fontFamily: 'Rubik',
   },
   errorContainer: {
     marginHorizontal: 16,
@@ -435,7 +369,7 @@ const styles = StyleSheet.create({
   retryText: {
     color: Colors.dark.primary,
     fontSize: Typography.sizes.sm,
-    fontWeight: Typography.weights.semibold,
+    fontWeight: Typography.weights.semibold as any,
     marginTop: 4,
   },
   availabilityNotice: {
@@ -452,22 +386,81 @@ const styles = StyleSheet.create({
     fontSize: Typography.sizes.sm,
     marginLeft: 8,
   },
-  infoSection: {
-    paddingHorizontal: 16,
+  infoBox: {
+    marginHorizontal: 16,
     backgroundColor: Colors.dark.surface,
-    borderRadius: 12,
+    borderRadius: 16,
     padding: 16,
   },
-  sectionTitle: {
-    color: Colors.dark.textSecondary,
-    fontSize: Typography.sizes.xs,
-    fontWeight: Typography.weights.semibold,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-    marginTop: 12,
-    marginBottom: 4,
+  metaRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 12,
+  },
+  metaBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.dark.background,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  starIcon: {
+    color: '#FFD700',
+    fontSize: 12,
+    marginRight: 4,
+  },
+  metaBadgeText: {
+    color: Colors.dark.text,
+    fontSize: Typography.sizes.sm,
+    fontWeight: Typography.weights.medium as any,
+  },
+  infoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
   },
   infoText: {
+    color: Colors.dark.textSecondary,
+    fontSize: Typography.sizes.md,
+    marginLeft: 6,
+  },
+  infoSection: {
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: Colors.dark.border,
+  },
+  sectionLabel: {
+    color: Colors.dark.textSecondary,
+    fontSize: Typography.sizes.sm,
+    fontWeight: Typography.weights.semibold as any,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 8,
+  },
+  descriptionText: {
+    color: Colors.dark.textSecondary,
+    fontSize: Typography.sizes.md,
+    lineHeight: 22,
+  },
+  genreChips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  genreChip: {
+    backgroundColor: Colors.dark.background,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+  },
+  genreChipText: {
+    color: Colors.dark.textSecondary,
+    fontSize: Typography.sizes.sm,
+  },
+  infoValue: {
     color: Colors.dark.text,
     fontSize: Typography.sizes.md,
   },

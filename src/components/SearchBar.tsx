@@ -1,4 +1,4 @@
-import React, {useState, useEffect} from 'react';
+import React, {useState} from 'react';
 import {View, TextInput, StyleSheet, TouchableOpacity} from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import {Colors} from '../theme/colors';
@@ -9,10 +9,27 @@ interface SearchBarProps {
   onChangeText: (text: string) => void;
   placeholder?: string;
   onSubmit?: () => void;
+  show?: boolean;
+  onToggle?: () => void;
 }
 
-export const SearchBar: React.FC<SearchBarProps> = ({value, onChangeText, placeholder, onSubmit}) => {
+export const SearchBar: React.FC<SearchBarProps> = ({
+  value,
+  onChangeText,
+  placeholder,
+  onSubmit,
+  show = true,
+  onToggle,
+}) => {
   const [isFocused, setIsFocused] = useState(false);
+
+  if (!show && !isFocused) {
+    return (
+      <TouchableOpacity style={styles.iconButton} onPress={onToggle}>
+        <Icon name="search" size={22} color={Colors.dark.textSecondary} />
+      </TouchableOpacity>
+    );
+  }
 
   return (
     <View style={[styles.container, isFocused && styles.focused]}>
@@ -33,6 +50,11 @@ export const SearchBar: React.FC<SearchBarProps> = ({value, onChangeText, placeh
           <Icon name="close-circle" size={20} color={Colors.dark.textSecondary} />
         </TouchableOpacity>
       )}
+      {onToggle && (
+        <TouchableOpacity onPress={() => { onChangeText(''); onToggle(); }} style={styles.clearButton}>
+          <Icon name="close" size={20} color={Colors.dark.textSecondary} />
+        </TouchableOpacity>
+      )}
     </View>
   );
 };
@@ -44,9 +66,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.dark.surface,
     borderRadius: 12,
     paddingHorizontal: 12,
-    marginHorizontal: 16,
-    marginVertical: 8,
-    height: 48,
+    height: 44,
     borderWidth: 1,
     borderColor: Colors.dark.border,
   },
@@ -66,5 +86,11 @@ const styles = StyleSheet.create({
   },
   clearButton: {
     marginLeft: 8,
+  },
+  iconButton: {
+    width: 44,
+    height: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });

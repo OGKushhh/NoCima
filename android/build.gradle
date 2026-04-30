@@ -1,21 +1,38 @@
 buildscript {
     ext {
-        buildToolsVersion = "35.0.0"
-        minSdkVersion = 24
-        compileSdkVersion = 35
-        targetSdkVersion = 34
-        ndkVersion = "27.0.11902837"
-        kotlinVersion = "2.1.20"
+        buildToolsVersion = "33.0.0"
+        minSdkVersion = 21
+        compileSdkVersion = 33
+        targetSdkVersion = 33
+        ndkVersion = "23.1.7779620"
+        kotlinVersion = "1.8.0"
     }
     repositories {
         google()
         mavenCentral()
     }
     dependencies {
-        classpath("com.android.tools.build:gradle")
+        classpath("com.android.tools.build:gradle:7.3.1")
+        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlinVersion")
         classpath("com.facebook.react:react-native-gradle-plugin")
-        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin")
     }
 }
 
-apply plugin: "com.facebook.react.rootproject"
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+        maven { url 'https://www.jitpack.io' }
+    }
+}
+
+// Redirect old artifact name to new one for subprojects like blob-util
+subprojects {
+    configurations.all {
+        resolutionStrategy {
+            dependencySubstitution {
+                substitute module('com.facebook.react:react-native') using module('com.facebook.react:react-android:+')
+            }
+        }
+    }
+}

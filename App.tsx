@@ -1,10 +1,13 @@
 import React, {useEffect, useState} from 'react';
-import {StatusBar, LogBox} from 'react-native';
-import {SafeAreaProvider} from 'react-native-safe-area-context';
+import {StatusBar, LogBox, View, ActivityIndicator, Text, Platform} from 'react-native';
+import {SafeAreaProvider, initialWindowMetrics} from 'react-native-safe-area-context';
 import {AppNavigator} from './src/navigation/AppNavigator';
 import {UpdateModal} from './src/components/UpdateModal';
 import {checkForUpdate, skipVersion, openUpdateUrl, ReleaseInfo} from './src/services/updateService';
 import {APP_VERSION} from './src/constants/endpoints';
+import {storage} from './src/storage/Storage';
+import {Colors} from './src/theme/colors';
+import {Typography} from './src/theme/typography';
 import './src/i18n';
 
 LogBox.ignoreLogs([
@@ -14,21 +17,24 @@ LogBox.ignoreLogs([
 ]);
 
 const App: React.FC = () => {
+  const [ready, setReady] = useState(false);
   const [updateInfo, setUpdateInfo] = useState<ReleaseInfo | null>(null);
   const [showUpdateModal, setShowUpdateModal] = useState(false);
 
   useEffect(() => {
-    // Check for updates after 3 seconds (don't block app launch)
-    const timer = setTimeout(async () => {
-      const update = await checkForUpdate();
-      if (update) {
-        setUpdateInfo(update);
-        // Small delay before showing modal for smooth UX
-        setTimeout(() => setShowUpdateModal(true), 500);
-      }
-    }, 3000);
+    storage.init().then(() => {
+      setReady(true);
 
-    return () => clearTimeout(timer);
+      const timer = setTimeout(async () => {
+        const update = await checkForUpdate();
+        if (update) {
+          setUpdateInfo(update);
+          setTimeout(() => setShowUpdateModal(true), 500);
+        }
+      }, 3000);
+
+      return () => clearTimeout(timer);
+    });
   }, []);
 
   const handleDownloadUpdate = (url: string) => {
@@ -41,9 +47,24 @@ const App: React.FC = () => {
     setShowUpdateModal(false);
   };
 
+  if (!ready) {
+    return (
+      <View style={{flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: Colors.dark.background}}>
+        <Text style={{color: Colors.dark.primary, fontSize: Typography.sizes.heading, fontWeight: '900', fontFamily: 'Rubik'}}>
+          AbdoBest
+        </Text>
+        <ActivityIndicator size="small" color={Colors.dark.primary} style={{marginTop: 16}} />
+      </View>
+    );
+  }
+
   return (
-    <SafeAreaProvider>
-      <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+    <SafeAreaProvider initialMetrics={initialWindowMetrics}>
+      <StatusBar
+        barStyle="light-content"
+        backgroundColor="transparent"
+        translucent
+      />
       <AppNavigator />
       <UpdateModal
         visible={showUpdateModal}

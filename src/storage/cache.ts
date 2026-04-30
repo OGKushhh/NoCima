@@ -1,16 +1,31 @@
-import RNFSTurbo from 'react-native-fs-turbo';
+/**
+ * Cache layer for AbdoBest.
+ *
+ * Architecture:
+ *   - react-native-blob-util  →  large JSON blobs on disk (metadata per category)
+ *   - Storage (AsyncStorage)   →  timestamps + small URL cache entries
+ *
+ * Metadata persistence:
+ *   - Cached metadata (movies, series, anime catalogs) stored as files on disk
+ *   - 24h TTL controls when to RE-FETCH from server
+ *   - 6h TTL for extracted video URLs
+ *   - Data persists until user clears cache or uninstalls
+ */
+
+import ReactNativeBlobUtil from 'react-native-blob-util';
 import {storage, storageKeys, CATEGORY_KEYS} from './index';
 import {METADATA_TTL_MS, VIDEO_URL_TTL_MS} from '../constants/endpoints';
 
 // ─── Metadata Directory ─────────────────────────────────────────────
 
-const METADATA_DIR = `${RNFSTurbo.DocumentDirectoryPath}/metadata`;
+const METADATA_DIR = `${ReactNativeBlobUtil.fs.dirs.DocumentDir}/metadata`;
 
 /** Ensure the metadata directory exists. */
-const ensureMetadataDir = (): void => {
+const ensureMetadataDir = async (): Promise<void> => {
   try {
-    if (!RNFSTurbo.exists(METADATA_DIR)) {
-      RNFSTurbo.mkdir(METADATA_DIR);
+    const exists = await ReactNativeBlobUtil.fs.exists(METADATA_DIR);
+    if (!exists) {
+      await ReactNativeBlobUtil.fs.mkdir(METADATA_DIR);
     }
   } catch (e) {
     console.warn('[Cache] Failed to create metadata dir:', e);
@@ -22,8 +37,8 @@ const getCategoryFilePath = (category: string): string => {
   return `${METADATA_DIR}/${category}.json`;
 };
 
-// ─── Video URL Cache (6hr TTL) ── stays in MMKV ─────────────────────
-// URL cache entries are small (url + qualities + timestamp) → MMKV is ideal.
+// ─── Video URL Cache (6hr TTL) ── stays in Storage ─────────────────
+// URL cache entries are small (url + qualities + timestamp) → Storage is ideal.
 
 export const setVideoUrlCache = (key: string, url: string, qualities: string[]) => {
   const entry = {url, qualities, timestamp: Date.now()};
@@ -46,24 +61,24 @@ export const getVideoUrlCache = (key: string): {url: string; qualities: string[]
   }
 };
 
-// ─── Metadata Cache (per-category, 24hr TTL) ── now on disk ────────
-// Large JSON blobs (13,500+ items) are stored as files via react-native-fs-turbo.
-// Only timestamps stay in MMKV for fast staleness checks.
+// ─── Metadata Cache (per-category, 24hr TTL) ── on disk ───────────
+// Large JSON blobs (13,500+ items) are stored as files via react-native-blob-util.
+// Only timestamps stay in Storage for fast staleness checks.
 
 /**
  * Store metadata for a specific category.
  * - JSON data → written to disk as a file
- * - Timestamp → stored in MMKV for fast staleness checks
+ * - Timestamp → stored in Storage for fast staleness checks
  */
-export const setMetadataWithTimestamp = (category: string, data: any) => {
+export const setMetadataWithTimestamp = async (category: string, data: any) => {
   const keys = CATEGORY_KEYS[category];
   if (!keys) return;
 
-  ensureMetadataDir();
+  await ensureMetadataDir();
 
   try {
     const filePath = getCategoryFilePath(category);
-    RNFSTurbo.writeFile(filePath, JSON.stringify(data), 'utf8');
+    await ReactNativeBlobUtil.fs.writeFile(filePath, JSON.stringify(data), 'utf8');
     storage.set(keys.timestamp, Date.now());
   } catch (e) {
     console.warn(`[Cache] Failed to write metadata for ${category}:`, e);
@@ -74,11 +89,11 @@ export const setMetadataWithTimestamp = (category: string, data: any) => {
  * Get cached metadata for a category.
  * Returns null if not cached OR if older than 24 hours.
  */
-export const getMetadataIfFresh = (category: string): any | null => {
+export const getMetadataIfFresh = async (category: string): Promise<any | null> => {
   const keys = CATEGORY_KEYS[category];
   if (!keys) return null;
 
-  // Fast check: timestamp from MMKV
+  // Fast check: timestamp from Storage
   const ts = storage.getNumber(keys.timestamp);
   if (!ts) return null;
 
@@ -88,9 +103,10 @@ export const getMetadataIfFresh = (category: string): any | null => {
   // Read from disk
   try {
     const filePath = getCategoryFilePath(category);
-    if (!RNFSTurbo.exists(filePath)) return null;
+    const exists = await ReactNativeBlobUtil.fs.exists(filePath);
+    if (!exists) return null;
 
-    const raw = RNFSTurbo.readFile(filePath, 'utf8');
+    const raw = await ReactNativeBlobUtil.fs.readFile(filePath, 'utf8');
     return JSON.parse(raw);
   } catch {
     return null;
@@ -100,12 +116,13 @@ export const getMetadataIfFresh = (category: string): any | null => {
 /**
  * Get cached metadata regardless of age (fallback when offline).
  */
-export const getMetadataAnyAge = (category: string): any | null => {
+export const getMetadataAnyAge = async (category: string): Promise<any | null> => {
   try {
     const filePath = getCategoryFilePath(category);
-    if (!RNFSTurbo.exists(filePath)) return null;
+    const exists = await ReactNativeBlobUtil.fs.exists(filePath);
+    if (!exists) return null;
 
-    const raw = RNFSTurbo.readFile(filePath, 'utf8');
+    const raw = await ReactNativeBlobUtil.fs.readFile(filePath, 'utf8');
     return JSON.parse(raw);
   } catch {
     return null;
@@ -114,7 +131,7 @@ export const getMetadataAnyAge = (category: string): any | null => {
 
 /**
  * Get the timestamp for a category's last fetch (epoch ms).
- * Stored in MMKV for O(1) access — no disk read needed.
+ * Stored in Storage for O(1) access — no disk read needed.
  */
 export const getCategoryTimestamp = (category: string): number => {
   const keys = CATEGORY_KEYS[category];
@@ -138,15 +155,16 @@ export const isAnyCategoryStale = (): boolean => {
 /**
  * Clear all cached metadata files and timestamps.
  */
-export const clearAllMetadataCache = () => {
+export const clearAllMetadataCache = async () => {
   for (const category of Object.keys(CATEGORY_KEYS)) {
     const keys = CATEGORY_KEYS[category];
     storage.delete(keys.timestamp);
 
     try {
       const filePath = getCategoryFilePath(category);
-      if (RNFSTurbo.exists(filePath)) {
-        RNFSTurbo.unlink(filePath);
+      const exists = await ReactNativeBlobUtil.fs.exists(filePath);
+      if (exists) {
+        await ReactNativeBlobUtil.fs.unlink(filePath);
       }
     } catch {
       // Ignore cleanup errors
@@ -156,21 +174,22 @@ export const clearAllMetadataCache = () => {
 
 // ─── Legacy helpers (kept for SettingsScreen compatibility) ─────────
 
-export const setMetadata = (key: string, data: any) => {
-  ensureMetadataDir();
+export const setMetadata = async (key: string, data: any) => {
+  await ensureMetadataDir();
   try {
     const filePath = `${METADATA_DIR}/${key}.json`;
-    RNFSTurbo.writeFile(filePath, JSON.stringify(data), 'utf8');
+    await ReactNativeBlobUtil.fs.writeFile(filePath, JSON.stringify(data), 'utf8');
   } catch {
     // Silently fail
   }
 };
 
-export const getMetadata = (key: string): any | null => {
+export const getMetadata = async (key: string): Promise<any | null> => {
   try {
     const filePath = `${METADATA_DIR}/${key}.json`;
-    if (!RNFSTurbo.exists(filePath)) return null;
-    const raw = RNFSTurbo.readFile(filePath, 'utf8');
+    const exists = await ReactNativeBlobUtil.fs.exists(filePath);
+    if (!exists) return null;
+    const raw = await ReactNativeBlobUtil.fs.readFile(filePath, 'utf8');
     return JSON.parse(raw);
   } catch {
     return null;

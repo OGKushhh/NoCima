@@ -16,6 +16,11 @@ export const Colors = {
     error: '#EF4444',
     overlay: 'rgba(0,0,0,0.7)',
     tabBar: '#111827',
+    badge: {
+      quality: '#00E5FF',
+      category: '#FFD700',
+      rating: '#FFFFFF',
+    },
   },
   light: {
     primary: '#E50914',
@@ -34,6 +39,11 @@ export const Colors = {
     error: '#EF4444',
     overlay: 'rgba(255,255,255,0.7)',
     tabBar: '#FFFFFF',
+    badge: {
+      quality: '#00E5FF',
+      category: '#FFD700',
+      rating: '#111827',
+    },
   }
 };
 
