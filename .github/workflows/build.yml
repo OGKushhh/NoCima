@@ -19,14 +19,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Java 11
+      - name: Setup Java 17
         uses: actions/setup-java@v3
         with:
           distribution: 'zulu'
-          java-version: '11'
-
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v2
+          java-version: '17'
 
       - name: Install NDK
         run: sdkmanager --install "ndk;23.1.7779620"
