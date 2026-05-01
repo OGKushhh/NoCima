@@ -118,4 +118,18 @@ export const ar = {
   year: 'السنة',
   rating: 'التقييم',
   views: 'المشاهدات',
+  // خيارات الترتيب
+  sort_by: 'ترتيب حسب',
+  sort_az: 'أ-ي',
+  sort_za: 'ي-أ',
+  sort_newest: 'الأحدث',
+  sort_oldest: 'الأقدم',
+  sort_top_rated: 'الأعلى تقييماً',
+  results: 'نتيجة',
+  // التفاصيل
+  category: 'القسم',
+  directors: 'المخرجين',
+  of_10: 'من 10',
+  random_picks: 'موصى به',
+  asian_series: 'مسلسلات آسيوية',
 };

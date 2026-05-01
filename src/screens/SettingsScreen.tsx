@@ -1,10 +1,9 @@
 import React, {useState} from 'react';
 import {
   View, StyleSheet, Text, TouchableOpacity, Switch,
-  Linking, Alert, ScrollView, ActivityIndicator,
+  Linking, Alert, ScrollView, ActivityIndicator, Image,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
-import Icon from 'react-native-vector-icons/Ionicons';
 import {Colors} from '../theme/colors';
 import {useTranslation} from 'react-i18next';
 import {getSettings, saveSettings} from '../storage';
@@ -17,6 +16,7 @@ export const SettingsScreen: React.FC = () => {
   const [settings, setSettings] = useState(getSettings());
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [showQualityModal, setShowQualityModal] = useState(false);
 
   const updateSetting = (key: string, value: any) => {
     const updated = {...settings, [key]: value};
@@ -59,18 +59,24 @@ export const SettingsScreen: React.FC = () => {
   const lastSync = getLastSyncTime();
   const lastSyncDate = lastSync ? new Date(lastSync).toLocaleDateString() : t('never');
 
-  const cycleQuality = () => {
-    const prefs = ['auto', 'high', 'medium', 'low'] as const;
-    const current = prefs.indexOf(settings.qualityPreference as any);
-    updateSetting('qualityPreference', prefs[(current + 1) % prefs.length]);
-  };
+  const qualityOptions = [
+    {key: 'auto', label: t('quality_auto')},
+    {key: 'high', label: t('quality_high')},
+    {key: 'medium', label: t('quality_medium')},
+    {key: 'low', label: t('quality_low')},
+  ];
+
+  const currentQualityLabel = qualityOptions.find(q => q.key === (settings.qualityPreference || 'auto'))?.label || t('quality_auto');
 
   return (
     <View style={styles.container}>
       <SafeAreaView style={styles.safe} edges={['top']}>
         {/* Header */}
         <View style={styles.header}>
-          <Text style={styles.headerTitle}>{t('settings')}</Text>
+          <View style={styles.headerLeft}>
+            <Image source={require('../../assets/icons/settings.png')} style={styles.headerIcon} />
+            <Text style={styles.headerTitle}>{t('settings')}</Text>
+          </View>
           <Text style={styles.version}>v{APP_VERSION}</Text>
         </View>
 
@@ -80,14 +86,14 @@ export const SettingsScreen: React.FC = () => {
           <SectionTitle label={t('appearance')} />
           <View style={styles.section}>
             <Row
-              icon="globe-outline"
+              icon={require('../../assets/icons/planet-earth.png')}
               label={t('language')}
               value={settings.language === 'ar' ? t('arabic') : t('english')}
               onPress={toggleLanguage}
               accent
             />
             <Row
-              icon="moon-outline"
+              icon={require('../../assets/icons/tv.png')}
               label={t('dark_mode')}
               rightElement={
                 <Switch
@@ -104,14 +110,14 @@ export const SettingsScreen: React.FC = () => {
           <SectionTitle label={t('playback')} />
           <View style={styles.section}>
             <Row
-              icon="options-outline"
+              icon={require('../../assets/icons/star.png')}
               label={t('quality_preference')}
-              value={t(`quality_${settings.qualityPreference || 'auto'}`)}
-              onPress={cycleQuality}
+              value={currentQualityLabel}
+              onPress={() => setShowQualityModal(true)}
               accent
             />
             <Row
-              icon="play-circle-outline"
+              icon={require('../../assets/icons/clapboard.png')}
               label={t('auto_play')}
               rightElement={
                 <Switch
@@ -123,7 +129,7 @@ export const SettingsScreen: React.FC = () => {
               }
             />
             <Row
-              icon="wifi-outline"
+              icon={require('../../assets/icons/search.png')}
               label={t('mobile_data_warning')}
               rightElement={
                 <Switch
@@ -135,7 +141,7 @@ export const SettingsScreen: React.FC = () => {
               }
             />
             <Row
-              icon="text-outline"
+              icon={require('../../assets/icons/files.png')}
               label={t('subtitles_enabled')}
               rightElement={
                 <Switch
@@ -153,7 +159,7 @@ export const SettingsScreen: React.FC = () => {
           <View style={styles.section}>
             <TouchableOpacity style={styles.row} onPress={handleSync} activeOpacity={0.7}>
               <View style={styles.rowIcon}>
-                <Icon name="sync-outline" size={22} color={Colors.dark.primaryLight} />
+                <Image source={require('../../assets/icons/undoreturn.png')} style={styles.icon} />
               </View>
               <View style={styles.rowContent}>
                 <Text style={styles.rowLabel}>{t('sync_database')}</Text>
@@ -161,11 +167,11 @@ export const SettingsScreen: React.FC = () => {
               </View>
               {syncing
                 ? <ActivityIndicator size="small" color={Colors.dark.primary} />
-                : <Icon name="chevron-forward" size={18} color={Colors.dark.textMuted} />
+                : <ChevronIcon />
               }
             </TouchableOpacity>
             <Row
-              icon="trash-outline"
+              icon={require('../../assets/icons/files.png')}
               label={t('clear_cache')}
               onPress={handleClearCache}
             />
@@ -176,7 +182,7 @@ export const SettingsScreen: React.FC = () => {
           <View style={styles.section}>
             <TouchableOpacity style={styles.row} onPress={handleCheckUpdate} activeOpacity={0.7}>
               <View style={styles.rowIcon}>
-                <Icon name="cloud-download-outline" size={22} color={Colors.dark.primaryLight} />
+                <Image source={require('../../assets/icons/browsing.png')} style={styles.icon} />
               </View>
               <View style={styles.rowContent}>
                 <Text style={styles.rowLabel}>{t('check_for_updates')}</Text>
@@ -184,7 +190,7 @@ export const SettingsScreen: React.FC = () => {
               </View>
               {checkingUpdate
                 ? <ActivityIndicator size="small" color={Colors.dark.primary} />
-                : <Icon name="chevron-forward" size={18} color={Colors.dark.textMuted} />
+                : <ChevronIcon />
               }
             </TouchableOpacity>
           </View>
@@ -196,25 +202,63 @@ export const SettingsScreen: React.FC = () => {
             activeOpacity={0.85}
             onPress={() => Linking.openURL('https://ko-fi.com/abdobest')}
           >
-            <Icon name="heart" size={20} color="#fff" />
-            <Text style={styles.kofiText}>Support on Ko-fi ☕</Text>
+            <Image source={require('../../assets/icons/heart.png')} style={{width: 20, height: 20, tintColor: '#fff'}} />
+            <Text style={styles.kofiText}>Support on Ko-fi</Text>
           </TouchableOpacity>
 
           <View style={{height: 30}} />
         </ScrollView>
       </SafeAreaView>
+
+      {/* ── Quality Picker Modal ── */}
+      <TouchableOpacity
+        style={styles.modalBackdrop}
+        activeOpacity={1}
+        onPress={() => setShowQualityModal(false)}
+        disabled={!showQualityModal}
+      >
+        <View style={[styles.modalContent, {opacity: showQualityModal ? 1 : 0, pointerEvents: showQualityModal ? 'auto' : 'none'}]}>
+          <Text style={styles.modalTitle}>{t('select_quality')}</Text>
+          {qualityOptions.map(q => (
+            <TouchableOpacity
+              key={q.key}
+              style={[
+                styles.modalOption,
+                settings.qualityPreference === q.key && styles.modalOptionActive,
+              ]}
+              onPress={() => { updateSetting('qualityPreference', q.key); setShowQualityModal(false); }}
+            >
+              <Text style={[
+                styles.modalOptionText,
+                settings.qualityPreference === q.key && styles.modalOptionTextActive,
+              ]}>
+                {q.label}
+              </Text>
+              {settings.qualityPreference === q.key && (
+                <View style={styles.checkmark}>
+                  <Image source={require('../../assets/icons/arrow.png')} style={[styles.icon, {tintColor: Colors.dark.primary}]} />
+                </View>
+              )}
+            </TouchableOpacity>
+          ))}
+        </View>
+      </TouchableOpacity>
     </View>
   );
 };
 
 // ── Sub-components ──────────────────────────────────────────────────
 
+const ChevronIcon = () => (
+  <Image source={require('../../assets/icons/arrow.png')} style={[styles.icon, {tintColor: Colors.dark.textMuted}]} />
+);
+
 const SectionTitle = ({label}: {label: string}) => (
   <Text style={styles.sectionTitle}>{label}</Text>
 );
 
 interface RowProps {
-  icon: string;
+  icon: any;
   label: string;
   value?: string;
   onPress?: () => void;
@@ -225,13 +269,13 @@ interface RowProps {
 const Row = ({icon, label, value, onPress, rightElement, accent}: RowProps) => (
   <TouchableOpacity style={styles.row} onPress={onPress} activeOpacity={onPress ? 0.7 : 1}>
     <View style={styles.rowIcon}>
-      <Icon name={icon as any} size={22} color={accent ? Colors.dark.accentLight : Colors.dark.primaryLight} />
+      <Image source={icon} style={[styles.icon, {tintColor: accent ? Colors.dark.primaryLight : Colors.dark.textSecondary}]} />
     </View>
     <Text style={styles.rowLabel}>{label}</Text>
     {rightElement || (
       <View style={styles.rowRight}>
         {value ? <Text style={styles.rowValue}>{value}</Text> : null}
-        {onPress ? <Icon name="chevron-forward" size={18} color={Colors.dark.textMuted} /> : null}
+        {onPress ? <ChevronIcon /> : null}
       </View>
     )}
   </TouchableOpacity>
@@ -248,8 +292,18 @@ const styles = StyleSheet.create({
     paddingTop: 16,
     paddingBottom: 8,
     flexDirection: 'row',
-    alignItems: 'baseline',
+    alignItems: 'center',
     justifyContent: 'space-between',
+  },
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  headerIcon: {
+    width: 28,
+    height: 28,
+    tintColor: Colors.dark.primary,
   },
   headerTitle: {
     color: Colors.dark.text,
@@ -293,12 +347,17 @@ const styles = StyleSheet.create({
     borderBottomColor: Colors.dark.border,
   },
   rowIcon: {
-    width: 38, height: 38,
+    width: 38,
+    height: 38,
     borderRadius: 10,
     backgroundColor: `${Colors.dark.primary}18`,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 14,
+  },
+  icon: {
+    width: 20,
+    height: 20,
   },
   rowContent: {flex: 1},
   rowLabel: {
@@ -324,6 +383,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
+  checkmark: {
+    width: 20,
+    height: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   kofiButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -344,5 +409,60 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
     fontFamily: 'Rubik',
+  },
+  // Quality Modal
+  modalBackdrop: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    backgroundColor: Colors.dark.surface,
+    borderRadius: 16,
+    padding: 20,
+    width: 260,
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
+    elevation: 16,
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: 8},
+    shadowOpacity: 0.5,
+    shadowRadius: 24,
+  },
+  modalTitle: {
+    color: Colors.dark.text,
+    fontSize: 16,
+    fontWeight: '700',
+    fontFamily: 'Rubik',
+    marginBottom: 14,
+    textAlign: 'center',
+  },
+  modalOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    marginBottom: 4,
+  },
+  modalOptionActive: {
+    backgroundColor: `${Colors.dark.primary}20`,
+    borderWidth: 1,
+    borderColor: `${Colors.dark.primary}60`,
+  },
+  modalOptionText: {
+    color: Colors.dark.textSecondary,
+    fontSize: 15,
+    fontFamily: 'Rubik',
+  },
+  modalOptionTextActive: {
+    color: Colors.dark.primary,
+    fontWeight: '700',
   },
 });

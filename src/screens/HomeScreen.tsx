@@ -1,21 +1,20 @@
 /**
  * HomeScreen
  *
- * Sections:
- *   1. "Most Viewed"   — fetched from GET /api/view/:category/:id for all loaded items,
- *                        sorted descending. Falls back to items with embedded Views field.
- *   2. "Latest Added"  — first slice of freshly loaded movies dict (newest first)
- *   3. "Anime"         — slice of anime category
- *   4. "Series"        — slice of series category
+ * Sections (loaded from all available subcategories):
+ *   1. "Recommended" - random picks from all categories
+ *   2. "Most Viewed"   - sorted by view counts
+ *   3. "Latest Movies"  - newest movies
+ *   4. "Anime"         - anime category
+ *   5. "Series"        - series category
  *
- * No trending/featured JSON endpoints used.
- * Search button in top-right opens full-screen search overlay.
+ * Uses random selections from each subcategory until trending logic is ready.
  */
 
-import React, {useState, useCallback, useMemo, useRef, memo, useEffect} from 'react';
+import React, {useState, useCallback, useMemo, useRef, memo} from 'react';
 import {
   View, StyleSheet, FlatList, RefreshControl,
-  StatusBar, Text, TouchableOpacity, ActivityIndicator,
+  StatusBar, Text, TouchableOpacity, ActivityIndicator, Image,
 } from 'react-native';
 import {useFocusEffect, useNavigation} from '@react-navigation/native';
 import {loadCategory, getMoviesArray, searchContent} from '../services/metadataService';
@@ -30,11 +29,32 @@ import {ErrorView} from '../components/ErrorView';
 import {Colors} from '../theme/colors';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {useTranslation} from 'react-i18next';
-import Icon from 'react-native-vector-icons/Ionicons';
 
 const H_CARD_W = 142;
 
-// ── Stable horizontal row — never re-renders unless items change ────
+// All categories to load random picks from
+const ALL_CATEGORIES = [
+  'movies', 'dubbed-movies', 'hindi', 'asian-movies',
+  'anime', 'anime-movies', 'series', 'tvshows', 'asian-series',
+];
+
+// Shuffle helper
+const shuffleArray = <T,>(arr: T[]): T[] => {
+  const shuffled = [...arr];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  return shuffled;
+};
+
+// Pick N random items from array
+const pickRandom = <T,>(arr: T[], n: number): T[] => {
+  if (arr.length <= n) return shuffleArray(arr);
+  return shuffleArray(arr).slice(0, n);
+};
+
+// ── Stable horizontal row ──────────────────────────────────────────
 interface HRowProps {
   title: string;
   items: ContentItem[];
@@ -57,7 +77,6 @@ const HRow = memo<HRowProps>(({title, items, onSeeAll, onPressItem}) => {
         maxToRenderPerBatch={5}
         windowSize={7}
         removeClippedSubviews
-        getItemLayout={(_, idx) => ({length: H_CARD_W + 10, offset: (H_CARD_W + 10) * idx, index: idx})}
         renderItem={({item}) => (
           <View style={{marginRight: 10}}>
             <MovieCard item={item} onPress={onPressItem} width={H_CARD_W} />
@@ -69,7 +88,7 @@ const HRow = memo<HRowProps>(({title, items, onSeeAll, onPressItem}) => {
 }, (p, n) => p.title === n.title && p.items.length === n.items.length && p.items[0]?.id === n.items[0]?.id);
 HRow.displayName = 'HRow';
 
-// ── Enrich items with live view counts from the API ─────────────────
+// ── Enrich items with live view counts ──────────────────────────────
 const enrichWithViewCounts = async (
   items: ContentItem[],
   category: string,
@@ -89,7 +108,6 @@ const enrichWithViewCounts = async (
   return withCounts;
 };
 
-// Sort by views descending (using Views string field)
 const sortByViews = (items: ContentItem[]): ContentItem[] =>
   [...items].sort((a, b) => {
     const va = parseInt((a as any).Views || '0', 10);
@@ -102,13 +120,15 @@ export const HomeScreen: React.FC = () => {
   const navigation = useNavigation<any>();
   const insets = useSafeAreaInsets();
 
-  const [movies,  setMovies]  = useState<ContentItem[]>([]);
-  const [anime,   setAnime]   = useState<ContentItem[]>([]);
-  const [series,  setSeries]  = useState<ContentItem[]>([]);
+  const [allItems, setAllItems] = useState<ContentItem[]>([]);
+  const [movies, setMovies] = useState<ContentItem[]>([]);
+  const [anime, setAnime] = useState<ContentItem[]>([]);
+  const [series, setSeries] = useState<ContentItem[]>([]);
+  const [randomPicks, setRandomPicks] = useState<ContentItem[]>([]);
   const [mostViewed, setMostViewed] = useState<ContentItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [error,   setError]   = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   // Search
   const [searchVisible, setSearchVisible] = useState(false);
@@ -117,41 +137,55 @@ export const HomeScreen: React.FC = () => {
   const [searching, setSearching] = useState(false);
   const searchTimer = useRef<ReturnType<typeof setTimeout>>();
 
-  // ── Load data ──────────────────────────────────────────────────
+  // ── Load data from ALL categories ─────────────────────────────────
   const loadData = useCallback(async (force = false) => {
     try {
       setError(null);
 
-      // Load movies + anime + series in parallel
-      const [moviesData, animeData, seriesData] = await Promise.all([
-        loadCategory('movies',  force).catch(() => null),
-        loadCategory('anime',   force).catch(() => null),
-        loadCategory('series',  force).catch(() => null),
-      ]);
+      // Load all categories in parallel
+      const results = await Promise.all(
+        ALL_CATEGORIES.map(cat => loadCategory(cat as any, force).catch(() => null))
+      );
 
-      const moviesArr = moviesData  ? getMoviesArray(moviesData  as Record<string, any>) : [];
-      const animeArr  = animeData   ? getMoviesArray(animeData   as Record<string, any>) : [];
-      const seriesArr = seriesData  ? getMoviesArray(seriesData  as Record<string, any>) : [];
+      // Merge all items with category annotation
+      const merged: ContentItem[] = [];
+      const categoryMap: Record<string, ContentItem[]> = {};
 
-      setMovies(moviesArr);
-      setAnime(animeArr.slice(0, 20));
-      setSeries(seriesArr.slice(0, 20));
+      results.forEach((data, idx) => {
+        const cat = ALL_CATEGORIES[idx];
+        if (!data || typeof data !== 'object' || Array.isArray(data)) return;
+        const items = Object.values(data) as ContentItem[];
+        categoryMap[cat] = items;
+        merged.push(...items);
+      });
 
-      // Build initial most-viewed from embedded Views field
-      const withViews = [...moviesArr, ...animeArr, ...seriesArr]
-        .filter(i => parseInt((i as any).Views || '0', 10) > 0);
+      setAllItems(merged);
+
+      // Individual category slices
+      setMovies(categoryMap['movies']?.slice(0, 20) || []);
+      setAnime(categoryMap['anime']?.slice(0, 20) || []);
+      setSeries(categoryMap['series']?.slice(0, 20) || []);
+
+      // Random picks from ALL categories (20 items)
+      const picks = pickRandom(merged, 20);
+      setRandomPicks(picks);
+
+      // Most viewed from embedded Views field
+      const withViews = merged.filter(i => parseInt((i as any).Views || '0', 10) > 0);
       const initialTop = withViews.length >= 6
         ? sortByViews(withViews).slice(0, 20)
-        : [...moviesArr].reverse().slice(0, 20);
+        : pickRandom(merged, 20);
       setMostViewed(initialTop);
 
-      // Async: enrich top candidates with live API view counts
-      enrichWithViewCounts(moviesArr.slice(0, 30), 'movies').then(enriched => {
-        const liveTop = sortByViews(enriched).filter(i => parseInt((i as any).Views || '0', 10) > 0);
-        if (liveTop.length >= 4) setMostViewed(liveTop.slice(0, 20));
-      }).catch(() => {});
+      // Async: enrich movies with live view counts for trending
+      const moviesForViews = categoryMap['movies'] || [];
+      if (moviesForViews.length > 0) {
+        enrichWithViewCounts(moviesForViews, 'movies').then(enriched => {
+          const liveTop = sortByViews(enriched).filter(i => parseInt((i as any).Views || '0', 10) > 0);
+          if (liveTop.length >= 4) setMostViewed(liveTop.slice(0, 20));
+        }).catch(() => {});
+      }
 
-      // Try syncing pending view counts
       trySyncViews().catch(() => {});
     } catch (err: any) {
       setError(err.message);
@@ -162,14 +196,13 @@ export const HomeScreen: React.FC = () => {
   }, []);
 
   useFocusEffect(useCallback(() => { loadData(); }, [loadData]));
-
   const onRefresh = useCallback(() => { setRefreshing(true); loadData(true); }, [loadData]);
 
-  // ── Navigation ─────────────────────────────────────────────────
-  const goToDetails  = useCallback((item: ContentItem) => navigation.navigate('Details', {item}), [navigation]);
+  // ── Navigation ───────────────────────────────────────────────────
+  const goToDetails = useCallback((item: ContentItem) => navigation.navigate('Details', {item}), [navigation]);
   const goToCategory = useCallback((cat: string) => navigation.navigate('Category', {category: cat}), [navigation]);
 
-  // ── Search ─────────────────────────────────────────────────────
+  // ── Search ────────────────────────────────────────────────────────
   const handleSearch = useCallback((q: string) => {
     setSearchQuery(q);
     clearTimeout(searchTimer.current);
@@ -182,13 +215,12 @@ export const HomeScreen: React.FC = () => {
     }, 380);
   }, []);
 
-  // ── Latest = first 20 movies (dict order = insertion order = newest) ──
   const latestMovies = useMemo(() => movies.slice(0, 20), [movies]);
 
   if (loading) return <LoadingSpinner />;
-  if (error && !movies.length) return <ErrorView message={error} onRetry={() => loadData(true)} />;
+  if (error && !allItems.length) return <ErrorView message={error} onRetry={() => loadData(true)} />;
 
-  // ── Search overlay ─────────────────────────────────────────────
+  // ── Search overlay ───────────────────────────────────────────────
   if (searchVisible) {
     return (
       <View style={styles.container}>
@@ -226,7 +258,7 @@ export const HomeScreen: React.FC = () => {
     );
   }
 
-  // ── Main home ──────────────────────────────────────────────────
+  // ── Main home ────────────────────────────────────────────────────
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor={Colors.dark.background} />
@@ -235,7 +267,7 @@ export const HomeScreen: React.FC = () => {
       <View style={[styles.topBar, {paddingTop: insets.top + 6}]}>
         <Text style={styles.appName}>AbdoBest</Text>
         <TouchableOpacity style={styles.searchBtn} onPress={() => setSearchVisible(true)}>
-          <Icon name="search-outline" size={22} color={Colors.dark.text} />
+          <Image source={require('../../assets/icons/search.png')} style={{width: 20, height: 20, tintColor: Colors.dark.text}} />
         </TouchableOpacity>
       </View>
 
@@ -243,6 +275,12 @@ export const HomeScreen: React.FC = () => {
         data={[]}
         ListHeaderComponent={
           <>
+            <HRow
+              title={t('random_picks')}
+              items={randomPicks}
+              onSeeAll={() => goToCategory('movies')}
+              onPressItem={goToDetails}
+            />
             <HRow
               title={t('most_viewed')}
               items={mostViewed}

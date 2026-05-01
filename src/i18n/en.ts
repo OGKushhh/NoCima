@@ -118,4 +118,18 @@ export const en = {
   year: 'Year',
   rating: 'Rating',
   views: 'Views',
+  // Sort options
+  sort_by: 'Sort by',
+  sort_az: 'A-Z',
+  sort_za: 'Z-A',
+  sort_newest: 'Newest',
+  sort_oldest: 'Oldest',
+  sort_top_rated: 'Top Rated',
+  results: 'results',
+  // Details
+  category: 'Category',
+  directors: 'Directors',
+  of_10: '/ 10',
+  random_picks: 'Recommended',
+  asian_series: 'Asian Series',
 };
