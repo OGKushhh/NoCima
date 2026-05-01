@@ -147,14 +147,16 @@ const createInfoRowStyles = (colors: ThemeColors) =>
 
 const InfoRow: React.FC<InfoRowProps> = ({ label, value, accent }) => {
   const { colors } = useTheme();
+  const { i18n } = useTranslation();
+  const isRTL = i18n.language === 'ar';
   const infoRowStyle = useMemo(
     () => createInfoRowStyles(colors),
     [colors],
   );
   return (
-    <View style={infoRowStyle.row}>
-      <Text style={infoRowStyle.label}>{label}</Text>
-      <View style={infoRowStyle.valueWrap}>
+    <View style={[infoRowStyle.row, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
+      <Text style={[infoRowStyle.label, { textAlign: isRTL ? 'right' : 'left' }]}>{label}</Text>
+      <View style={[infoRowStyle.valueWrap, { justifyContent: isRTL ? 'flex-start' : 'flex-end' }]}>
         <Text
           style={[infoRowStyle.value, accent && infoRowStyle.valueAccent]}
           numberOfLines={2}
@@ -193,7 +195,6 @@ export const DetailsScreen: React.FC = () => {
 
   // ── Dynamic styles ──────────────────────────────────────────────────
   const S = useMemo(() => createStyles(colors), [colors]);
-  const infoRowStyles = useMemo(() => createInfoRowStyles(colors), [colors]);
 
   // ── Derived: series / anime check ───────────────────────────────────
   const isSeries = useMemo(() => {
@@ -612,12 +613,12 @@ export const DetailsScreen: React.FC = () => {
           </TouchableOpacity>
         </View>
 
-        {/* ─── 2. Title ───────────────────────────────────────────── */}
+        {/* ─── 2. Title (name + year only, no badges) ──────── */}
         <Text style={S.title} numberOfLines={4}>
-          {item?.Title}
+          {item?.Title}{year ? ` (${year})` : ''}
         </Text>
 
-        {/* ─── 3. Poster ──────────────────────────────────────────── */}
+        {/* ─── 3. Poster ─────────────────────────────────────────── */}
         <View style={S.posterWrap}>
           {item?.['Image Source'] ? (
             <FastImage
@@ -638,59 +639,59 @@ export const DetailsScreen: React.FC = () => {
               />
             </View>
           )}
-
-          {/* Quality badge on bottom-right corner */}
-          {format ? (
-            <View style={S.qualityBadge}>
-              <Text style={S.qualityBadgeText}>{format}</Text>
-            </View>
-          ) : null}
         </View>
 
-        {/* ─── 4. Meta pills row ──────────────────────────────────── */}
-        <View style={S.metaRow}>
-          {rating ? (
-            <View style={S.pill}>
-              <Image
-                source={require('../../assets/icons/star.png')}
-                style={S.iconPill}
-              />
-              <Text style={S.pillRating}>{rating}</Text>
-              <Text style={S.pillSub}>/ 10</Text>
-            </View>
-          ) : null}
-
-          {views ? (
-            <View style={S.pill}>
-              <Image
-                source={require('../../assets/icons/eyes.png')}
-                style={S.iconPill}
-              />
-              <Text style={S.pillViews}>{views}</Text>
-            </View>
-          ) : null}
-
-          {item?.Category ? (
-            <View
-              style={[S.pill, { borderColor: `${colors.accentLight}40` }]}
-            >
-              <Text style={S.pillCategory}>
-                {t(item?.Category) || item?.Category}
-              </Text>
-            </View>
-          ) : null}
-
-          {format ? (
-            <View
-              style={[
-                S.pill,
-                { borderColor: `${colors.primaryLight}30` },
-              ]}
-            >
-              <Text style={S.pillFormat}>{format}</Text>
-            </View>
-          ) : null}
-        </View>
+        {/* ─── 4. Badges row under poster ───────────────────────── */}
+        {(() => {
+          const badges: React.ReactNode[] = [];
+          if (rating) {
+            badges.push(
+              <View key="rating" style={S.posterBadge}>
+                <Image
+                  source={require('../../assets/icons/star.png')}
+                  style={S.posterBadgeIcon}
+                />
+                <Text style={[S.posterBadgeText, { color: '#FFD700' }]}>
+                  {rating}
+                </Text>
+              </View>,
+            );
+          }
+          if (views) {
+            badges.push(
+              <View key="views" style={S.posterBadge}>
+                <Image
+                  source={require('../../assets/icons/eyes.png')}
+                  style={[S.posterBadgeIcon, { tintColor: colors.textSecondary }]}
+                />
+                <Text style={[S.posterBadgeText, { color: colors.textSecondary }]}>
+                  {views}
+                </Text>
+              </View>,
+            );
+          }
+          if (format) {
+            badges.push(
+              <View key="format" style={S.posterBadge}>
+                <Text style={[S.posterBadgeText, { color: colors.text }]}>
+                  {format}
+                </Text>
+              </View>,
+            );
+          }
+          if (item?.Category) {
+            badges.push(
+              <View key="cat" style={S.posterBadge}>
+                <Text style={[S.posterBadgeText, { color: '#FFD700' }]}>
+                  {t(item?.Category) || item?.Category}
+                </Text>
+              </View>,
+            );
+          }
+          return badges.length > 0 ? (
+            <View style={S.badgesRowUnderPoster}>{badges}</View>
+          ) : null;
+        })()}
 
         {/* ─── 5. Season/Episode count badges (series only) ──────── */}
         {isSeries && (totalEpisodes > 0 || numEps) && (
@@ -852,48 +853,21 @@ export const DetailsScreen: React.FC = () => {
           </SurfaceCard>
         ) : null}
 
-        {/* ─── 10. Info table ─────────────────────────────────────── */}
-        <SurfaceCard style={S.infoTable}>
-          {year ? <InfoRow label={t('year')} value={year} accent /> : null}
-          {item?.Category ? (
-            <InfoRow
-              label={t('category')}
-              value={t(item?.Category) || item?.Category}
-              accent
-            />
-          ) : null}
-          {genresDisplay ? (
-            <InfoRow label={t('genres')} value={genresDisplay} accent />
-          ) : null}
-          {language ? (
-            <InfoRow label={t('language')} value={language} />
-          ) : null}
-          {format ? <InfoRow label={t('quality')} value={format} /> : null}
-          {country ? (
-            <InfoRow label={t('country')} value={country} accent />
-          ) : null}
-          {directors ? (
-            <InfoRow label={t('directors')} value={directors} accent />
-          ) : null}
-          {episodeDuration ? (
-            <InfoRow label={t('duration')} value={episodeDuration} />
-          ) : null}
-          {runtime ? (
-            <InfoRow label={t('duration')} value={runtime} />
-          ) : null}
-          {rating ? (
-            <View style={infoRowStyles.row}>
-              <Text style={infoRowStyles.label}>{t('rating')}</Text>
-              <View style={infoRowStyles.valueWrap}>
-                <Text style={infoRowStyles.value}>{rating} / 10</Text>
-                <Image
-                  source={require('../../assets/icons/star.png')}
-                  style={{ width: 16, height: 16, tintColor: '#FFD700' }}
-                />
-              </View>
-            </View>
-          ) : null}
-        </SurfaceCard>
+        {/* ─── 10. Info table (no duplicates from poster badges) ─── */}
+        {(() => {
+          // Collect non-empty rows — skip rating, quality, category (already on poster)
+          const rows: React.ReactNode[] = [];
+          if (year) rows.push(<InfoRow key="year" label={t('year')} value={year} accent />);
+          if (genresDisplay) rows.push(<InfoRow key="genres" label={t('genres')} value={genresDisplay} accent />);
+          if (language) rows.push(<InfoRow key="language" label={t('language')} value={language} />);
+          if (country) rows.push(<InfoRow key="country" label={t('country')} value={country} accent />);
+          if (directors) rows.push(<InfoRow key="directors" label={t('directors')} value={directors} accent />);
+          if (episodeDuration) rows.push(<InfoRow key="epdur" label={t('duration')} value={episodeDuration} />);
+          else if (runtime) rows.push(<InfoRow key="runtime" label={t('duration')} value={runtime} />);
+          return rows.length > 0 ? (
+            <SurfaceCard style={S.infoTable}>{rows}</SurfaceCard>
+          ) : null;
+        })()}
       </ScrollView>
     </View>
   );
@@ -981,8 +955,7 @@ const createStyles = (colors: ThemeColors) =>
     // ── 3. Poster ───────────────────────────────────────────────────────
     posterWrap: {
       alignSelf: 'center',
-      marginBottom: SPACING.lg,
-      position: 'relative',
+      marginBottom: SPACING.sm,
     },
     poster: {
       width: POSTER_W,
@@ -990,76 +963,42 @@ const createStyles = (colors: ThemeColors) =>
       borderRadius: 12,
       backgroundColor: colors.surfaceLight,
       ...colors.shadowLg,
+      overflow: 'hidden',
     },
     posterPlaceholder: {
       justifyContent: 'center',
       alignItems: 'center',
     },
-    qualityBadge: {
-      position: 'absolute',
-      bottom: SPACING.sm,
-      right: SPACING.sm,
-      backgroundColor: 'rgba(0,0,0,0.88)',
-      paddingHorizontal: SPACING.sm,
-      paddingVertical: SPACING.xs,
-      borderRadius: 7,
-      borderWidth: 1,
-      borderColor: 'rgba(255,255,255,0.2)',
-    },
-    qualityBadgeText: {
-      color: '#FFFFFF',
-      ...FONTS.caption,
-    },
-
-    // ── 4. Meta pills ───────────────────────────────────────────────────
-    metaRow: {
+    // ── Badges row under poster ─────────────────────────────────────
+    badgesRowUnderPoster: {
       flexDirection: 'row',
       justifyContent: 'center',
+      alignItems: 'center',
       flexWrap: 'wrap',
       gap: SPACING.sm,
       marginBottom: SPACING.lg,
-      paddingHorizontal: SPACING.xl,
     },
-    pill: {
+    posterBadge: {
       flexDirection: 'row',
       alignItems: 'center',
+      gap: 4,
       backgroundColor: colors.surface,
-      paddingHorizontal: SPACING.md,
-      paddingVertical: SPACING.sm,
-      borderRadius: 20,
-      gap: SPACING.xs,
+      paddingHorizontal: 10,
+      paddingVertical: 5,
+      borderRadius: 8,
       borderWidth: 1,
       borderColor: colors.border,
     },
-    iconPill: {
-      width: 13,
-      height: 13,
-      tintColor: colors.text,
+    posterBadgeIcon: {
+      width: 14,
+      height: 14,
     },
-    pillRating: {
-      color: colors.rating,
+    posterBadgeText: {
       ...FONTS.caption,
       fontWeight: '700',
+      color: colors.text,
     },
-    pillSub: {
-      color: colors.textMuted,
-      ...FONTS.micro,
-    },
-    pillViews: {
-      color: colors.textSecondary,
-      ...FONTS.caption,
-      fontWeight: '600',
-    },
-    pillCategory: {
-      color: colors.accentLight,
-      ...FONTS.caption,
-      fontWeight: '600',
-    },
-    pillFormat: {
-      color: colors.primaryLight,
-      ...FONTS.caption,
-      fontWeight: '600',
-    },
+
 
     // ── 5. Season/Episode count badges ──────────────────────────────────
     countBadgeRow: {

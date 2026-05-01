@@ -326,7 +326,10 @@ export const CategoryScreen: React.FC = () => {
             />
           </TouchableOpacity>
         ) : (
-          <View style={styles.searchToggleButton} />
+          <>
+            {/* Placeholder keeps title centered when search is open */}
+            <View style={styles.searchToggleButton} />
+          </>
         )}
       </View>
 

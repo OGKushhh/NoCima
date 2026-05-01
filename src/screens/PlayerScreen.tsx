@@ -10,7 +10,6 @@ import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {useTheme} from '../hooks/useTheme';
 import {FONTS} from '../theme/typography';
 import {useTranslation} from 'react-i18next';
-import {recordPlay} from '../services/viewService';
 
 const {width: SCREEN_WIDTH, height: SCREEN_HEIGHT} = Dimensions.get('window');
 
@@ -63,7 +62,6 @@ export const PlayerScreen: React.FC = () => {
   const [selectedQuality, setSelectedQuality] = useState(qualityList[0] || HLS_QUALITIES[0]);
   const [showQualityPicker, setShowQualityPicker] = useState(false);
   const hideTimer = useRef<any>(null);
-  const viewTracked = useRef(false);
 
   // ─── Video Source ────────────────────────────────────────────────────────
   // NO `type` prop — lets react-native-video auto-detect (v5=m3u8, v6=hls).
@@ -80,13 +78,8 @@ export const PlayerScreen: React.FC = () => {
     };
   }, [url]);
 
-  // ─── Track view (void sync — call with NO .catch()) ─────────────────────
-  useEffect(() => {
-    if (contentId && category && !viewTracked.current) {
-      viewTracked.current = true;
-      recordPlay(contentId, category);
-    }
-  }, [contentId, category]);
+  // ─── View tracking handled in DetailsScreen before navigation ─────────
+  // (avoids double-counting: DetailsScreen.recordPlay + PlayerScreen.mount)
 
   // ─── Cleanup ─────────────────────────────────────────────────────────────
   useEffect(() => {
