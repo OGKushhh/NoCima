@@ -1,1375 +1,745 @@
 /**
- * DetailsScreen — Premium Movie/Series Details Page
+ * DetailsScreen — Full metadata + episode indexer + season selector
  *
- * Layout (top to bottom in ScrollView):
- *   1. Nav bar: Back arrow + Share button
- *   2. Title: centered, heading1, white, max 4 lines
- *   3. Poster: centered, rounded corners, shadowLg, quality badge
- *   4. Meta pills: Rating, Views, Category badge, Format badge
- *   5. Season/Episode count badges (series only) + status badge
- *   6. Action buttons: Play (big red) + Download (outlined)
- *   7. Error banner (if extraction fails)
- *   8. Episodes section (series/anime only): accordion + list
- *   9. Description: surface card
- *  10. Info table: surface card with key-value rows
+ * Merge of Claude's episode UI with our bug fixes:
+ *   - recordPlay() called WITHOUT .catch() (it's sync)
+ *   - Title in visible styled box
+ *   - Poster corner badges (category + quality) using Image icons (not emoji)
+ *   - Season picker modal (bottom sheet)
+ *   - Episode indexer with numbered circles + play buttons
+ *   - All metadata fields in info table
+ *   - buildFaselUrl for reliable URL construction
+ *   - Localized genres via localizeGenres()
  *
  * Play flow:
- *   1. User taps Play or episode
- *   2. Show "Connecting..." rotating status in Play button
- *   3. POST /extract with getExtractionUrl()
- *   4. Navigate to Player with extracted URL
+ *   Movies:   buildFaselUrl(id) → POST /extract → Player
+ *   Episodes: episode URL directly → POST /extract → Player
  */
 
-import React, {
-  useState,
-  useCallback,
-  useMemo,
-  useEffect,
-  useRef,
-} from 'react';
+import React, {useState, useCallback, useMemo, useEffect, useRef} from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  ActivityIndicator,
-  Share,
-  Dimensions,
-  StatusBar,
-  Image,
+  View, Text, StyleSheet, ScrollView, TouchableOpacity,
+  ActivityIndicator, Share, Dimensions, StatusBar, Image,
+  Modal, FlatList,
 } from 'react-native';
-import { useRoute, useNavigation } from '@react-navigation/native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import {useRoute, useNavigation} from '@react-navigation/native';
+import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import FastImage from 'react-native-fast-image';
 import axios from 'axios';
+import {ContentItem} from '../types';
+import {extractVideoUrl} from '../services/api';
+import {recordPlay} from '../services/viewService';
+import {Colors} from '../theme/colors';
+import {useTranslation} from 'react-i18next';
+import {localizeGenres} from '../i18n/genres';
+import {API_BASE} from '../constants/endpoints';
 
-import { ContentItem } from '../types';
-import { extractVideoUrl } from '../services/api';
-import { recordPlay } from '../services/viewService';
-import { SPACING } from '../theme/colors';
-import type { ThemeColors } from '../theme/colors';
-import { FONTS } from '../theme/typography';
-import { API_BASE } from '../constants/endpoints';
-import { useTranslation } from 'react-i18next';
-import { useTheme } from '../hooks/useTheme';
+const FASEL_BASE = 'https://www.fasel-hd.cam';
 
-// ── Constants ────────────────────────────────────────────────────────
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const POSTER_W = Math.min(SCREEN_WIDTH * 0.52, 220);
+const {width: SW} = Dimensions.get('window');
+const POSTER_W = Math.min(SW * 0.48, 200);
 const POSTER_H = POSTER_W * 1.52;
 
-const EXTRACT_STATUSES = [
-  'Connecting to server...',
-  'Fetching page...',
-  'Extracting stream URL...',
-  'Almost there...',
+const STATUS_MSGS = [
+  'Connecting to server…',
+  'Fetching page…',
+  'Extracting stream…',
+  'Almost there…',
 ];
 
-// ── Types ────────────────────────────────────────────────────────────
-interface EpisodeData {
-  episode?: string;
-  title?: string;
-  source?: string;
-  image?: string;
-  quality?: string;
-  [key: string]: any;
-}
-
-interface SeasonData {
-  season_number?: string | number;
-  season_name?: string;
-  episodes?: EpisodeData[];
-  image?: string;
-  poster?: string;
-  thumbnail?: string;
-  [key: string]: any;
-}
-
-// ── Surface Card ─────────────────────────────────────────────────────
-const createSurfaceCardStyles = (colors: ThemeColors) =>
-  StyleSheet.create({
-    card: {
-      backgroundColor: colors.surface,
-      borderRadius: 16,
-      borderWidth: 1,
-      borderColor: colors.border,
-    },
-  });
-
-const SurfaceCard: React.FC<{ children: React.ReactNode; style?: any }> = ({
-  children,
-  style,
-}) => {
-  const { colors } = useTheme();
-  const surfaceCardStyle = useMemo(
-    () => createSurfaceCardStyles(colors),
-    [colors],
-  );
-  return <View style={[surfaceCardStyle.card, style]}>{children}</View>;
+// ── Category → short badge label (i18n key) ─────────────────────────
+const CAT_BADGE_KEY: Record<string, string> = {
+  movies: 'badge_movie',
+  'dubbed-movies': 'badge_dubbed',
+  hindi: 'badge_hindi',
+  'asian-movies': 'badge_asian',
+  anime: 'badge_anime',
+  'anime-movies': 'badge_anime_film',
+  series: 'badge_series',
+  tvshows: 'badge_tvshow',
+  'asian-series': 'badge_kdrama',
 };
 
-// ── Info Table Row ───────────────────────────────────────────────────
+// ── Info table row ───────────────────────────────────────────────────
 interface InfoRowProps {
   label: string;
   value: string;
   accent?: boolean;
 }
+const InfoRow: React.FC<InfoRowProps> = ({label, value, accent}) => (
+  <View style={rowS.row}>
+    <Text style={rowS.label}>{label}</Text>
+    <Text style={[rowS.value, accent && rowS.accent]} numberOfLines={3}>{value}</Text>
+  </View>
+);
 
-const createInfoRowStyles = (colors: ThemeColors) =>
-  StyleSheet.create({
-    row: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      paddingVertical: SPACING.md,
-      paddingHorizontal: SPACING.lg,
-      borderBottomWidth: StyleSheet.hairlineWidth,
-      borderBottomColor: colors.border,
-    },
-    label: {
-      flex: 1.1,
-      color: colors.textSecondary,
-      ...FONTS.bodySmall,
-    },
-    valueWrap: {
-      flex: 2,
-      flexDirection: 'row',
-      justifyContent: 'flex-end',
-      alignItems: 'center',
-      gap: 6,
-    },
-    value: {
-      color: colors.text,
-      ...FONTS.bodySmall,
-      textAlign: 'right',
-    },
-    valueAccent: {
-      color: colors.accentLight,
-    },
-  });
+const rowS = StyleSheet.create({
+  row: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    paddingVertical: 13,
+    paddingHorizontal: 18,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: Colors.dark.border,
+  },
+  label: {
+    flex: 1.1,
+    color: Colors.dark.textSecondary,
+    fontSize: 13.5,
+    fontFamily: 'Rubik',
+    paddingTop: 1,
+  },
+  value: {
+    flex: 2,
+    color: Colors.dark.text,
+    fontSize: 13.5,
+    fontFamily: 'Rubik',
+    textAlign: 'right',
+    lineHeight: 20,
+  },
+  accent: {color: Colors.dark.accentLight},
+});
 
-const InfoRow: React.FC<InfoRowProps> = ({ label, value, accent }) => {
-  const { colors } = useTheme();
-  const { i18n } = useTranslation();
-  const isRTL = i18n.language === 'ar';
-  const infoRowStyle = useMemo(
-    () => createInfoRowStyles(colors),
-    [colors],
-  );
-  return (
-    <View style={[infoRowStyle.row, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
-      <Text style={[infoRowStyle.label, { textAlign: isRTL ? 'right' : 'left' }]}>{label}</Text>
-      <View style={[infoRowStyle.valueWrap, { justifyContent: isRTL ? 'flex-start' : 'flex-end' }]}>
-        <Text
-          style={[infoRowStyle.value, accent && infoRowStyle.valueAccent]}
-          numberOfLines={2}
-        >
-          {value}
-        </Text>
-      </View>
-    </View>
-  );
+// ── Episode fetcher ──────────────────────────────────────────────────
+const fetchEpisodes = async (category: string, id: string) => {
+  const episodic = ['series', 'tvshows', 'asian-series'];
+  const isAnime = category === 'anime';
+  if (!episodic.includes(category) && !isAnime) return null;
+  const url = isAnime
+    ? `${API_BASE}/api/anime-episodes/${id}`
+    : `${API_BASE}/api/episodes/${category}/${id}`;
+  const r = await axios.get(url, {timeout: 20000});
+  return r.data;
 };
 
-// =============================================================================
-// DetailsScreen
-// =============================================================================
+// ══════════════════════════════════════════════════════════════════════
 export const DetailsScreen: React.FC = () => {
   const route = useRoute<any>();
-  const navigation = useNavigation<any>();
-  const { t, i18n } = useTranslation();
+  const nav = useNavigation<any>();
+  const {t, i18n} = useTranslation();
   const insets = useSafeAreaInsets();
-  const { colors } = useTheme();
 
-  // ── Item (may be undefined) ─────────────────────────────────────────
-  const item: ContentItem | undefined = route.params?.item;
+  const item: ContentItem = route.params?.item;
 
-  // ── ALL hooks declared BEFORE any conditional return ────────────────
+  // Extraction state
   const [extracting, setExtracting] = useState(false);
   const [statusIdx, setStatusIdx] = useState(0);
   const [extractError, setExtractError] = useState<string | null>(null);
-  const [episodesLoading, setEpisodesLoading] = useState(false);
-  const [seasons, setSeasons] = useState<SeasonData[]>([]);
-  const [expandedSeason, setExpandedSeason] = useState<number | null>(null);
-  const [selectedEpisode, setSelectedEpisode] = useState<string | null>(null);
+  const [extractingEp, setExtractingEp] = useState<string | null>(null);
+
+  // Episode state
+  const [epData, setEpData] = useState<any>(null);
+  const [loadingEps, setLoadingEps] = useState(false);
+  const [selSeason, setSelSeason] = useState<string>('1');
+  const [showSeasonDlg, setShowSeasonDlg] = useState(false);
+
+  // Rating fetch state
+  const [rating, setRating] = useState<string>('');
+  const [ratingLoading, setRatingLoading] = useState(false);
+
+  const statusTimer = useRef<ReturnType<typeof setInterval>>();
 
   const lang = i18n.language === 'ar' ? 'ar' : 'en';
-  const rotateTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const raw = item as any;
 
-  // ── Dynamic styles ──────────────────────────────────────────────────
-  const S = useMemo(() => createStyles(colors), [colors]);
+  const category = (item?.Category || 'movies').toLowerCase();
+  const isEpisodic = ['series', 'tvshows', 'asian-series', 'anime'].includes(category);
 
-  // ── Derived: series / anime check ───────────────────────────────────
-  const isSeries = useMemo(() => {
-    const cat = item?.Category || '';
-    return ['series', 'tvshows', 'asian-series'].includes(cat);
-  }, [item?.Category]);
-
-  const isAnime = useMemo(
-    () => item?.Category === 'anime',
-    [item?.Category],
-  );
-
-  // ── Extraction URL resolver ─────────────────────────────────────────
-  const getExtractionUrl = useCallback((): string => {
-    if (!item) return '';
-    if ((item as any).SeasonsUrl) {
-      return (item as any).SeasonsUrl;
-    }
-    const s = (item as any).Source || (item as any).source || '';
-    if (s && typeof s === 'string' && s.startsWith('http')) return s;
-    return `https://www.fasel-hd.cam/?p=${item?.id}`;
-  }, [item]);
-
-  // ── Derived metadata ────────────────────────────────────────────────
-  const genresDisplay = useMemo(() => {
-    const list =
-      lang === 'ar'
-        ? item?.GenresAr?.length
-          ? item?.GenresAr
-          : item?.Genres
-        : item?.Genres?.length
-          ? item?.Genres
-          : item?.GenresAr;
-    return (list || []).join(' / ');
-  }, [item?.Genres, item?.GenresAr, lang]);
-
-  const directors = useMemo(() => {
-    const d = (item as any)?.Directors || (item as any)?.directors || [];
-    return (Array.isArray(d) ? d : [d]).filter(Boolean).join('  ');
-  }, [item]);
-
-  const description =
-    lang === 'ar'
-      ? item?.DescriptionAr || item?.Description || ''
-      : item?.Description || item?.DescriptionAr || '';
-
-  const formatRuntime = useCallback((min: number | null): string => {
-    if (!min) return '';
-    const h = Math.floor(min / 60);
-    const m = min % 60;
-    return h > 0 ? (m > 0 ? `${h}h ${m}min` : `${h}h`) : `${m}min`;
-  }, []);
-
-  const rating = (item as any)?.Rating || '';
-  const views = (item as any)?.Views || '';
-  const year =
-    (item as any)?.Year ||
-    (item as any)?.ReleaseDate?.substring(0, 4) ||
-    '';
-  const country = item?.Country || '';
-  const language = (item as any)?.Language || '';
-  const format = item?.Format || '';
-  const numEps =
-    (item as any)?.['Number Of Episodes Text'] ??
-    (item as any)?.['Number Of Episodes'] ??
-    null;
-  const itemStatus = (item as any)?.Status || '';
-  const episodeDuration = (item as any)?.EpisodeDuration || '';
-  const runtime = formatRuntime(item?.Runtime ?? null);
-
-  const totalEpisodes = useMemo(() => {
-    if (numEps && numEps > 0) return numEps;
-    return seasons.reduce((sum, s) => sum + (s.episodes?.length || 0), 0);
-  }, [seasons, numEps]);
-
-  const totalSeasons = seasons.length;
-
-  // ── Episode fetching ───────────────────────────────────────────────
-  const fetchEpisodes = useCallback(
-    async (contentId: string, category: string) => {
-      setEpisodesLoading(true);
-      try {
-        let endpoint = '';
-        if (category === 'anime') {
-          endpoint = `/api/anime-episodes/${contentId}`;
-        } else {
-          endpoint = `/api/episodes/${category}/${contentId}`;
-        }
-
-        const response = await axios.get(`${API_BASE}${endpoint}`, {
-          timeout: 15000,
-        });
-        const data = response.data;
-
+  // ── Fetch rating ──────────────────────────────────────────────────
+  useEffect(() => {
+    if (!item?.id || !category) return;
+    setRatingLoading(true);
+    axios
+      .get(`${API_BASE}/api/ratings/${category}/${item.id}`, {timeout: 8000})
+      .then(r => {
+        const data = r.data;
         if (data && !data.error) {
-          if (Array.isArray(data)) {
-            setSeasons([
-              {
-                season_number: 1,
-                season_name: `${t('season')} 1`,
-                episodes: data,
-              },
-            ]);
-            setExpandedSeason(0);
-          } else if (data.seasons && Array.isArray(data.seasons)) {
-            setSeasons(data.seasons);
-            setExpandedSeason(0);
-          } else if (typeof data === 'object') {
-            const keys = Object.keys(data);
-            const seasonKeys = keys.filter(
-              (k) =>
-                k.toLowerCase().includes('season') || /^\d+$/.test(k),
-            );
-            if (seasonKeys.length > 0) {
-              const parsed = seasonKeys.map((key, idx) => ({
-                season_number: idx + 1,
-                season_name: key.includes('season')
-                  ? key
-                  : `${t('season')} ${idx + 1}`,
-                episodes: Array.isArray(data[key]) ? data[key] : [],
-              }));
-              setSeasons(parsed);
-              setExpandedSeason(0);
-            } else {
-              const eps = Object.values(data).filter(
-                (v) => typeof v === 'object' && (v as any).source,
-              );
-              if (eps.length > 0) {
-                setSeasons([
-                  {
-                    season_number: 1,
-                    season_name: `${t('season')} 1`,
-                    episodes: eps as EpisodeData[],
-                  },
-                ]);
-                setExpandedSeason(0);
-              }
-            }
-          }
+          const val = data.rating || data.imdb_rating || data.score || data.Rating || '';
+          if (val) setRating(String(val));
         }
-      } catch (err: any) {
-        console.warn('[Details] Failed to fetch episodes:', err?.response?.status, err?.response?.data || err?.message);
-      } finally {
-        setEpisodesLoading(false);
-      }
-    },
-    [t],
-  );
+      })
+      .catch(() => {})
+      .finally(() => setRatingLoading(false));
+  }, [item?.id, category]);
 
-  // Fetch episodes on mount for series/anime
+  // ── Fetch episodes ────────────────────────────────────────────────
   useEffect(() => {
-    if (!item?.id) return;
-    if (isSeries) {
-      fetchEpisodes(item.id, item?.Category || 'series');
-    } else if (isAnime) {
-      fetchEpisodes(item.id, 'anime');
-    }
-  }, [item?.id, item?.Category, isSeries, isAnime, fetchEpisodes]);
+    if (!item || !isEpisodic) return;
+    setLoadingEps(true);
+    fetchEpisodes(category, item.id)
+      .then(data => {
+        setEpData(data);
+        if (data?.seasons) setSelSeason(Object.keys(data.seasons)[0] ?? '1');
+      })
+      .catch(() => {})
+      .finally(() => setLoadingEps(false));
+  }, [item?.id, category]);
 
-  // ── Play handler ────────────────────────────────────────────────────
-  const handlePlay = useCallback(
-    async (episodeUrl?: string) => {
-      setExtracting(true);
-      setExtractError(null);
-      setSelectedEpisode(episodeUrl || null);
-      setStatusIdx(0);
+  useEffect(() => () => clearInterval(statusTimer.current), []);
 
-      rotateTimerRef.current = setInterval(() => {
-        setStatusIdx((prev) => (prev + 1) % EXTRACT_STATUSES.length);
-      }, 3500);
-
-      try {
-        const pageUrl = episodeUrl || getExtractionUrl();
-
-        if (!pageUrl || pageUrl.startsWith('__id__')) {
-          throw new Error(t('video_unavailable') || 'Video unavailable');
-        }
-
-        const result = await extractVideoUrl(pageUrl);
-
-        // Record the play event AFTER successful extraction — void sync function, no .catch()
-        // Only count if we actually got a valid stream URL
-        recordPlay(item?.id || '', item?.Category || 'movies');
-
-        if (rotateTimerRef.current) {
-          clearInterval(rotateTimerRef.current);
-          rotateTimerRef.current = null;
-        }
-
-        // ── Validate extracted URL is actually a playable stream ──
-        const streamUrl = result.video_url || '';
-        const badPatterns = ['ping.gif', 'pixel.gif', 'tracking', 'doubleclick', '/ad/', '/ads/'];
-        const hasBadPattern = badPatterns.some(p => streamUrl.toLowerCase().includes(p));
-        const hasMediaExtension = /\.(m3u8|mp4|mkv|m4a|ts|mpd)(\?|$)/i.test(streamUrl);
-        const hasMediaHost = streamUrl.includes('.m3u8') || streamUrl.includes('scdns.io') || streamUrl.includes('master');
-        if (!streamUrl || hasBadPattern || (!hasMediaExtension && !hasMediaHost)) {
-          console.warn('[Details] Extracted URL looks invalid:', streamUrl.substring(0, 150));
-          setExtractError(
-            t('video_unavailable') || 'Could not extract a valid stream URL. The source may have changed.',
-          );
-          setExtracting(false);
-          return;
-        }
-
-        setExtracting(false);
-
-        const episodeTitle = episodeUrl
-          ? `${item?.Title || ''} - ${t('episode')}`
-          : item?.Title || '';
-
-        navigation.navigate('Player', {
-          url: streamUrl,
-          qualities: result.quality_options,
-          title: episodeTitle,
-          contentId: item?.id,
-          category: item?.Category || 'movies',
-          pageUrl: pageUrl, // for cache-bust retry on expired URLs
-        });
-      } catch (err: any) {
-        if (rotateTimerRef.current) {
-          clearInterval(rotateTimerRef.current);
-          rotateTimerRef.current = null;
-        }
-        setExtractError(err.message || t('server_error') || 'Server error');
-        setExtracting(false);
-      }
-    },
-    [item, getExtractionUrl, navigation, t],
-  );
-
-  // ── Share handler ──────────────────────────────────────────────────
-  const handleShare = useCallback(() => {
-    Share.share({ message: `${item?.Title || ''} - AbdoBest` });
-  }, [item?.Title]);
-
-  // Cleanup interval on unmount
-  useEffect(() => {
-    return () => {
-      if (rotateTimerRef.current) {
-        clearInterval(rotateTimerRef.current);
-      }
-    };
-  }, []);
-
-  // ── Series poster for season thumbnails ────────────────────────
-  const seriesPosterUrl = item?.['Image Source'] || '';
-
-  // ── Episode render ──────────────────────────────────────────────────
-  const renderEpisode = useCallback(
-    ({ ep, index }: { item: EpisodeData; index: number }) => {
-      const epTitle =
-        ep?.title || ep?.episode || `${t('episode')} ${index + 1}`;
-      const epQuality = ep?.quality || '';
-      const isSelected = selectedEpisode === ep?.source;
-      const canPlay = !!ep?.source;
-      const epImage = ep?.image || '';
-
-      return (
-        <TouchableOpacity
-          key={`ep-${index}`}
-          style={[S.episodeCard, isSelected && S.episodeCardActive]}
-          onPress={() => (canPlay ? handlePlay(ep?.source) : null)}
-          activeOpacity={canPlay ? 0.7 : 1}
-          disabled={!canPlay}
-        >
-          {/* Episode thumbnail or number */}
-          {epImage ? (
-            <FastImage
-              source={{ uri: epImage }}
-              style={S.epThumbnail}
-              resizeMode={FastImage.resizeMode.cover}
-            />
-          ) : (
-            <View style={S.episodeNumWrap}>
-              <Text style={S.episodeNum}>{index + 1}</Text>
-              {epQuality ? (
-                <View style={S.epQualityBadge}>
-                  <Text style={S.epQualityText}>
-                    {epQuality.split(' ')[0]}
-                  </Text>
-                </View>
-              ) : null}
-            </View>
-          )}
-
-          {/* Episode title + quality */}
-          <View style={S.episodeInfo}>
-            <Text style={S.episodeTitle} numberOfLines={2}>
-              {epTitle}
-            </Text>
-            {epQuality && epImage ? (
-              <View style={S.epQualityBadge}>
-                <Text style={S.epQualityText}>
-                  {epQuality.split(' ')[0]}
-                </Text>
-              </View>
-            ) : null}
-          </View>
-
-          {/* Play icon or coming soon */}
-          {canPlay ? (
-            <Image
-              source={require('../../assets/icons/clapboard.png')}
-              style={[
-                S.epPlayIcon,
-                { tintColor: colors.primaryLight },
-              ]}
-            />
-          ) : (
-            <Text style={S.epComingSoon}>{t('coming_soon')}</Text>
-          )}
-        </TouchableOpacity>
-      );
-    },
-    [selectedEpisode, handlePlay, t, S, colors],
-  );
-
-  // ── Season header render ────────────────────────────────────────────
-  const renderSeasonHeader = useCallback(
-    ({ season, index }: { item: SeasonData; index: number }) => {
-      const isExpanded = expandedSeason === index;
-      const epCount = season?.episodes?.length || 0;
-      const seasonImage = season?.image || season?.poster || season?.thumbnail || '';
-
-      return (
-        <TouchableOpacity
-          key={`season-${index}`}
-          style={[S.seasonHeader, isExpanded && S.seasonHeaderActive]}
-          onPress={() => setExpandedSeason(isExpanded ? null : index)}
-          activeOpacity={0.7}
-        >
-          {/* Season poster thumbnail — season image or series fallback */}
-          {seasonImage ? (
-            <FastImage
-              source={{ uri: seasonImage }}
-              style={S.seasonPosterThumb}
-              resizeMode={FastImage.resizeMode.cover}
-            />
-          ) : seriesPosterUrl ? (
-            <FastImage
-              source={{ uri: seriesPosterUrl }}
-              style={S.seasonPosterThumb}
-              resizeMode={FastImage.resizeMode.cover}
-            />
-          ) : (
-            <View style={S.seasonPosterFallback}>
-              <Image
-                source={require('../../assets/icons/tv.png')}
-                style={{ width: 18, height: 18, tintColor: colors.textMuted }}
-              />
-            </View>
-          )}
-
-          <Text style={[S.seasonTitle, isExpanded && S.seasonTitleActive]}>
-            {season?.season_name ||
-              `${t('season')} ${season?.season_number || index + 1}`}
-          </Text>
-          <View style={S.seasonMeta}>
-            <Text style={S.seasonEpCount}>
-              {epCount} {t('episodes')}
-            </Text>
-            <Image
-              source={require('../../assets/icons/arrow.png')}
-              style={[
-                S.chevron,
-                {
-                  tintColor: colors.textMuted,
-                  transform: [{ rotate: isExpanded ? '90deg' : '0deg' }],
-                },
-              ]}
-            />
-          </View>
-        </TouchableOpacity>
-      );
-    },
-    [expandedSeason, t, S, colors, seriesPosterUrl],
-  );
-
-  // ════════════════════════════════════════════════════════════════════
-  // CONDITIONAL RENDER — error state when item is missing
-  // ════════════════════════════════════════════════════════════════════
+  // ── Empty state ───────────────────────────────────────────────────
   if (!item) {
     return (
       <View style={S.container}>
-        <StatusBar
-          barStyle="light-content"
-          backgroundColor={colors.background}
-          translucent
-        />
         <TouchableOpacity
-          style={[S.navBtn, { marginTop: insets.top + 16, marginLeft: SPACING.lg }]}
-          onPress={() => navigation.goBack()}
+          style={[S.navBtn, {margin: 20, marginTop: insets.top + 20}]}
+          onPress={() => nav.goBack()}
         >
-          <Image
-            source={require('../../assets/icons/arrow.png')}
-            style={S.iconNav}
-          />
+          <Image source={require('../../assets/icons/arrow.png')} style={S.iconNav} />
         </TouchableOpacity>
-        <View style={S.errorStateWrap}>
-          <Image
-            source={require('../../assets/icons/clapboard.png')}
-            style={S.errorStateIcon}
-          />
-          <Text style={S.errorStateText}>
-            {t('error_loading') || 'Content not found'}
-          </Text>
-          <TouchableOpacity style={S.errorStateBtn} onPress={() => navigation.goBack()}>
-            <Text style={S.errorStateBtnText}>Go Back</Text>
-          </TouchableOpacity>
-        </View>
+        <Text style={S.fallback}>{t('error_loading')}</Text>
       </View>
     );
   }
 
-  // ════════════════════════════════════════════════════════════════════
-  // MAIN RENDER
-  // ════════════════════════════════════════════════════════════════════
+  // ── Field helpers ─────────────────────────────────────────────────
+  const genresDisplay = useMemo(() => {
+    const list = lang === 'ar'
+      ? (item.GenresAr?.length ? item.GenresAr : item.Genres)
+      : (item.Genres?.length ? item.Genres : item.GenresAr);
+    if (!list || list.length === 0) return '';
+    const localized = localizeGenres(list, lang as 'ar' | 'en');
+    return localized.join('  \u2022  ');
+  }, [item.Genres, item.GenresAr, lang]);
+
+  const directors = useMemo(() => {
+    const d = raw.Directors || raw.directors || [];
+    return (Array.isArray(d) ? d : [d]).filter(Boolean).join('  \u2022  ');
+  }, [raw]);
+
+  const description = lang === 'ar'
+    ? (raw.DescriptionAr || raw.Description || '')
+    : (raw.Description || raw.DescriptionAr || '');
+
+  const fmtRuntime = (min: number | null) => {
+    if (!min) return '';
+    const h = Math.floor(min / 60), m = min % 60;
+    return h > 0 ? (m > 0 ? `${h}h ${m}min` : `${h}h`) : `${m}min`;
+  };
+
+  const views = raw.Views || '';
+  const year = raw.Year || (raw.ReleaseDate ? String(raw.ReleaseDate).slice(0, 4) : '');
+  const country = item.Country || '';
+  const language = raw.Language || '';
+  const format = (item.Format && item.Format !== 'N/A') ? item.Format : '';
+  const numEps = raw['Number Of Episodes'] ?? null;
+  const numEpsText = raw['Number Of Episodes Text'] || (numEps ? String(numEps) : '');
+  const epDuration = raw.EpisodeDuration || '';
+  const status = raw.Status || '';
+  const releaseDate = raw.ReleaseDate || '';
+  const viewingLvl = raw.ViewingLevel || '';
+  const runtime = fmtRuntime(item.Runtime);
+  const viewType = raw.Type || '';
+
+  // Status display with translation
+  const displayStatus = useMemo(() => {
+    if (!status) return '';
+    if (status === '\u0645\u0633\u062A\u0645\u0631' || status.toLowerCase() === 'ongoing') return t('status_ongoing');
+    if (status === '\u0645\u0643\u062A\u0645\u0644' || status.toLowerCase() === 'completed' || status.toLowerCase() === 'ended') return t('status_completed');
+    return status;
+  }, [status, t]);
+
+  const isOngoing = status === '\u0645\u0633\u062A\u0645\u0631' || status.toLowerCase() === 'ongoing';
+
+  // Episode data
+  const seasonKeys: string[] = epData?.seasons ? Object.keys(epData.seasons).sort((a, b) => {
+    const na = parseInt(a.replace(/\D/g, ''), 10) || 0;
+    const nb = parseInt(b.replace(/\D/g, ''), 10) || 0;
+    return na - nb;
+  }) : [];
+  const currentEps: string[] = epData?.seasons?.[selSeason]?.episodes ?? [];
+  const seasonPoster: string = epData?.seasons?.[selSeason]?.poster || '';
+
+  const totalSeasons = seasonKeys.length;
+  const totalEps = numEps && numEps > 0 ? numEps
+    : numEpsText && parseInt(String(numEpsText), 10) > 0 ? parseInt(String(numEpsText), 10)
+    : currentEps.length;
+
+  // ── Status timer helpers ──────────────────────────────────────────
+  const startStatusTimer = () => {
+    setStatusIdx(0);
+    statusTimer.current = setInterval(
+      () => setStatusIdx(p => (p + 1) % STATUS_MSGS.length), 4000,
+    );
+  };
+  const stopStatusTimer = () => clearInterval(statusTimer.current);
+
+  // ── Play movie ────────────────────────────────────────────────────
+  const handlePlay = useCallback(async () => {
+    setExtracting(true);
+    setExtractError(null);
+    startStatusTimer();
+    try {
+      const url = `${FASEL_BASE}/?p=${item.id}`;
+      const result = await extractVideoUrl(url);
+      stopStatusTimer();
+      setExtracting(false);
+      // recordPlay is sync — do NOT .catch()
+      recordPlay(item.id, category);
+      nav.navigate('Player', {
+        url: result.video_url,
+        qualities: result.quality_options,
+        title: item.Title,
+        contentId: item.id,
+        category,
+      });
+    } catch (err: any) {
+      stopStatusTimer();
+      setExtractError(err.message || t('server_error'));
+      setExtracting(false);
+    }
+  }, [item, category, nav, t]);
+
+  // ── Play episode ──────────────────────────────────────────────────
+  const handlePlayEpisode = useCallback(async (epUrl: string, epNum: number) => {
+    setExtractingEp(epUrl);
+    setExtractError(null);
+    startStatusTimer();
+    try {
+      const result = await extractVideoUrl(epUrl);
+      stopStatusTimer();
+      setExtractingEp(null);
+      // recordPlay is sync — do NOT .catch()
+      recordPlay(item.id, category);
+      nav.navigate('Player', {
+        url: result.video_url,
+        qualities: result.quality_options,
+        title: `${item.Title} - ${t('season')} ${selSeason} ${t('episode')} ${epNum}`,
+        contentId: item.id,
+        category,
+      });
+    } catch (err: any) {
+      stopStatusTimer();
+      setExtractError(err.message || t('server_error'));
+      setExtractingEp(null);
+    }
+  }, [item, category, selSeason, nav, t]);
+
+  const handleShare = () =>
+    Share.share({message: `${item.Title} - AbdoBest`});
+
+  // ══════════════════════════════════════════════════════════════════════
+  // ── Render ─────────────────────────────────────────────────────────
+  // ══════════════════════════════════════════════════════════════════════
   return (
     <View style={S.container}>
-      <StatusBar
-        barStyle="light-content"
-        backgroundColor={colors.background}
-        translucent
-      />
+      <StatusBar barStyle="light-content" backgroundColor={Colors.dark.background} />
 
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={[
-          S.scrollContent,
-          { paddingBottom: insets.bottom + SPACING.xxxl },
-        ]}
+        contentContainerStyle={[S.scroll, {paddingBottom: insets.bottom + 60}]}
       >
-        {/* ─── 1. Nav bar ─────────────────────────────────────────── */}
-        <View style={[S.navBar, { paddingTop: insets.top + SPACING.xs }]}>
-          <TouchableOpacity
-            style={S.navBtn}
-            onPress={() => navigation.goBack()}
-          >
-            <Image
-              source={require('../../assets/icons/arrow.png')}
-              style={S.iconNav}
-            />
+        {/* ── Nav row ── */}
+        <View style={[S.topNav, {paddingTop: insets.top + 10}]}>
+          <TouchableOpacity style={S.navBtn} onPress={() => nav.goBack()}>
+            <Image source={require('../../assets/icons/arrow.png')} style={S.iconNav} />
           </TouchableOpacity>
           <TouchableOpacity style={S.navBtn} onPress={handleShare}>
-            <Image
-              source={require('../../assets/icons/share.png')}
-              style={S.iconNav}
-            />
+            <Image source={require('../../assets/icons/share.png')} style={S.iconNav} />
           </TouchableOpacity>
         </View>
 
-        {/* ─── 2. Title (name + year only, no badges) ──────── */}
-        <Text style={S.title} numberOfLines={4}>
-          {item?.Title}{year ? ` (${year})` : ''}
-        </Text>
+        {/* ── Title box ── */}
+        <View style={S.titleBox}>
+          <Text style={S.title} numberOfLines={4}>{item.Title}</Text>
+        </View>
 
-        {/* ─── 3. Poster ─────────────────────────────────────────── */}
+        {/* ── Poster with corner badges ── */}
         <View style={S.posterWrap}>
-          {item?.['Image Source'] ? (
+          {item['Image Source'] ? (
             <FastImage
-              source={{ uri: item['Image Source'] }}
+              source={{uri: seasonPoster || item['Image Source']}}
               style={S.poster}
               resizeMode={FastImage.resizeMode.cover}
               fallback
             />
           ) : (
             <View style={[S.poster, S.posterPlaceholder]}>
-              <Image
-                source={require('../../assets/icons/clapboard.png')}
-                style={{
-                  width: 52,
-                  height: 52,
-                  tintColor: colors.textMuted,
-                }}
-              />
+              <Image source={require('../../assets/icons/clapboard.png')} style={{width: 52, height: 52, tintColor: Colors.dark.textMuted}} />
             </View>
           )}
+
+          {/* Category badge — top-left */}
+          {CAT_BADGE_KEY[category] ? (
+            <View style={S.catChip}>
+              <Text style={S.catChipText}>{t(CAT_BADGE_KEY[category])}</Text>
+            </View>
+          ) : null}
+
+          {/* Quality badge — bottom-right */}
+          {format ? (
+            <View style={S.fmtChip}>
+              <Text style={S.fmtChipText}>{format}</Text>
+            </View>
+          ) : null}
+
+          {/* Viewing level badge — top-right */}
+          {viewingLvl && viewingLvl !== 'Documentary , History' ? (
+            <View style={S.vlChip}>
+              <Text style={S.vlChipText}>{viewingLvl}</Text>
+            </View>
+          ) : null}
         </View>
 
-        {/* ─── 4. Badges row under poster ───────────────────────── */}
-        {(() => {
-          const badges: React.ReactNode[] = [];
-          if (rating) {
-            badges.push(
-              <View key="rating" style={S.posterBadge}>
-                <Image
-                  source={require('../../assets/icons/star.png')}
-                  style={S.posterBadgeIcon}
-                />
-                <Text style={[S.posterBadgeText, { color: '#FFD700' }]}>
-                  {rating}
-                </Text>
-              </View>,
-            );
-          }
-          if (views) {
-            badges.push(
-              <View key="views" style={S.posterBadge}>
-                <Image
-                  source={require('../../assets/icons/eyes.png')}
-                  style={[S.posterBadgeIcon, { tintColor: colors.textSecondary }]}
-                />
-                <Text style={[S.posterBadgeText, { color: colors.textSecondary }]}>
-                  {views}
-                </Text>
-              </View>,
-            );
-          }
-          if (format) {
-            badges.push(
-              <View key="format" style={S.posterBadge}>
-                <Text style={[S.posterBadgeText, { color: colors.text }]}>
-                  {format}
-                </Text>
-              </View>,
-            );
-          }
-          if (item?.Category) {
-            badges.push(
-              <View key="cat" style={S.posterBadge}>
-                <Text style={[S.posterBadgeText, { color: '#FFD700' }]}>
-                  {t(item?.Category) || item?.Category}
-                </Text>
-              </View>,
-            );
-          }
-          return badges.length > 0 ? (
-            <View style={S.badgesRowUnderPoster}>{badges}</View>
-          ) : null;
-        })()}
+        {/* ── Rating + Views + Status pills ── */}
+        <View style={S.pillsRow}>
+          {rating ? (
+            <View style={S.pill}>
+              <Image source={require('../../assets/icons/star.png')} style={[S.pillIcon, {tintColor: '#FFD700'}]} />
+              <Text style={[S.pillTxt, {color: '#FFD700'}]}>{rating}</Text>
+              <Text style={S.pillSub}>{lang === 'ar' ? '\u0645\u0646 10' : '/ 10'}</Text>
+            </View>
+          ) : ratingLoading ? (
+            <View style={S.pill}>
+              <ActivityIndicator size="small" color={Colors.dark.textMuted} />
+            </View>
+          ) : null}
+          {views ? (
+            <View style={S.pill}>
+              <Image source={require('../../assets/icons/eyes.png')} style={S.pillIcon} />
+              <Text style={S.pillTxt}>{views}</Text>
+            </View>
+          ) : null}
+          {isEpisodic && displayStatus ? (
+            <View style={[S.pill, isOngoing ? S.statusOngoing : S.statusComplete]}>
+              <Text style={[S.statusTxt, {color: '#fff'}]}>{displayStatus}</Text>
+            </View>
+          ) : null}
+        </View>
 
-        {/* ─── 5. Season/Episode count badges (series only) ──────── */}
-        {isSeries && (totalEpisodes > 0 || numEps) && (
-          <View style={S.countBadgeRow}>
+        {/* ── Episode/Season count badges (series/anime) ── */}
+        {isEpisodic && (totalSeasons > 0 || totalEps > 0) && (
+          <View style={S.countRow}>
             {totalSeasons > 1 ? (
               <View style={S.countBadge}>
-                <Text style={S.countBadgeText}>
-                  {totalSeasons} {t('seasons')}
-                </Text>
+                <Text style={S.countBadgeText}>{totalSeasons} {t('seasons')}</Text>
               </View>
             ) : null}
-            <View style={S.countBadge}>
-              <Text style={S.countBadgeText}>
-                {totalEpisodes} {t('episodes')}
-              </Text>
-            </View>
-            {itemStatus ? (
-              <View
-                style={[
-                  S.countBadge,
-                  itemStatus === 'مستمر'
-                    ? S.badgeOngoing
-                    : S.badgeComplete,
-                ]}
-              >
-                <Text style={[S.countBadgeText, { color: '#fff' }]}>
-                  {itemStatus}
-                </Text>
+            {totalEps > 0 ? (
+              <View style={S.countBadge}>
+                <Text style={S.countBadgeText}>{totalEps} {t('episodes')}</Text>
               </View>
             ) : null}
           </View>
         )}
 
-        {/* ─── 6. Action buttons row ──────────────────────────────── */}
-        <View style={S.actionsRow}>
-          {/* Play button — big red with glow */}
+        {/* ── Action buttons ── */}
+        <View style={S.actions}>
           <TouchableOpacity
-            style={[S.playBtn, extracting && S.playBtnDisabled]}
-            onPress={() => handlePlay()}
-            disabled={extracting}
-            activeOpacity={0.82}
+            style={[S.playBtn, extracting && S.playBtnBusy]}
+            onPress={isEpisodic ? undefined : handlePlay}
+            disabled={extracting && !isEpisodic}
+            activeOpacity={0.84}
           >
-            {extracting ? (
-              <ActivityIndicator color="#fff" size="small" />
+            {extracting && !isEpisodic ? (
+              <>
+                <ActivityIndicator color="#fff" size="small" />
+                <Text style={S.playBtnTxt} numberOfLines={1}>{STATUS_MSGS[statusIdx]}</Text>
+              </>
             ) : (
               <>
-                <Image
-                  source={require('../../assets/icons/clapboard.png')}
-                  style={S.playBtnIcon}
-                />
-                <Text style={S.playBtnText}>{t('play')}</Text>
+                <Image source={require('../../assets/icons/clapboard.png')} style={{width: 18, height: 18, tintColor: '#fff'}} />
+                <Text style={S.playBtnTxt}>
+                  {isEpisodic ? t('select_episode') : t('play')}
+                </Text>
               </>
             )}
           </TouchableOpacity>
 
-          {/* Download button — outlined */}
-          <TouchableOpacity
-            style={S.downloadBtn}
-            disabled={extracting}
-            onPress={() => {
-              /* TODO: download flow */
-            }}
-            activeOpacity={0.82}
-          >
-            <Image
-              source={require('../../assets/icons/files.png')}
-              style={[
-                S.downloadBtnIcon,
-                { tintColor: colors.accentLight },
-              ]}
-            />
-            <Text style={S.downloadBtnText}>{t('download')}</Text>
+          <TouchableOpacity style={S.dlBtn} activeOpacity={0.84}>
+            <Image source={require('../../assets/icons/files.png')} style={[S.iconMed, {tintColor: Colors.dark.accentLight}]} />
+            <Text style={S.dlBtnTxt}>{t('download')}</Text>
           </TouchableOpacity>
         </View>
 
-        {/* ─── 7. Error banner ───────────────────────────────────── */}
+        {/* ── Extract error ── */}
         {extractError ? (
-          <View style={S.errorBanner}>
-            <Text style={S.errorBannerText} numberOfLines={3}>
-              {extractError}
-            </Text>
-            <TouchableOpacity
-              style={S.retryBtn}
-              onPress={() => handlePlay()}
-            >
-              <Image
-                source={require('../../assets/icons/undoreturn.png')}
-                style={S.retryIcon}
-              />
-              <Text style={S.retryText}>{t('retry')}</Text>
+          <View style={S.errBanner}>
+            <Text style={S.errTxt} numberOfLines={3}>{extractError}</Text>
+            <TouchableOpacity style={S.retryBtn} onPress={() => handlePlay()}>
+              <Image source={require('../../assets/icons/undoreturn.png')} style={{width: 14, height: 14, tintColor: Colors.dark.primary}} />
+              <Text style={S.retryTxt}>{t('retry')}</Text>
             </TouchableOpacity>
           </View>
         ) : null}
 
-        {/* ─── 8. Episodes section (series/anime only) ───────────── */}
-        {(isSeries || isAnime) && (
-          <View style={S.episodesSection}>
-            {/* Section header */}
-            <View style={S.sectionHeader}>
-              <Image
-                source={require('../../assets/icons/tv.png')}
-                style={[S.sectionIcon, { tintColor: colors.primary }]}
-              />
-              <Text style={S.sectionTitle}>{t('episodes')}</Text>
-              {episodesLoading && (
-                <ActivityIndicator
-                  size="small"
-                  color={colors.primary}
-                  style={{ marginLeft: SPACING.sm }}
-                />
+        {/* ── Description ── */}
+        {description ? (
+          <View style={S.descBox}>
+            <Text style={S.descLabel}>{t('description')}</Text>
+            <Text style={S.descTxt}>{description}</Text>
+          </View>
+        ) : null}
+
+        {/* ── Info table ── */}
+        <View style={S.infoTable}>
+          {releaseDate ? <InfoRow label={t('release_date')} value={String(releaseDate).slice(0, 10)} accent /> : null}
+          {!releaseDate && year ? <InfoRow label={t('year')} value={String(year)} accent /> : null}
+          {item.Category ? <InfoRow label={t('category')} value={t(item.Category) || item.Category} accent /> : null}
+          {genresDisplay ? <InfoRow label={t('genres')} value={genresDisplay} accent /> : null}
+          {language ? <InfoRow label={t('language')} value={language} /> : null}
+          {format ? <InfoRow label={t('quality')} value={format} /> : null}
+          {country ? <InfoRow label={t('country')} value={country} accent /> : null}
+          {directors ? <InfoRow label={t('directors')} value={directors} accent /> : null}
+          {viewType ? <InfoRow label={t('type')} value={viewType} /> : null}
+          {viewingLvl ? <InfoRow label={t('viewing_level')} value={viewingLvl} /> : null}
+          {displayStatus ? <InfoRow label={t('status_label')} value={displayStatus} accent={isOngoing} /> : null}
+          {isEpisodic && totalEps > 0 ? <InfoRow label={t('episodes')} value={String(totalEps)} /> : null}
+          {epDuration && epDuration !== 'min\u062F' ? <InfoRow label={t('episode_duration')} value={epDuration} /> : null}
+          {!isEpisodic && runtime ? <InfoRow label={t('duration')} value={runtime} /> : null}
+          {/* Rating row with star icon */}
+          {rating ? (
+            <View style={rowS.row}>
+              <Text style={rowS.label}>{t('rating')}</Text>
+              <View style={{flex: 2, flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', gap: 6}}>
+                <Text style={rowS.value}>{rating} {lang === 'ar' ? '\u0645\u0646 10' : '/ 10'}</Text>
+                <Image source={require('../../assets/icons/star.png')} style={{width: 16, height: 16, tintColor: '#FFD700'}} />
+              </View>
+            </View>
+          ) : null}
+        </View>
+
+        {/* ── Episodes section (series/anime) ── */}
+        {isEpisodic && (
+          <View style={S.epsSection}>
+            <View style={S.epsHeader}>
+              <Image source={require('../../assets/icons/tv.png')} style={[S.sectionIcon, {tintColor: Colors.dark.primary}]} />
+              <Text style={S.epsTitle}>{t('episodes')}</Text>
+              {loadingEps && <ActivityIndicator size="small" color={Colors.dark.primary} style={{marginLeft: 8}} />}
+
+              {/* Season picker button */}
+              {seasonKeys.length > 1 && (
+                <TouchableOpacity
+                  style={S.seasonBtn}
+                  onPress={() => setShowSeasonDlg(true)}
+                >
+                  <Image source={require('../../assets/icons/tv.png')} style={[S.seasonBtnIcon, {tintColor: Colors.dark.primary}]} />
+                  <Text style={S.seasonBtnTxt}>
+                    {t('season')} {selSeason}
+                  </Text>
+                  <Text style={S.seasonBtnArrow}>&#9662;</Text>
+                </TouchableOpacity>
               )}
             </View>
 
-            {/* Empty state — episodes not loaded from backend */}
-            {seasons.length === 0 && !episodesLoading ? (
-              <View style={S.emptyEpisodes}>
-                {seriesPosterUrl ? (
-                  <FastImage
-                    source={{ uri: seriesPosterUrl }}
-                    style={S.emptyEpPoster}
-                    resizeMode={FastImage.resizeMode.cover}
-                  />
-                ) : (
-                  <Image
-                    source={require('../../assets/icons/files.png')}
-                    style={{
-                      width: 32,
-                      height: 32,
-                      tintColor: colors.textMuted,
-                    }}
-                  />
-                )}
-                <Text style={S.emptyEpisodesText}>
-                  {t('not_available')}
-                </Text>
+            {/* Season poster */}
+            {seasonPoster ? (
+              <View style={S.seasonPosterWrap}>
+                <FastImage
+                  source={{uri: seasonPoster}}
+                  style={S.seasonPoster}
+                  resizeMode={FastImage.resizeMode.cover}
+                  fallback
+                />
               </View>
-            ) : (
-              seasons.map((season, sIdx) => (
-                <View key={`sblock-${sIdx}`} style={S.seasonBlock}>
-                  {renderSeasonHeader({ item: season, index: sIdx } as any)}
+            ) : null}
 
-                  {expandedSeason === sIdx &&
-                    season.episodes &&
-                    season.episodes.length > 0 && (
-                      <View style={S.episodeList}>
-                        {season.episodes.map(
-                          (ep: EpisodeData, eIdx: number) =>
-                            renderEpisode({ item: ep, index: eIdx } as any),
-                        )}
-                      </View>
+            {loadingEps ? (
+              <ActivityIndicator color={Colors.dark.primary} style={{margin: 20}} />
+            ) : currentEps.length > 0 ? (
+              currentEps.map((epUrl, idx) => {
+                const isExtractingThis = extractingEp === epUrl;
+                return (
+                  <TouchableOpacity
+                    key={`ep-${selSeason}-${idx}`}
+                    style={[S.epRow, isExtractingThis && S.epRowDisabled]}
+                    onPress={() => handlePlayEpisode(epUrl, idx + 1)}
+                    disabled={!!extractingEp}
+                    activeOpacity={0.75}
+                  >
+                    {/* Episode number circle */}
+                    <View style={[S.epNumCircle, isExtractingThis && S.epNumActive]}>
+                      <Text style={[S.epNum, isExtractingThis && S.epNumActiveTxt]}>{idx + 1}</Text>
+                    </View>
+
+                    {/* Episode info */}
+                    <View style={S.epInfo}>
+                      <Text style={S.epTitle}>
+                        {t('episode')} {idx + 1}
+                      </Text>
+                      {epDuration && epDuration !== 'min\u062F' ? (
+                        <Text style={S.epDur}>{epDuration}</Text>
+                      ) : null}
+                    </View>
+
+                    {/* Play indicator */}
+                    {isExtractingThis ? (
+                      <ActivityIndicator size="small" color={Colors.dark.primary} />
+                    ) : (
+                      <Image
+                        source={require('../../assets/icons/clapboard.png')}
+                        style={[S.epPlayIcon, {tintColor: Colors.dark.primary}]}
+                      />
                     )}
-                </View>
-              ))
-            )}
+                  </TouchableOpacity>
+                );
+              })
+            ) : !loadingEps ? (
+              <View style={S.noEpsWrap}>
+                <Image source={require('../../assets/icons/files.png')} style={{width: 32, height: 32, tintColor: Colors.dark.textMuted}} />
+                <Text style={S.noEpsTxt}>{t('not_available')}</Text>
+              </View>
+            ) : null}
           </View>
         )}
-
-        {/* ─── 9. Description ─────────────────────────────────────── */}
-        {description ? (
-          <SurfaceCard style={S.descCard}>
-            <Text style={S.descText}>{description}</Text>
-          </SurfaceCard>
-        ) : null}
-
-        {/* ─── 10. Info table (no duplicates from poster badges) ─── */}
-        {(() => {
-          // Collect non-empty rows — skip rating, quality, category (already on poster)
-          const rows: React.ReactNode[] = [];
-          if (year) rows.push(<InfoRow key="year" label={t('year')} value={year} accent />);
-          if (genresDisplay) rows.push(<InfoRow key="genres" label={t('genres')} value={genresDisplay} accent />);
-          if (language) rows.push(<InfoRow key="language" label={t('language')} value={language} />);
-          if (country) rows.push(<InfoRow key="country" label={t('country')} value={country} accent />);
-          if (directors) rows.push(<InfoRow key="directors" label={t('directors')} value={directors} accent />);
-          if (episodeDuration) rows.push(<InfoRow key="epdur" label={t('duration')} value={episodeDuration} />);
-          else if (runtime) rows.push(<InfoRow key="runtime" label={t('duration')} value={runtime} />);
-          return rows.length > 0 ? (
-            <SurfaceCard style={S.infoTable}>{rows}</SurfaceCard>
-          ) : null;
-        })()}
       </ScrollView>
 
-      {/* ─── Full-screen extracting overlay ─────────────────────── */}
-      {extracting && (
-        <View style={S.extractingOverlay}>
-          <ActivityIndicator size="large" color={colors.primary} />
-          <Text style={S.extractingStatus} numberOfLines={2}>
-            {EXTRACT_STATUSES[statusIdx]}
-          </Text>
-        </View>
-      )}
+      {/* ── Season picker modal (bottom sheet) ── */}
+      <Modal
+        visible={showSeasonDlg}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowSeasonDlg(false)}
+      >
+        <TouchableOpacity
+          style={S.modalBg}
+          activeOpacity={1}
+          onPress={() => setShowSeasonDlg(false)}
+        >
+          <View style={S.modalSheet}>
+            <View style={S.modalHandle} />
+            <Text style={S.modalTitle}>{t('select_season')}</Text>
+            <FlatList
+              data={seasonKeys}
+              keyExtractor={s => s}
+              renderItem={({item: sk}) => (
+                <TouchableOpacity
+                  style={[S.modalOpt, selSeason === sk && S.modalOptActive]}
+                  onPress={() => { setSelSeason(sk); setShowSeasonDlg(false); }}
+                >
+                  <Text style={[S.modalOptTxt, selSeason === sk && S.modalOptTxtActive]}>
+                    {t('season')} {sk}
+                  </Text>
+                  {selSeason === sk && (
+                    <Text style={{color: Colors.dark.primary, fontSize: 16}}>&#10003;</Text>
+                  )}
+                </TouchableOpacity>
+              )}
+            />
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </View>
   );
 };
 
-// =============================================================================
-// Styles — factory function for dynamic theming
-// =============================================================================
+// ── Styles ───────────────────────────────────────────────────────────
+const S = StyleSheet.create({
+  container:  {flex: 1, backgroundColor: Colors.dark.background},
+  scroll:     {paddingTop: 0},
+  fallback:   {color: Colors.dark.textMuted, textAlign: 'center', fontFamily: 'Rubik', marginTop: 40},
 
-const createStyles = (colors: ThemeColors) =>
-  StyleSheet.create({
-    // ── Container & scroll ───────────────────────────────────────────────
-    container: {
-      flex: 1,
-      backgroundColor: colors.background,
-    },
-    scrollContent: {
-      paddingTop: 0,
-    },
+  topNav:     {flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 16, paddingBottom: 12},
+  navBtn:     {width: 42, height: 42, borderRadius: 21, backgroundColor: Colors.dark.surface, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: Colors.dark.border},
+  iconNav:    {width: 20, height: 20, tintColor: Colors.dark.text},
+  iconMed:    {width: 20, height: 20},
 
-    // ── Extracting overlay (full-screen spinner) ───────────────────────
-    extractingOverlay: {
-      ...StyleSheet.absoluteFillObject,
-      backgroundColor: 'rgba(0,0,0,0.7)',
-      justifyContent: 'center',
-      alignItems: 'center',
-      zIndex: 10,
-    },
-    extractingCard: {
-      backgroundColor: colors.surface,
-      borderRadius: 20,
-      padding: SPACING.xxl,
-      alignItems: 'center',
-      borderWidth: 1,
-      borderColor: colors.border,
-      gap: SPACING.md,
-      minWidth: 200,
-    },
-    extractingStatus: {
-      color: colors.textSecondary,
-      ...FONTS.body,
-      textAlign: 'center',
-      marginTop: SPACING.md,
-    },
+  // Title box
+  titleBox: {
+    marginHorizontal: 16,
+    marginBottom: 20,
+    backgroundColor: Colors.dark.surface,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
+    paddingVertical: 14,
+    paddingHorizontal: 18,
+  },
+  title: {
+    color: Colors.dark.text,
+    fontSize: 21,
+    fontWeight: '800',
+    textAlign: 'center',
+    fontFamily: 'Rubik',
+    lineHeight: 29,
+  },
 
-    // ── Error state ─────────────────────────────────────────────────────
-    errorStateWrap: {
-      flex: 1,
-      justifyContent: 'center',
-      alignItems: 'center',
-      paddingHorizontal: SPACING.xl,
-      gap: SPACING.lg,
-    },
-    errorStateIcon: {
-      width: 64,
-      height: 64,
-      tintColor: colors.textMuted,
-    },
-    errorStateText: {
-      color: colors.textSecondary,
-      ...FONTS.body,
-      textAlign: 'center',
-    },
-    errorStateBtn: {
-      marginTop: SPACING.sm,
-      paddingHorizontal: SPACING.xl,
-      paddingVertical: SPACING.md,
-      borderRadius: 12,
-      backgroundColor: colors.primary,
-    },
-    errorStateBtnText: {
-      color: '#fff',
-      ...FONTS.body,
-      fontWeight: '700',
-    },
+  // Poster
+  posterWrap:        {alignSelf: 'center', marginBottom: 16, position: 'relative'},
+  poster:            {width: POSTER_W, height: POSTER_H, borderRadius: 16, backgroundColor: Colors.dark.surfaceLight, elevation: 14, shadowColor: '#000', shadowOffset: {width: 0, height: 8}, shadowOpacity: 0.55, shadowRadius: 16},
+  posterPlaceholder: {justifyContent: 'center', alignItems: 'center'},
 
-    // ── 1. Nav bar ──────────────────────────────────────────────────────
-    navBar: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      paddingHorizontal: SPACING.lg,
-      paddingBottom: SPACING.md,
-    },
-    navBtn: {
-      width: 42,
-      height: 42,
-      borderRadius: 21,
-      backgroundColor: colors.surface,
-      justifyContent: 'center',
-      alignItems: 'center',
-      borderWidth: 1,
-      borderColor: colors.border,
-    },
-    iconNav: {
-      width: 20,
-      height: 20,
-      tintColor: colors.text,
-    },
+  // Poster corner badges
+  catChip:     {position: 'absolute', top: 10, left: 10, backgroundColor: Colors.dark.primaryLight, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 7},
+  catChipText: {color: '#000', fontSize: 11, fontWeight: '700', fontFamily: 'Rubik'},
+  fmtChip:     {position: 'absolute', bottom: 10, right: 10, backgroundColor: 'rgba(0,0,0,0.88)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 7, borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)'},
+  fmtChipText: {color: '#fff', fontSize: 11, fontWeight: '700', fontFamily: 'Rubik'},
+  vlChip:      {position: 'absolute', top: 10, right: 10, backgroundColor: 'rgba(0,0,0,0.88)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 7, borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)'},
+  vlChipText:  {color: '#FFD700', fontSize: 11, fontWeight: '700', fontFamily: 'Rubik'},
 
-    // ── 2. Title ────────────────────────────────────────────────────────
-    title: {
-      color: colors.text,
-      ...FONTS.heading1,
-      textAlign: 'center',
-      paddingHorizontal: SPACING.xl,
-      marginBottom: SPACING.xl,
-    },
+  // Pills row
+  pillsRow:      {flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 8, marginBottom: 14, paddingHorizontal: 16},
+  pill:          {flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.dark.surface, paddingHorizontal: 11, paddingVertical: 7, borderRadius: 22, gap: 5, borderWidth: 1, borderColor: Colors.dark.border},
+  pillIcon:      {width: 13, height: 13},
+  pillTxt:       {color: Colors.dark.text, fontSize: 13, fontWeight: '700', fontFamily: 'Rubik'},
+  pillSub:       {color: Colors.dark.textMuted, fontSize: 11, fontFamily: 'Rubik'},
+  statusOngoing: {backgroundColor: Colors.dark.primary, borderColor: Colors.dark.primary},
+  statusComplete:{backgroundColor: Colors.dark.success, borderColor: Colors.dark.success},
+  statusTxt:     {fontSize: 12, fontWeight: '600', fontFamily: 'Rubik'},
 
-    // ── 3. Poster ───────────────────────────────────────────────────────
-    posterWrap: {
-      alignSelf: 'center',
-      marginBottom: SPACING.sm,
-    },
-    poster: {
-      width: POSTER_W,
-      height: POSTER_H,
-      borderRadius: 12,
-      backgroundColor: colors.surfaceLight,
-      ...colors.shadowLg,
-      overflow: 'hidden',
-    },
-    posterPlaceholder: {
-      justifyContent: 'center',
-      alignItems: 'center',
-    },
-    // ── Badges row under poster ─────────────────────────────────────
-    badgesRowUnderPoster: {
-      flexDirection: 'row',
-      justifyContent: 'center',
-      alignItems: 'center',
-      flexWrap: 'wrap',
-      gap: SPACING.sm,
-      marginBottom: SPACING.lg,
-    },
-    posterBadge: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 4,
-      backgroundColor: colors.surface,
-      paddingHorizontal: 10,
-      paddingVertical: 5,
-      borderRadius: 8,
-      borderWidth: 1,
-      borderColor: colors.border,
-    },
-    posterBadgeIcon: {
-      width: 14,
-      height: 14,
-    },
-    posterBadgeText: {
-      ...FONTS.caption,
-      fontWeight: '700',
-      color: colors.text,
-    },
+  // Count badges (seasons/episodes)
+  countRow:      {flexDirection: 'row', justifyContent: 'center', gap: 8, marginBottom: 14, paddingHorizontal: 16, flexWrap: 'wrap'},
+  countBadge:    {backgroundColor: Colors.dark.surface, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, borderWidth: 1, borderColor: Colors.dark.border},
+  countBadgeText:{color: Colors.dark.textSecondary, fontSize: 12, fontWeight: '600', fontFamily: 'Rubik'},
 
+  // Action buttons
+  actions:       {flexDirection: 'row', paddingHorizontal: 18, marginBottom: 12, gap: 12},
+  playBtn:       {flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', height: 54, borderRadius: 16, backgroundColor: Colors.dark.primary, gap: 8, elevation: 8, shadowColor: Colors.dark.primary, shadowOffset: {width: 0, height: 4}, shadowOpacity: 0.5, shadowRadius: 10},
+  playBtnBusy:   {backgroundColor: `${Colors.dark.primary}CC`},
+  playBtnTxt:    {color: '#fff', fontSize: 15, fontWeight: '700', fontFamily: 'Rubik', flexShrink: 1},
+  dlBtn:         {flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', height: 54, borderRadius: 16, backgroundColor: Colors.dark.surface, gap: 8, borderWidth: 1.5, borderColor: Colors.dark.accentLight},
+  dlBtnTxt:      {color: Colors.dark.accentLight, fontSize: 15, fontWeight: '700', fontFamily: 'Rubik'},
 
-    // ── 5. Season/Episode count badges ──────────────────────────────────
-    countBadgeRow: {
-      flexDirection: 'row',
-      justifyContent: 'center',
-      gap: SPACING.sm,
-      marginBottom: SPACING.lg,
-      paddingHorizontal: SPACING.xl,
-    },
-    countBadge: {
-      backgroundColor: colors.surface,
-      paddingHorizontal: SPACING.md,
-      paddingVertical: SPACING.sm,
-      borderRadius: 16,
-      borderWidth: 1,
-      borderColor: colors.border,
-    },
-    badgeOngoing: {
-      backgroundColor: colors.primary,
-      borderColor: colors.primary,
-    },
-    badgeComplete: {
-      backgroundColor: colors.success,
-      borderColor: colors.success,
-    },
-    countBadgeText: {
-      color: colors.textSecondary,
-      ...FONTS.caption,
-      fontWeight: '600',
-    },
+  // Error banner
+  errBanner: {marginHorizontal: 18, marginBottom: 12, backgroundColor: `${Colors.dark.error}16`, borderRadius: 12, padding: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderWidth: 1, borderColor: `${Colors.dark.error}30`, gap: 10},
+  errTxt:    {flex: 1, color: Colors.dark.error, fontSize: 13, fontFamily: 'Rubik'},
+  retryBtn:  {flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 7, borderRadius: 9, backgroundColor: `${Colors.dark.primary}22`},
+  retryTxt:  {color: Colors.dark.primary, fontSize: 13, fontWeight: '700', fontFamily: 'Rubik'},
 
-    // ── 6. Action buttons ───────────────────────────────────────────────
-    actionsRow: {
-      flexDirection: 'row',
-      paddingHorizontal: SPACING.lg,
-      marginBottom: SPACING.md,
-      gap: SPACING.md,
-    },
-    playBtn: {
-      flex: 1,
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'center',
-      height: 56,
-      borderRadius: 16,
-      gap: SPACING.sm,
-      backgroundColor: colors.primary,
-      ...colors.shadowGlow,
-    },
-    playBtnDisabled: {
-      opacity: 0.7,
-    },
-    playBtnIcon: {
-      width: 18,
-      height: 18,
-      tintColor: '#fff',
-    },
-    playBtnText: {
-      color: '#fff',
-      ...FONTS.bodyLarge,
-      fontWeight: '700',
-      flexShrink: 1,
-    },
-    downloadBtn: {
-      flex: 1,
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'center',
-      height: 56,
-      borderRadius: 16,
-      gap: SPACING.sm,
-      backgroundColor: 'transparent',
-      borderWidth: 1.5,
-      borderColor: colors.accentLight,
-    },
-    downloadBtnIcon: {
-      width: 20,
-      height: 20,
-    },
-    downloadBtnText: {
-      color: colors.accentLight,
-      ...FONTS.bodyLarge,
-      fontWeight: '700',
-    },
+  // Description
+  descBox:   {marginHorizontal: 16, marginBottom: 14, backgroundColor: Colors.dark.surface, borderRadius: 14, padding: 16, borderWidth: 1, borderColor: Colors.dark.border},
+  descLabel: {color: Colors.dark.text, fontSize: 14, fontWeight: '700', fontFamily: 'Rubik', marginBottom: 8},
+  descTxt:   {color: Colors.dark.textSecondary, fontSize: 14, lineHeight: 22, fontFamily: 'Rubik'},
 
-    // ── 7. Error banner ─────────────────────────────────────────────────
-    errorBanner: {
-      marginHorizontal: SPACING.lg,
-      marginBottom: SPACING.md,
-      backgroundColor: `${colors.error}16`,
-      borderRadius: 12,
-      padding: SPACING.md,
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      borderWidth: 1,
-      borderColor: `${colors.error}30`,
-      gap: SPACING.sm,
-    },
-    errorBannerText: {
-      flex: 1,
-      color: colors.error,
-      ...FONTS.bodySmall,
-    },
-    retryBtn: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: SPACING.xs,
-      paddingHorizontal: SPACING.md,
-      paddingVertical: SPACING.sm,
-      borderRadius: 9,
-      backgroundColor: `${colors.primary}22`,
-    },
-    retryIcon: {
-      width: 14,
-      height: 14,
-      tintColor: colors.primary,
-    },
-    retryText: {
-      color: colors.primary,
-      ...FONTS.bodySmall,
-      fontWeight: '700',
-    },
+  // Info table
+  infoTable: {marginHorizontal: 16, backgroundColor: Colors.dark.surface, borderRadius: 16, overflow: 'hidden', borderWidth: 1, borderColor: Colors.dark.border, marginBottom: 20},
 
-    // ── 8. Episodes section ─────────────────────────────────────────────
-    episodesSection: {
-      marginHorizontal: SPACING.lg,
-      marginBottom: SPACING.md,
-    },
-    sectionHeader: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      marginBottom: SPACING.md,
-      gap: SPACING.sm,
-    },
-    sectionIcon: {
-      width: 20,
-      height: 20,
-    },
-    sectionTitle: {
-      color: colors.text,
-      ...FONTS.heading3,
-    },
-    emptyEpisodes: {
-      alignItems: 'center',
-      paddingVertical: SPACING.xxl,
-      gap: SPACING.sm,
-    },
-    emptyEpPoster: {
-      width: 80,
-      height: 120,
-      borderRadius: 12,
-      opacity: 0.4,
-    },
-    emptyEpisodesText: {
-      color: colors.textMuted,
-      ...FONTS.body,
-    },
-    seasonBlock: {
-      marginBottom: SPACING.xs,
-    },
-    seasonHeader: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      backgroundColor: colors.surface,
-      paddingHorizontal: SPACING.md,
-      paddingVertical: SPACING.md,
-      borderRadius: 12,
-      borderWidth: 1,
-      borderColor: colors.border,
-      gap: SPACING.md,
-    },
-    seasonPosterThumb: {
-      width: 44,
-      height: 62,
-      borderRadius: 8,
-      backgroundColor: colors.surfaceLight,
-    },
-    seasonPosterFallback: {
-      width: 44,
-      height: 62,
-      borderRadius: 8,
-      backgroundColor: colors.surfaceLight,
-      justifyContent: 'center',
-      alignItems: 'center',
-    },
-    seasonHeaderActive: {
-      backgroundColor: `${colors.primary}15`,
-      borderColor: `${colors.primary}40`,
-    },
-    seasonIcon: {
-      width: 18,
-      height: 18,
-    },
-    seasonTitle: {
-      flex: 1,
-      color: colors.textSecondary,
-      ...FONTS.body,
-      fontWeight: '600',
-    },
-    seasonTitleActive: {
-      color: colors.text,
-    },
-    seasonMeta: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: SPACING.sm,
-    },
-    seasonEpCount: {
-      color: colors.textMuted,
-      ...FONTS.caption,
-    },
-    chevron: {
-      width: 14,
-      height: 14,
-    },
-    episodeList: {
-      paddingTop: SPACING.sm,
-    },
-    episodeCard: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      backgroundColor: colors.surface,
-      paddingVertical: SPACING.md,
-      paddingHorizontal: SPACING.md,
-      borderRadius: 10,
-      marginBottom: SPACING.xs,
-      borderWidth: 1,
-      borderColor: colors.border,
-      gap: SPACING.md,
-    },
-    episodeCardActive: {
-      borderColor: `${colors.primary}40`,
-      backgroundColor: `${colors.primary}10`,
-    },
-    epThumbnail: {
-      width: 50,
-      height: 50,
-      borderRadius: 8,
-      backgroundColor: colors.surfaceLight,
-    },
-    episodeNumWrap: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: SPACING.xs,
-      width: 50,
-    },
-    episodeNum: {
-      color: colors.textMuted,
-      ...FONTS.bodySmall,
-      fontWeight: '700',
-      width: 24,
-      textAlign: 'center',
-    },
-    epQualityBadge: {
-      backgroundColor: colors.badge.quality.backgroundColor,
-      paddingHorizontal: 3,
-      paddingVertical: 1,
-      borderRadius: 3,
-    },
-    epQualityText: {
-      color: colors.badge.quality.color,
-      ...FONTS.micro,
-    },
-    episodeInfo: {
-      flex: 1,
-    },
-    episodeTitle: {
-      color: colors.text,
-      ...FONTS.body,
-      lineHeight: 19,
-    },
-    epPlayIcon: {
-      width: 18,
-      height: 18,
-    },
-    epComingSoon: {
-      color: colors.textMuted,
-      ...FONTS.micro,
-    },
+  // Episodes section
+  epsSection:      {marginHorizontal: 16, marginBottom: 20, backgroundColor: Colors.dark.surface, borderRadius: 16, overflow: 'hidden', borderWidth: 1, borderColor: Colors.dark.border},
+  epsHeader:       {flexDirection: 'row', alignItems: 'center', paddingHorizontal: 18, paddingVertical: 14, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: Colors.dark.border, gap: 8},
+  sectionIcon:     {width: 20, height: 20},
+  epsTitle:        {flex: 1, color: Colors.dark.text, fontSize: 16, fontWeight: '700', fontFamily: 'Rubik'},
+  seasonBtn:       {flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: `${Colors.dark.primary}20`, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 10, borderWidth: 1, borderColor: `${Colors.dark.primary}40`},
+  seasonBtnIcon:   {width: 14, height: 14},
+  seasonBtnTxt:    {color: Colors.dark.primary, fontSize: 13, fontWeight: '700', fontFamily: 'Rubik'},
+  seasonBtnArrow:  {color: Colors.dark.primary, fontSize: 10},
 
-    // ── 9. Description ──────────────────────────────────────────────────
-    descCard: {
-      marginHorizontal: SPACING.lg,
-      marginBottom: SPACING.md,
-      padding: SPACING.lg,
-    },
-    descText: {
-      color: colors.textSecondary,
-      ...FONTS.body,
-      lineHeight: 22,
-    },
+  // Season poster
+  seasonPosterWrap: {paddingVertical: 10, alignItems: 'center'},
+  seasonPoster:     {width: 120, height: 180, borderRadius: 10, backgroundColor: Colors.dark.surfaceLight},
 
-    // ── 10. Info table ──────────────────────────────────────────────────
-    infoTable: {
-      marginHorizontal: SPACING.lg,
-      marginBottom: SPACING.xxl,
-      overflow: 'hidden',
-    },
-  });
+  // Episode row
+  epRow:           {flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: Colors.dark.border, gap: 12},
+  epRowDisabled:   {opacity: 0.5},
+  epNumCircle:     {width: 38, height: 38, borderRadius: 19, backgroundColor: `${Colors.dark.primary}20`, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: `${Colors.dark.primary}40`},
+  epNumActive:     {backgroundColor: Colors.dark.primary, borderColor: Colors.dark.primary},
+  epNum:           {color: Colors.dark.primary, fontSize: 14, fontWeight: '700', fontFamily: 'Rubik'},
+  epNumActiveTxt:  {color: '#fff'},
+  epInfo:          {flex: 1},
+  epTitle:         {color: Colors.dark.text, fontSize: 14, fontWeight: '600', fontFamily: 'Rubik'},
+  epDur:           {color: Colors.dark.textMuted, fontSize: 12, fontFamily: 'Rubik', marginTop: 2},
+  epPlayIcon:      {width: 20, height: 20},
+
+  noEpsWrap:       {alignItems: 'center', paddingVertical: 24, gap: 8},
+  noEpsTxt:        {color: Colors.dark.textMuted, fontSize: 14, fontFamily: 'Rubik'},
+
+  // Season modal
+  modalBg:         {flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end'},
+  modalSheet:      {backgroundColor: Colors.dark.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingBottom: 40, maxHeight: '60%'},
+  modalHandle:     {width: 40, height: 4, borderRadius: 2, backgroundColor: Colors.dark.border, alignSelf: 'center', marginTop: 12, marginBottom: 4},
+  modalTitle:      {color: Colors.dark.text, fontSize: 17, fontWeight: '700', fontFamily: 'Rubik', textAlign: 'center', paddingVertical: 14},
+  modalOpt:        {flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 24, paddingVertical: 16, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: Colors.dark.border},
+  modalOptActive:  {backgroundColor: `${Colors.dark.primary}15`},
+  modalOptTxt:     {color: Colors.dark.textSecondary, fontSize: 15, fontFamily: 'Rubik'},
+  modalOptTxtActive:{color: Colors.dark.primary, fontWeight: '700'},
+});
