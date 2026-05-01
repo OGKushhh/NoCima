@@ -9,7 +9,7 @@ import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/Ionicons';
 import {Colors} from '../theme/colors';
 import {useTranslation} from 'react-i18next';
-import {incrementViewCount} from '../services/viewService';
+import {recordPlay} from '../services/viewService';
 
 const {width: SCREEN_WIDTH, height: SCREEN_HEIGHT} = Dimensions.get('window');
 
@@ -56,7 +56,7 @@ export const PlayerScreen: React.FC = () => {
   useEffect(() => {
     if (contentId && category && !viewTracked.current) {
       viewTracked.current = true;
-      incrementViewCount(contentId, category).catch(() => {});
+      recordPlay(contentId, category);
     }
   }, [contentId, category]);
 

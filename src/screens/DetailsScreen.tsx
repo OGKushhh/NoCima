@@ -275,7 +275,7 @@ export const DetailsScreen: React.FC = () => {
       clearInterval(rotateTimer);
       setExtracting(false);
 
-      recordPlay(item.id, item.Category || 'movies').catch(() => {});
+      recordPlay(item.id, item.Category || 'movies');
 
       const episodeTitle = episodeUrl
         ? `${item.Title} - ${t('episode')}`
