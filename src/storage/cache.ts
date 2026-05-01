@@ -3,12 +3,12 @@
  *
  * Architecture:
  *   - react-native-blob-util  →  large JSON blobs on disk (metadata per category)
- *   - Storage (MMKV)          →  timestamps + small URL cache entries
+ *   - Storage (AsyncStorage)   →  timestamps + small URL cache entries
  *
  * Metadata persistence:
  *   - Cached metadata (movies, series, anime catalogs) stored as files on disk
  *   - 24h TTL controls when to RE-FETCH from server
- *   - 5h TTL for extracted video URLs (CDN URLs last 6+ hrs)
+ *   - 6h TTL for extracted video URLs
  *   - Data persists until user clears cache or uninstalls
  */
 
@@ -37,7 +37,7 @@ const getCategoryFilePath = (category: string): string => {
   return `${METADATA_DIR}/${category}.json`;
 };
 
-// ─── Video URL Cache (5h TTL) ── stays in Storage ─────────────────
+// ─── Video URL Cache (6hr TTL) ── stays in Storage ─────────────────
 // URL cache entries are small (url + qualities + timestamp) → Storage is ideal.
 
 export const setVideoUrlCache = (key: string, url: string, qualities: string[]) => {

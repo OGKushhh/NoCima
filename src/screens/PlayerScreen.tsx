@@ -1,103 +1,71 @@
 import React, {useState, useRef, useEffect, useCallback, useMemo} from 'react';
 import {
   View, StyleSheet, Dimensions, TouchableOpacity, Text,
-  ActivityIndicator, StatusBar, Modal, Image, Platform,
-  TouchableWithoutFeedback,
+  ActivityIndicator, StatusBar, Modal, FlatList,
 } from 'react-native';
-import Video from 'react-native-video';
+import Video, {VideoRef, OnProgressData, ResizeMode, OnBufferData} from 'react-native-video';
 import {useRoute, useNavigation} from '@react-navigation/native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
-import {useTheme} from '../hooks/useTheme';
-import {FONTS} from '../theme/typography';
+import Icon from 'react-native-vector-icons/Ionicons';
+import {Colors} from '../theme/colors';
 import {useTranslation} from 'react-i18next';
-import {refreshVideoUrl} from '../services/api';
+import {recordPlay} from '../services/viewService';
 
 const {width: SCREEN_WIDTH, height: SCREEN_HEIGHT} = Dimensions.get('window');
 
-// ─── HLS Quality Presets ─────────────────────────────────────────────────────
+// HLS quality levels
 const HLS_QUALITIES = [
-  {label: 'Auto',  bitrate: 0},
+  {label: 'Auto',  bitrate: undefined},
   {label: '1080p', bitrate: 8000000},
   {label: '720p',  bitrate: 3000000},
   {label: '480p',  bitrate: 1500000},
   {label: '360p',  bitrate: 800000},
 ];
 
-// ─── Icon helpers ────────────────────────────────────────────────────────────
-const ICON_BACK = require('../../assets/icons/arrow.png');
-const ICON_CLAPBOARD = require('../../assets/icons/clapboard.png');
-const ICON_NLP = require('../../assets/icons/nlp.png');
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// PlayerScreen
-// ═══════════════════════════════════════════════════════════════════════════════
 export const PlayerScreen: React.FC = () => {
   const route = useRoute<any>();
   const navigation = useNavigation<any>();
-  const {url: initialUrl, title, contentId, category, qualities: paramQualities, pageUrl} = route.params || {};
-  const [url, setUrl] = useState(initialUrl);
-  const [reExtracting, setReExtracting] = useState(false);
+  const {url, title, contentId, category, qualities: paramQualities} = route.params || {};
   const {t} = useTranslation();
   const insets = useSafeAreaInsets();
-  const { colors } = useTheme();
-  const styles = useMemo(() => createStyles(colors), [colors]);
 
-  const videoRef: any = useRef(null);
+  const videoRef = useRef<VideoRef>(null);
   const [playing, setPlaying] = useState(true);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [buffering, setBuffering] = useState(true);
-  const [loading, setLoading] = useState(true);
   const [showControls, setShowControls] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [errorMsg, setErrorMsg] = useState('');
-  const loadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
+  // Build quality list: prefer qualities from extraction result, fallback to HLS defaults
   const qualityList = useMemo(() => {
     if (paramQualities && paramQualities.length > 0) {
       return paramQualities.map((label: string) => {
         const match = HLS_QUALITIES.find(q => q.label === label);
-        return match || {label, bitrate: 0};
+        return match ?? {label, bitrate: undefined};
       });
     }
     return HLS_QUALITIES;
   }, [paramQualities]);
 
-  const [selectedQuality, setSelectedQuality] = useState(qualityList[0] || HLS_QUALITIES[0]);
+  const [selectedQuality, setSelectedQuality] = useState<{label: string; bitrate?: number}>(qualityList[0] ?? HLS_QUALITIES[0]);
   const [showQualityPicker, setShowQualityPicker] = useState(false);
-  const hideTimer = useRef<any>(null);
+  const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const viewTracked = useRef(false);
 
-  // ─── Video Source ────────────────────────────────────────────────────────
-  // NO `type` prop — lets react-native-video auto-detect (v5=m3u8, v6=hls).
-  // CRITICAL: CDN (scdns.io) requires Referer + Origin + User-Agent headers or rejects.
-  const videoSource = useMemo(() => {
-    if (!url) return undefined;
-    return {
-      uri: url,
-      // Do NOT set type — let react-native-video auto-detect (m3u8/mp4/mpd)
-      // If bitrate is selected (not Auto), pass it so ExoPlayer/AVPlayer can
-      // pick the matching HLS variant instead of the default.
-      ...(selectedQuality.bitrate > 0 ? { bitrate: selectedQuality.bitrate } : {}),
-      headers: {
-        'Referer': 'https://www.fasel-hd.cam/',
-        'Origin': 'https://www.fasel-hd.cam',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-      },
-    };
-  }, [url, selectedQuality.bitrate]);
+  // Track view on first play (recordPlay is sync — do NOT .catch())
+  useEffect(() => {
+    if (contentId && category && !viewTracked.current) {
+      viewTracked.current = true;
+      recordPlay(contentId, category);
+    }
+  }, [contentId, category]);
 
-  // ─── View tracking handled in DetailsScreen before navigation ─────────
-  // (avoids double-counting: DetailsScreen.recordPlay + PlayerScreen.mount)
-
-  // ─── Cleanup ─────────────────────────────────────────────────────────────
   useEffect(() => {
     return () => {
       if (hideTimer.current) clearTimeout(hideTimer.current);
-      if (loadTimerRef.current) clearTimeout(loadTimerRef.current);
     };
   }, []);
 
-  // ─── Controls auto-hide ──────────────────────────────────────────────────
   const triggerHideControls = useCallback(() => {
     if (hideTimer.current) clearTimeout(hideTimer.current);
     hideTimer.current = setTimeout(() => setShowControls(false), 4000);
@@ -110,124 +78,23 @@ export const PlayerScreen: React.FC = () => {
     });
   }, [triggerHideControls]);
 
-  // ─── Video event handlers ────────────────────────────────────────────────
-  const handleProgress = useCallback((data: any) => {
-    if (data?.currentTime !== undefined) setCurrentTime(data.currentTime);
-  }, []);
+  const handleProgress = (data: OnProgressData) => setCurrentTime(data.currentTime);
 
-  const handleLoadStart = useCallback(() => {
-    console.log('[Player] Load started for:', url?.substring(0, 100));
-    setLoading(true);
-    setBuffering(true);
-    // If video doesn't load within 25s, treat it as a timeout error
-    if (loadTimerRef.current) clearTimeout(loadTimerRef.current);
-    loadTimerRef.current = setTimeout(() => {
-      console.error('[Player] Loading timed out after 25s');
-      setLoading(false);
-      setBuffering(false);
-      setError('timeout');
-      setErrorMsg('Video failed to load. The stream URL may have expired. Please tap Retry to get a fresh link.');
-    }, 25000);
-  }, [url]);
-
-  const handleLoad = useCallback((meta: any) => {
-    console.log('[Player] Video loaded, duration:', meta?.duration);
-    if (loadTimerRef.current) {
-      clearTimeout(loadTimerRef.current);
-      loadTimerRef.current = null;
-    }
-    if (meta?.duration !== undefined) setDuration(meta.duration);
-    setLoading(false);
+  const handleLoad = (meta: any) => {
+    setDuration(meta.duration);
     setBuffering(false);
     triggerHideControls();
-  }, [triggerHideControls]);
+  };
 
-  // onReadyForDisplay: v6-only callback (silently ignored in v5.2.1).
-  // Only applied on iOS to avoid potential Android quirks.
-  const handleReadyForDisplay = useCallback(() => {
-    console.log('[Player] Video surface ready for display');
-  }, []);
+  const handleBuffer: (data: OnBufferData) => void = (data) => setBuffering(data.isBuffering);
+  const handleEnd = () => { setPlaying(false); setShowControls(true); };
 
-  const handleBuffer = useCallback((data: any) => {
-    const isBuf = data?.isBuffering ?? data?.buffering ?? false;
-    setBuffering(isBuf);
-  }, []);
-
-  const handleEnd = useCallback(() => {
-    setPlaying(false);
-    setShowControls(true);
-  }, []);
-
-  // ─── Error handler — check multiple paths, never show [object Object] ──
-  const handleError = useCallback((err: any) => {
-    let errStr = '';
-    let errCode = '';
-    const e = err?.error ?? err;
-    if (typeof e === 'string') {
-      errStr = e;
-    } else if (e?.errorString) {
-      errStr = e.errorString;
-    } else if (e?.message) {
-      errStr = e.message;
-    } else if (e?.localizedFailureReason) {
-      errStr = e.localizedFailureReason;
-    } else if (e?.code) {
-      errCode = String(e.code);
-    }
-    // Also check for nested error properties (ExoPlayer / AVPlayer)
-    if (!errStr) {
-      const nested = e?.error?.errorString || e?.error?.message || e?.error?.localizedFailureReason;
-      if (nested) errStr = nested;
-    }
-    if (!errStr) {
-      try { errStr = JSON.stringify(e); } catch { errStr = 'Unknown playback error'; }
-    }
-    // Build detailed error with URL context for debugging
-    const urlHint = url ? `URL: ${url.substring(0, 120)}${url.length > 120 ? '...' : ''}` : 'No URL';
-    const detailMsg = errCode ? `${errStr} (code: ${errCode})` : errStr;
-    const fullMsg = `${detailMsg}\n${urlHint}`;
-    console.error('[Player] Video error:', fullMsg, '| raw:', JSON.stringify(err)?.substring(0, 500));
-    setErrorMsg(fullMsg);
+  const handleError = (err: any) => {
+    console.error('[Player] Video error:', err?.error?.errorString || err?.error || err);
     setError(t('video_unavailable'));
     setBuffering(false);
-    setLoading(false);
-    if (loadTimerRef.current) {
-      clearTimeout(loadTimerRef.current);
-      loadTimerRef.current = null;
-    }
-  }, [t, url]);
+  };
 
-  const handleRetry = useCallback(async () => {
-    setError(null);
-    setErrorMsg('');
-    setBuffering(true);
-    setLoading(true);
-
-    // If we have pageUrl, try cache-bust re-extraction first
-    if (pageUrl) {
-      setReExtracting(true);
-      try {
-        const fresh = await refreshVideoUrl(pageUrl);
-        if (fresh.video_url && fresh.video_url !== url) {
-          console.log('[Player] Re-extracted fresh URL:', url?.substring(0, 60), '->', fresh.video_url.substring(0, 60));
-          setUrl(fresh.video_url);
-          setPlaying(false);
-          setTimeout(() => setPlaying(true), 100);
-          setReExtracting(false);
-          return;
-        }
-      } catch (err: any) {
-        console.warn('[Player] Re-extraction failed:', err?.message);
-      }
-      setReExtracting(false);
-    }
-
-    // Fallback: just restart same URL
-    setPlaying(false);
-    setTimeout(() => setPlaying(true), 100);
-  }, [url, pageUrl]);
-
-  // ─── Helpers ─────────────────────────────────────────────────────────────
   const formatTime = (seconds: number) => {
     const h = Math.floor(seconds / 3600);
     const m = Math.floor((seconds % 3600) / 60);
@@ -247,164 +114,115 @@ export const PlayerScreen: React.FC = () => {
     setCurrentTime(clamped);
   };
 
-  const handleQualitySelect = (q: any) => {
+  const handleQualitySelect = (q: {label: string; bitrate?: number}) => {
     setSelectedQuality(q);
     setShowQualityPicker(false);
     triggerHideControls();
   };
 
-  // ════════════════════════════════════════════════════════════════════════
-  // ─── ERROR / NO-URL STATES ──────────────────────────────────────────────
-  // ════════════════════════════════════════════════════════════════════════
   if (!url) {
     return (
       <View style={styles.errorContainer}>
         <StatusBar hidden />
-        <View style={styles.errorCard}>
-          <Image source={ICON_NLP} style={styles.errorIcon} />
-          <Text style={[styles.errorTitle, FONTS.heading3]}>{t('video_unavailable')}</Text>
-          <Text style={[styles.errorSub, FONTS.bodySmall]}>No URL provided</Text>
-          <TouchableOpacity style={styles.errorButtonPrimary} onPress={() => navigation.goBack()}>
-            <Text style={[styles.errorButtonLabel, FONTS.bodyLarge]}>Go Back</Text>
-          </TouchableOpacity>
-        </View>
+        <Icon name="alert-circle-outline" size={56} color={Colors.dark.error} />
+        <Text style={styles.errorText}>{t('video_unavailable')}</Text>
+        <TouchableOpacity style={styles.errorButton} onPress={() => navigation.goBack()}>
+          <Text style={styles.errorButtonText}>{t('retry')}</Text>
+        </TouchableOpacity>
       </View>
     );
   }
 
-  if (error || reExtracting) {
+  if (error) {
     return (
       <View style={styles.errorContainer}>
         <StatusBar hidden />
-        <View style={styles.errorCard}>
-          <Image source={ICON_NLP} style={styles.errorIcon} />
-          <Text style={[styles.errorTitle, FONTS.heading3]}>
-            {reExtracting ? 'Re-extracting stream...' : error === 'timeout' ? 'Playback Timeout' : error}
-          </Text>
-          {reExtracting ? (
-            <ActivityIndicator size="large" color={colors.primary} style={{marginTop: 16}} />
-          ) : errorMsg ? (
-            <Text style={[styles.errorSub, FONTS.bodySmall]} numberOfLines={5}>
-              {errorMsg}
-            </Text>
-          ) : null}
-          {!reExtracting && (
-            <View style={styles.errorActions}>
-              <TouchableOpacity style={styles.errorButtonPrimary} onPress={handleRetry}>
-                <Text style={[styles.errorButtonLabel, FONTS.bodyLarge]}>Retry</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.errorButtonSecondary} onPress={() => navigation.goBack()}>
-                <Text style={[styles.errorButtonLabelSecondary, FONTS.bodyLarge]}>Go Back</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-        </View>
+        <Icon name="alert-circle-outline" size={56} color={Colors.dark.error} />
+        <Text style={styles.errorText}>{error}</Text>
+        <TouchableOpacity style={styles.errorButton} onPress={() => navigation.goBack()}>
+          <Text style={styles.errorButtonText}>{t('retry')}</Text>
+        </TouchableOpacity>
       </View>
     );
   }
 
-  // ════════════════════════════════════════════════════════════════════════
-  // ─── MAIN PLAYER ────────────────────────────────────────────────────────
-  // ════════════════════════════════════════════════════════════════════════
   return (
     <View style={styles.container}>
       <StatusBar hidden />
 
-      {/* ── Video — TouchableWithoutFeedback (NOT TouchableOpacity) ───── */}
-      <TouchableWithoutFeedback onPress={toggleControls}>
-        <View style={styles.videoContainer}>
-          <Video
-            key={url}
-            ref={videoRef}
-            source={videoSource}
-            resizeMode="contain"
-            onProgress={handleProgress}
-            onLoadStart={handleLoadStart}
-            onLoad={handleLoad}
-            // onReadyForDisplay: v6-only, safely ignored in v5.2.1 — iOS only
-            {...(Platform.OS === 'ios' ? {onReadyForDisplay: handleReadyForDisplay} : {})}
-            onBuffer={handleBuffer}
-            onEnd={handleEnd}
-            onError={handleError}
-            playInBackground={false}
-            playWhenInactive={false}
-            paused={!playing}
-            style={styles.video}
-            repeat={false}
-            controls={false}
-            // bufferConfig: Android only (crashes / ignored on iOS)
-            bufferConfig={
-              Platform.OS === 'android'
-                ? {
-                    minBufferMs: 15000,
-                    maxBufferMs: 50000,
-                    bufferForPlaybackMs: 2500,
-                    bufferForPlaybackAfterRebufferMs: 5000,
-                  }
-                : undefined
-            }
-          />
-        </View>
-      </TouchableWithoutFeedback>
+      <TouchableOpacity style={styles.videoContainer} activeOpacity={1} onPress={toggleControls}>
+        <Video
+          ref={videoRef}
+          key={url}
+          source={{
+            uri: url,
+            headers: {
+              'Referer': 'https://www.fasel-hd.cam/',
+              'Origin': 'https://www.fasel-hd.cam',
+              'User-Agent': 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Mobile Safari/537.36',
+            },
+          }}
+          resizeMode={ResizeMode.CONTAIN}
+          onProgress={handleProgress}
+          onLoad={handleLoad}
+          onBuffer={handleBuffer}
+          onEnd={handleEnd}
+          onError={handleError}
+          playInBackground={false}
+          playWhenInactive={false}
+          paused={!playing}
+          style={styles.video}
+          minLoadRetryCount={5}
+          maxBitRate={selectedQuality.bitrate || 0}
+          // Reliable buffer settings for CDN streams
+          bufferConfig={{
+            minBufferMs: 15000,
+            maxBufferMs: 60000,
+            bufferForPlaybackMs: 3000,
+            bufferForPlaybackAfterRebufferMs: 8000,
+          }}
+        />
 
-      {/* ── Buffering overlay — blurred dark scrim ────────────────────── */}
-      {(buffering || loading) && (
-        <View style={styles.bufferingOverlay} pointerEvents="none">
-          <View style={styles.bufferingSpinnerRing}>
-            <ActivityIndicator size="large" color={colors.primary} />
+        {buffering && (
+          <View style={styles.bufferingOverlay}>
+            <ActivityIndicator size="large" color={Colors.dark.primary} />
+            <Text style={styles.bufferingText}>Loading...</Text>
           </View>
-          <Text style={[styles.bufferingLabel, FONTS.caption]}>
-            {loading ? 'Connecting...' : 'Buffering...'}
-          </Text>
-        </View>
-      )}
+        )}
+      </TouchableOpacity>
 
-      {/* ── Controls overlay — pointerEvents="box-none" for pass-through ─ */}
+      {/* Controls overlay */}
       {showControls && (
-        <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
-
-          {/* ──── Top Bar ──────────────────────────────────────────────── */}
-          <View style={[styles.topGradient, {paddingTop: insets.top + 4}]}>
-            <View style={styles.topRow}>
-              <TouchableOpacity
-                style={styles.iconButton}
-                onPress={() => navigation.goBack()}
-                activeOpacity={0.7}
-              >
-                <Image source={ICON_BACK} style={styles.iconBack} />
-              </TouchableOpacity>
-
-              <View style={styles.titleContainer}>
-                <Image source={ICON_CLAPBOARD} style={styles.iconClapboard} />
-                <Text style={[styles.titleText, FONTS.bodySmall]} numberOfLines={1}>
-                  {title || 'Now Playing'}
-                </Text>
-              </View>
-
-              <TouchableOpacity
-                style={styles.qualityChip}
-                onPress={() => {
-                  setShowQualityPicker(true);
-                  if (hideTimer.current) clearTimeout(hideTimer.current);
-                }}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.qualityChipLabel}>{selectedQuality.label}</Text>
-                <Text style={styles.qualityChipArrow}>{'\u25BC'}</Text>
-              </TouchableOpacity>
-            </View>
+        <>
+          {/* Top bar */}
+          <View style={[styles.topControls, {paddingTop: insets.top + 4}]}>
+            <TouchableOpacity style={styles.topButton} onPress={() => navigation.goBack()}>
+              <Icon name="arrow-back" size={26} color="#fff" />
+            </TouchableOpacity>
+            <Text style={styles.titleText} numberOfLines={1}>{title}</Text>
+            {/* Quality picker button */}
+            <TouchableOpacity
+              style={styles.qualityButton}
+              onPress={() => {
+                setShowQualityPicker(true);
+                if (hideTimer.current) clearTimeout(hideTimer.current);
+              }}
+            >
+              <Text style={styles.qualityButtonText}>{selectedQuality.label}</Text>
+              <Icon name="chevron-down" size={14} color="#00E5FF" />
+            </TouchableOpacity>
           </View>
 
-          {/* ──── Bottom Controls (glassmorphism) ─────────────────────── */}
-          <View style={[styles.bottomGlass, {paddingBottom: insets.bottom + 16}]}>
+          {/* Bottom controls */}
+          <View style={[styles.bottomControls, {paddingBottom: insets.bottom + 16}]}>
             {/* Seek bar */}
             <TouchableOpacity
-              style={styles.seekBarTouchArea}
+              style={styles.seekBarContainer}
               onPress={handleSeekBarPress}
-              activeOpacity={1}
+              activeOpacity={0.9}
             >
               <View style={styles.seekBarTrack}>
-                <View style={[styles.seekBarFilled, {width: `${Math.min(progress, 1) * 100}%`}]}>
+                <View style={[styles.seekBarProgress, {width: `${progress * 100}%`}]}>
                   <View style={styles.seekBarThumb} />
                 </View>
               </View>
@@ -412,53 +230,40 @@ export const PlayerScreen: React.FC = () => {
 
             {/* Time row */}
             <View style={styles.timeRow}>
-              <Text style={[styles.timeText, FONTS.mono]}>{formatTime(currentTime)}</Text>
-              <Text style={[styles.timeText, FONTS.mono]}>{formatTime(duration)}</Text>
+              <Text style={styles.timeText}>{formatTime(currentTime)}</Text>
+              <Text style={styles.timeText}>{formatTime(duration)}</Text>
             </View>
 
             {/* Playback row */}
             <View style={styles.playbackRow}>
-              {/* Rewind 10s */}
               <TouchableOpacity
                 style={styles.skipButton}
                 onPress={() => videoRef.current?.seek(Math.max(currentTime - 10, 0))}
-                activeOpacity={0.7}
               >
-                <Image source={ICON_BACK} style={styles.iconRewind} />
-                <Text style={[styles.skipLabel, FONTS.micro]}>10</Text>
+                <Icon name="play-back" size={28} color="#fff" />
+                <Text style={styles.skipLabel}>10</Text>
               </TouchableOpacity>
 
-              {/* Play / Pause */}
               <TouchableOpacity
                 style={styles.playPauseButton}
                 onPress={() => { setPlaying(!playing); triggerHideControls(); }}
-                activeOpacity={0.8}
               >
-                <Text style={styles.playPauseGlyph}>
-                  {playing ? '\u275A\u275A' : '\u25B6'}
-                </Text>
+                <Icon name={playing ? 'pause' : 'play'} size={34} color="#fff" />
               </TouchableOpacity>
 
-              {/* Forward 10s */}
               <TouchableOpacity
                 style={styles.skipButton}
                 onPress={() => videoRef.current?.seek(Math.min(currentTime + 10, duration))}
-                activeOpacity={0.7}
               >
-                <Image source={ICON_BACK} style={styles.iconForward} />
-                <Text style={[styles.skipLabel, FONTS.micro]}>10</Text>
+                <Icon name="play-forward" size={28} color="#fff" />
+                <Text style={styles.skipLabel}>10</Text>
               </TouchableOpacity>
             </View>
           </View>
-
-          {/* ──── Tap-away deadzone (prevents immediate hide on control tap) ── */}
-          <TouchableWithoutFeedback onPress={toggleControls}>
-            <View style={styles.tapDeadzone} />
-          </TouchableWithoutFeedback>
-        </View>
+        </>
       )}
 
-      {/* ─── Quality Picker Modal (glassmorphism) ─────────────────────────── */}
+      {/* Quality Picker Modal */}
       <Modal
         visible={showQualityPicker}
         transparent
@@ -470,34 +275,30 @@ export const PlayerScreen: React.FC = () => {
           activeOpacity={1}
           onPress={() => setShowQualityPicker(false)}
         >
-          <View style={styles.qualityGlassCard}>
-            <Text style={[styles.qualityModalTitle, FONTS.heading3]}>
-              {t('select_quality')}
-            </Text>
-            {qualityList.map((q: any) => {
-              const isActive = selectedQuality.label === q.label;
-              return (
-                <TouchableOpacity
-                  key={q.label}
-                  style={[styles.qualityOption, isActive && styles.qualityOptionActive]}
-                  onPress={() => handleQualitySelect(q)}
-                  activeOpacity={0.7}
+          <View style={styles.qualityModal}>
+            <Text style={styles.qualityModalTitle}>{t('select_quality')}</Text>
+            {qualityList.map(q => (
+              <TouchableOpacity
+                key={q.label}
+                style={[
+                  styles.qualityOption,
+                  selectedQuality.label === q.label && styles.qualityOptionActive,
+                ]}
+                onPress={() => handleQualitySelect(q)}
+              >
+                <Text
+                  style={[
+                    styles.qualityOptionText,
+                    selectedQuality.label === q.label && styles.qualityOptionTextActive,
+                  ]}
                 >
-                  <Text
-                    style={[
-                      styles.qualityOptionText,
-                      isActive && styles.qualityOptionTextActive,
-                      FONTS.bodyLarge,
-                    ]}
-                  >
-                    {q.label}
-                  </Text>
-                  {isActive && (
-                    <Text style={styles.qualityCheckmark}>{'\u2713'}</Text>
-                  )}
-                </TouchableOpacity>
-              );
-            })}
+                  {q.label}
+                </Text>
+                {selectedQuality.label === q.label && (
+                  <Icon name="checkmark" size={18} color={Colors.dark.primary} />
+                )}
+              </TouchableOpacity>
+            ))}
           </View>
         </TouchableOpacity>
       </Modal>
@@ -505,23 +306,12 @@ export const PlayerScreen: React.FC = () => {
   );
 };
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// Styles
-// ═══════════════════════════════════════════════════════════════════════════════
-const createStyles = (colors: any) => StyleSheet.create({
-  // ─── Container ────────────────────────────────────────────────────────
-  container: {
-    flex: 1,
-    backgroundColor: '#000',
-  },
-
-  // ─── Video ────────────────────────────────────────────────────────────
+const styles = StyleSheet.create({
+  container: {flex: 1, backgroundColor: '#000'},
   videoContainer: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
     backgroundColor: '#000',
   },
   video: {
@@ -530,327 +320,202 @@ const createStyles = (colors: any) => StyleSheet.create({
     left: 0,
     width: SCREEN_WIDTH,
     height: SCREEN_HEIGHT,
-    backgroundColor: '#000',
   },
-
-  // ─── Buffering overlay ────────────────────────────────────────────────
   bufferingOverlay: {
     position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.4)',
-  },
-  bufferingSpinnerRing: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  bufferingLabel: {
-    color: 'rgba(255,255,255,0.8)',
-    marginTop: 14,
+  bufferingText: {
+    color: 'rgba(255,255,255,0.7)',
+    marginTop: 10,
+    fontSize: 13,
+    fontFamily: 'Rubik',
   },
-
-  // ─── Top controls (semi-transparent gradient) ────────────────────────
-  topGradient: {
+  topControls: {
     position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: 'rgba(0,0,0,0.7)',
+    top: 0, left: 0, right: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
     paddingBottom: 14,
+    backgroundColor: 'rgba(0,0,0,0.55)',
   },
-  topRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 10,
-  },
-  iconButton: {
-    width: 44,
-    height: 44,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderRadius: 22,
-    backgroundColor: 'rgba(255,255,255,0.1)',
-  },
-  iconBack: {
-    width: 22,
-    height: 22,
-    tintColor: '#FFFFFF',
-    resizeMode: 'contain',
-  },
-  titleContainer: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginHorizontal: 10,
-    overflow: 'hidden',
-  },
-  iconClapboard: {
-    width: 16,
-    height: 16,
-    tintColor: 'rgba(255,255,255,0.6)',
-    resizeMode: 'contain',
-    marginRight: 6,
+  topButton: {
+    width: 40, height: 40,
+    justifyContent: 'center', alignItems: 'center',
   },
   titleText: {
-    color: '#FFFFFF',
+    flex: 1,
+    color: '#fff',
+    fontSize: 16,
     fontWeight: '600',
+    marginHorizontal: 8,
+    fontFamily: 'Rubik',
   },
-  qualityChip: {
+  qualityButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(229,57,53,0.25)',
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 20,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
     borderWidth: 1,
-    borderColor: 'rgba(229,57,53,0.5)',
-    gap: 5,
+    borderColor: '#00E5FF50',
+    gap: 4,
   },
-  qualityChipLabel: {
-    color: '#FF5252',
-    fontSize: 12,
+  qualityButtonText: {
+    color: '#00E5FF',
+    fontSize: 13,
     fontWeight: '700',
     fontFamily: 'Rubik',
   },
-  qualityChipArrow: {
-    color: '#FF5252',
-    fontSize: 8,
-  },
-
-  // ─── Bottom controls (glassmorphism) ─────────────────────────────────
-  bottomGlass: {
+  bottomControls: {
     position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
+    bottom: 0, left: 0, right: 0,
     paddingHorizontal: 16,
-    paddingTop: 20,
-    backgroundColor: 'rgba(0,0,0,0.7)',
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.08)',
+    paddingTop: 16,
+    backgroundColor: 'rgba(0,0,0,0.55)',
   },
-
-  // ─── Seek bar ────────────────────────────────────────────────────────
-  seekBarTouchArea: {
+  seekBarContainer: {
     width: '100%',
-    height: 32,
+    height: 28,
     justifyContent: 'center',
-    marginBottom: 4,
+    marginBottom: 2,
   },
   seekBarTrack: {
-    height: 6,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    borderRadius: 3,
+    height: 4,
+    backgroundColor: 'rgba(255,255,255,0.25)',
+    borderRadius: 2,
     overflow: 'hidden',
   },
-  seekBarFilled: {
+  seekBarProgress: {
     height: '100%',
-    backgroundColor: colors.primary,
-    borderRadius: 3,
+    backgroundColor: Colors.dark.primary,
+    borderRadius: 2,
     flexDirection: 'row',
     justifyContent: 'flex-end',
     alignItems: 'center',
   },
   seekBarThumb: {
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    backgroundColor: '#FFFFFF',
-    marginRight: -8,
-    shadowColor: '#E53935',
-    shadowOffset: {width: 0, height: 0},
-    shadowRadius: 6,
+    width: 14, height: 14,
+    borderRadius: 7,
+    backgroundColor: '#fff',
+    marginRight: -7,
+    shadowColor: Colors.dark.primary,
+    shadowRadius: 4,
     shadowOpacity: 0.8,
-    elevation: 6,
-    borderWidth: 2,
-    borderColor: '#E53935',
+    elevation: 4,
   },
-
-  // ─── Time row ────────────────────────────────────────────────────────
   timeRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 10,
+    marginBottom: 8,
   },
   timeText: {
-    color: 'rgba(255,255,255,0.7)',
+    color: 'rgba(255,255,255,0.75)',
+    fontSize: 12,
+    fontFamily: 'Rubik',
   },
-
-  // ─── Playback row ────────────────────────────────────────────────────
   playbackRow: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    gap: 36,
+    gap: 28,
   },
   skipButton: {
     alignItems: 'center',
     justifyContent: 'center',
-    width: 48,
-    height: 48,
-  },
-  iconRewind: {
-    width: 22,
-    height: 22,
-    tintColor: '#FFFFFF',
-    resizeMode: 'contain',
-    transform: [{scaleX: -1}],
-  },
-  iconForward: {
-    width: 22,
-    height: 22,
-    tintColor: '#FFFFFF',
-    resizeMode: 'contain',
   },
   skipLabel: {
-    color: 'rgba(255,255,255,0.8)',
-    marginTop: 2,
+    color: '#fff',
+    fontSize: 10,
+    marginTop: -2,
+    fontFamily: 'Rubik',
   },
   playPauseButton: {
-    width: 68,
-    height: 68,
-    borderRadius: 34,
-    backgroundColor: colors.primary,
+    width: 64, height: 64,
+    borderRadius: 32,
+    backgroundColor: 'rgba(229,9,20,0.9)',
     justifyContent: 'center',
     alignItems: 'center',
-    ...colors.shadowGlow,
+    shadowColor: Colors.dark.primary,
+    shadowRadius: 8,
+    shadowOpacity: 0.6,
+    elevation: 8,
   },
-  playPauseGlyph: {
-    color: '#FFFFFF',
-    fontSize: 28,
-    textAlign: 'center',
-    lineHeight: 34,
-  },
-
-  // ─── Tap deadzone ────────────────────────────────────────────────────
-  tapDeadzone: {
-    position: 'absolute',
-    top: 90,
-    left: 0,
-    right: 0,
-    bottom: 140,
-  },
-
-  // ─── Quality picker modal (glassmorphism) ────────────────────────────
+  // Quality Modal
   modalBackdrop: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.75)',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  qualityGlassCard: {
-    width: 260,
-    borderRadius: 20,
-    padding: 6,
-    backgroundColor: 'rgba(20,24,32,0.92)',
+  qualityModal: {
+    backgroundColor: Colors.dark.surface,
+    borderRadius: 16,
+    padding: 20,
+    width: 240,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
-    overflow: 'hidden',
+    borderColor: Colors.dark.border,
   },
   qualityModalTitle: {
-    color: '#FFFFFF',
+    color: Colors.dark.text,
+    fontSize: 16,
+    fontWeight: '700',
+    fontFamily: 'Rubik',
+    marginBottom: 14,
     textAlign: 'center',
-    paddingVertical: 16,
   },
   qualityOption: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 14,
-    paddingHorizontal: 18,
-    borderRadius: 14,
-    marginHorizontal: 4,
-    marginVertical: 2,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    marginBottom: 4,
   },
   qualityOptionActive: {
-    backgroundColor: 'rgba(229,57,53,0.15)',
+    backgroundColor: `${Colors.dark.primary}20`,
     borderWidth: 1,
-    borderColor: 'rgba(229,57,53,0.4)',
+    borderColor: `${Colors.dark.primary}60`,
   },
   qualityOptionText: {
-    color: 'rgba(255,255,255,0.6)',
+    color: Colors.dark.textSecondary,
+    fontSize: 15,
+    fontFamily: 'Rubik',
   },
   qualityOptionTextActive: {
-    color: '#FF5252',
+    color: Colors.dark.primary,
     fontWeight: '700',
   },
-  qualityCheckmark: {
-    color: '#FF5252',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-
-  // ─── Error / No-URL screen ───────────────────────────────────────────
+  // Error
   errorContainer: {
     flex: 1,
-    backgroundColor: '#000',
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: '#000',
     padding: 32,
   },
-  errorCard: {
-    backgroundColor: 'rgba(20,24,32,0.95)',
-    borderRadius: 24,
-    padding: 32,
-    alignItems: 'center',
-    width: '100%',
-    maxWidth: 320,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-  },
-  errorIcon: {
-    width: 56,
-    height: 56,
-    tintColor: colors.error,
-    resizeMode: 'contain',
-    marginBottom: 8,
-  },
-  errorTitle: {
-    color: '#FFFFFF',
+  errorText: {
+    color: '#fff',
+    fontSize: 16,
     textAlign: 'center',
+    marginTop: 16,
+    fontFamily: 'Rubik',
   },
-  errorSub: {
-    color: 'rgba(255,255,255,0.45)',
-    textAlign: 'center',
-    marginTop: 6,
-    marginHorizontal: 12,
+  errorButton: {
+    marginTop: 22,
+    paddingHorizontal: 28,
+    paddingVertical: 12,
+    backgroundColor: Colors.dark.primary,
+    borderRadius: 10,
   },
-  errorActions: {
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: 24,
-  },
-  errorButtonPrimary: {
-    flex: 1,
-    paddingVertical: 14,
-    backgroundColor: colors.primary,
-    borderRadius: 14,
-    alignItems: 'center',
-    ...colors.shadowGlow,
-  },
-  errorButtonLabel: {
-    color: '#FFFFFF',
+  errorButtonText: {
+    color: '#fff',
+    fontSize: 15,
     fontWeight: '700',
-  },
-  errorButtonSecondary: {
-    flex: 1,
-    paddingVertical: 14,
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    borderRadius: 14,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
-  },
-  errorButtonLabelSecondary: {
-    color: 'rgba(255,255,255,0.8)',
-    fontWeight: '700',
+    fontFamily: 'Rubik',
   },
 });

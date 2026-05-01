@@ -37,4 +37,4 @@ export const APP_VERSION = '1.0.0';
 
 // Cache durations
 export const METADATA_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
-export const VIDEO_URL_TTL_MS = 5 * 60 * 60 * 1000;     // 5 hours — CDN URLs last 6+ hrs; 5h gives safety margin
+export const VIDEO_URL_TTL_MS = 6 * 60 * 60 * 1000;  // 6 hours

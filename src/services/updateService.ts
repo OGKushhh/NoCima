@@ -90,11 +90,8 @@ export const skipVersion = (version: string) => {
  * Open the update download URL in the device browser
  */
 export const openUpdateUrl = (url: string) => {
-  const {Linking, Alert} = require('react-native');
+  const {Linking} = require('react-native');
   Linking.openURL(url).catch(() => {
-    Alert.alert('Error', 'Could not open link. Please try manually.', [
-      {text: 'Copy URL', onPress: () => Linking.openURL(`mailto:?subject=AbdoBest Update&body=${encodeURIComponent(url)}`)},
-      {text: 'OK'},
-    ]);
+    Linking.openURL(url);
   });
 };

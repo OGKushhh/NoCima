@@ -77,7 +77,7 @@ export const GENRE_EN_TO_AR: Record<string, string> = {
 export const GENRE_AR_TO_EN: Record<string, string> = Object.fromEntries(
   Object.entries(GENRE_EN_TO_AR).filter(([en, ar]) => {
     // Only map entries where the key is English and value is Arabic
-    return !/[\u0600-\u06FF]/.test(en) && /[\u0600-\u06FF]/.test(ar);
+    return !/[\\u0600-\\u06FF]/.test(en) && /[\\u0600-\\u06FF]/.test(ar);
   }).map(([en, ar]) => [ar, en])
 );
 

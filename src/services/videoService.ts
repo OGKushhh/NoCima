@@ -2,21 +2,21 @@
  * Video Service for AbdoBest.
  *
  * Handles:
- *  - Stream URL resolution (with 5h URL cache via MMKV)
- *  - Download state persistence (via MMKV)
+ *  - Stream URL resolution (with 6h URL cache via AsyncStorage)
+ *  - Download state persistence (via AsyncStorage)
  *
  * Download feature is currently disabled.
  * When re-enabled, HLS downloads will require a compatible media library.
  *
  * Storage architecture:
- *  - MMKV (via Storage wrapper) → download queue, settings, URL cache (5h TTL)
+ *  - AsyncStorage → download queue, settings, URL cache (6h TTL)
  *  - react-native-blob-util → metadata JSON files on disk, per-category (24h TTL)
  *
  * Metadata persistence:
  *  - Cached metadata (movies, series, anime catalogs) is stored on disk
  *    and persists until the user clears cache or uninstalls
  *  - The 24h TTL only controls when to RE-FETCH from the server
- *  - The 5h TTL only applies to extracted video URL reuse
+ *  - The 6h TTL only applies to extracted video URL reuse
  *  - Completed downloads, user preferences, and cached catalogs persist
  *    forever (until user clears data or uninstalls)
  */
@@ -33,12 +33,12 @@ export interface VideoServiceCallbacks {
 
 /**
  * Get a stream URL for a content item.
- * Uses URL cache (5h TTL) to avoid redundant /extract calls.
+ * Uses URL cache (6h TTL) to avoid redundant /extract calls.
  *
  * URL caching behavior:
- *  - First call → extract from backend → cache with 5h timestamp
- *  - Within 5h → return cached URL immediately (no network call)
- *  - After 5h → re-extract once, update cache
+ *  - First call → extract from backend → cache with 6h timestamp
+ *  - Within 6h → return cached URL immediately (no network call)
+ *  - After 6h → re-extract once, update cache
  *  - This is NOT session-based — the cache persists across app restarts
  */
 export const getStreamUrl = async (contentId: string, sourceUrl: string) => {
@@ -50,10 +50,8 @@ export const getStreamUrl = async (contentId: string, sourceUrl: string) => {
 
 /**
  * Force-refresh a stream URL (bypasses cache).
- * @param cacheKey The page URL used as cache key for MMKV lookup
- * @param sourceUrl (unused, kept for backward compat) 
  */
-export const getRefreshedStreamUrl = async (cacheKey: string, sourceUrl?: string) => {
+export const getRefreshedStreamUrl = async (cacheKey: string, sourceUrl: string) => {
   return refreshVideoUrl(cacheKey);
 };
 
@@ -71,6 +69,5 @@ export const saveDownloadState = (downloads: any[]) => {
  */
 export const getDownloadState = (): any[] => {
   const raw = storage.getString(storageKeys.DOWNLOADS_LIST);
-  if (!raw) return [];
-  try { return JSON.parse(raw); } catch { return []; }
+  return raw ? JSON.parse(raw) : [];
 };

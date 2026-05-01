@@ -33,7 +33,7 @@ export const loadCategory = async (
 ): Promise<ContentDict | TrendingContent | null> => {
   // 1. Return fresh cache unless forced
   if (!forceRefresh) {
-    const fresh = await getMetadataIfFresh(category);
+    const fresh = getMetadataIfFresh(category);
     if (fresh !== null) return fresh;
   }
 
@@ -130,8 +130,6 @@ export const searchContent = async (query: string): Promise<ContentItem[]> => {
 
   for (const data of dicts) {
     if (!data || typeof data !== 'object') continue;
-    // Skip TrendingContent shape (has .movies, .episodes arrays) — not a flat ContentItem dict
-    if ((data as any).movies && !data.Title) continue;
     const items = Object.values(data) as ContentItem[];
     const matches = items.filter(item => {
       const titleMatch = item.Title?.toLowerCase().includes(lowerQuery);
@@ -184,43 +182,6 @@ export const getMoviesArray = (movies: ContentDict): ContentItem[] => {
   return Object.values(movies);
 };
 
-/**
- * Sort items newest-first by Year (descending).
- * Items with no Year are pushed to the end.
- * Year is a string like "2024" — parsed as int for numeric comparison.
- */
-export const sortByNewest = (items: ContentItem[]): ContentItem[] => {
-  return [...items].sort((a, b) => {
-    const yearA = a.Year ? parseInt(a.Year, 10) : 0;
-    const yearB = b.Year ? parseInt(b.Year, 10) : 0;
-    if (yearB !== yearA) return yearB - yearA;
-    // Tie-break: items with year come before items without
-    if (a.Year && !b.Year) return -1;
-    if (!a.Year && b.Year) return 1;
-    return 0;
-  });
-};
-
-/**
- * Collect all unique genres from a list of items (English genres only).
- * Returns an alphabetically sorted array of genre strings.
- */
-export const collectGenres = (items: ContentItem[]): string[] => {
-  const genreSet = new Set<string>();
-  for (const item of items) {
-    if (!item?.Genres) continue;
-    for (const g of item.Genres) {
-      if (!g) continue;
-      // Only keep English-looking genres (for filter consistency)
-      const clean = g.replace(/^[\p{Emoji}\s]+/u, '').trim();
-      if (clean && !/[\u0600-\u06FF]/.test(clean)) {
-        genreSet.add(clean.charAt(0).toUpperCase() + clean.slice(1).toLowerCase());
-      }
-    }
-  }
-  return Array.from(genreSet).sort();
-};
-
 // ─── Auto-refresh (24hr check) ──────────────────────────────────────
 
 /**
@@ -229,10 +190,7 @@ export const collectGenres = (items: ContentItem[]): string[] => {
  * Only fetches categories whose cache is older than 24 hours.
  */
 export const refreshStaleCategories = async (): Promise<void> => {
-  const staleCategories: ContentCategory[] = [
-    'movies', 'series', 'anime', 'tvshows', 'asian-series',
-    'trending', 'featured',
-  ];
+  const staleCategories: ContentCategory[] = ['movies', 'trending', 'featured'];
 
   // Check which ones are stale
   const toRefresh = staleCategories.filter(cat => {

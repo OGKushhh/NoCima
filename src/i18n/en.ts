@@ -132,4 +132,27 @@ export const en = {
   of_10: '/ 10',
   random_picks: 'Recommended',
   asian_series: 'Asian Series',
+  // Status
+  status_ongoing: 'Ongoing',
+  status_completed: 'Completed',
+  status_label: 'Status',
+  // Details - new fields
+  type: 'Type',
+  viewing_level: 'Age Rating',
+  episode_duration: 'Episode Duration',
+  release_date: 'Release Date',
+  play_first_episode: 'Play First Episode',
+  // Card badges
+  badge_movie: 'Movie',
+  badge_dubbed: 'Dubbed',
+  badge_hindi: 'Hindi',
+  badge_asian: 'Asian',
+  badge_anime: 'Anime',
+  badge_anime_film: 'Anime Film',
+  badge_series: 'Series',
+  badge_tvshow: 'TV Show',
+  badge_kdrama: 'K-Drama',
+  // Season picker
+  select_season: 'Select Season',
+  select_episode: 'Select Episode',
 };

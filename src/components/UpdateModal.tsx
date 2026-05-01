@@ -1,24 +1,14 @@
-import React, { useCallback, useMemo } from 'react';
+import React from 'react';
 import {
-  View,
-  Modal,
-  TouchableOpacity,
-  Text,
-  StyleSheet,
-  ScrollView,
-  Image,
-  Dimensions,
-  Platform,
+  View, Modal, TouchableOpacity, Text, StyleSheet,
+  ScrollView, Linking, Dimensions,
 } from 'react-native';
-import { RADIUS, SPACING } from '../theme/colors';
-import { FONTS } from '../theme/typography';
-import { useTranslation } from 'react-i18next';
-import { ReleaseInfo } from '../services/updateService';
-import { useTheme } from '../hooks/useTheme';
+import Icon from 'react-native-vector-icons/Ionicons';
+import {Colors} from '../theme/colors';
+import {Typography} from '../theme/typography';
+import {useTranslation} from 'react-i18next';
+import {ReleaseInfo} from '../services/updateService';
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
 interface UpdateModalProps {
   visible: boolean;
   release: ReleaseInfo | null;
@@ -28,345 +18,213 @@ interface UpdateModalProps {
   onDismiss: () => void;
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+const {width: SCREEN_WIDTH} = Dimensions.get('window');
 
-const formatDate = (dateStr: string): string => {
-  try {
-    return new Date(dateStr).toLocaleDateString();
-  } catch {
-    return dateStr;
-  }
-};
-
-/**
- * Safely read fields from a potentially‑incomplete release object.
- */
-const safe = (release: ReleaseInfo | null, field: keyof ReleaseInfo, fallback = ''): string => {
-  if (!release) return fallback;
-  const value = release[field];
-  return typeof value === 'string' ? value : fallback;
-};
-
-// ---------------------------------------------------------------------------
-// Component
-// ---------------------------------------------------------------------------
 export const UpdateModal: React.FC<UpdateModalProps> = ({
-  visible,
-  release,
-  currentVersion,
-  onDownload,
-  onSkip,
-  onDismiss,
+  visible, release, currentVersion, onDownload, onSkip, onDismiss,
 }) => {
-  const { t } = useTranslation();
-  const { colors } = useTheme();
-
-  const styles = useMemo(
-    () =>
-      StyleSheet.create({
-        // ── Backdrop ─────────────────────────────────────────────────────────
-        backdrop: {
-          ...StyleSheet.absoluteFillObject,
-          justifyContent: 'center',
-          zIndex: 0,
-        },
-        backdropOverlay: {
-          ...StyleSheet.absoluteFillObject,
-          backgroundColor: colors.overlay,
-        },
-
-        // ── Bottom sheet ─────────────────────────────────────────────────────
-        sheet: {
-          position: 'absolute',
-          bottom: 0,
-          left: 0,
-          right: 0,
-          backgroundColor: colors.surface,
-          borderTopLeftRadius: RADIUS.xl,
-          borderTopRightRadius: RADIUS.xl,
-          maxHeight: SCREEN_HEIGHT * 0.75,
-          overflow: 'hidden',
-          ...Platform.select({
-            ios: colors.shadowLg,
-            android: colors.shadowMd,
-          }),
-        },
-        handleBar: {
-          alignSelf: 'center',
-          width: 40,
-          height: 4,
-          borderRadius: 2,
-          backgroundColor: colors.border,
-          marginTop: SPACING.sm,
-          marginBottom: SPACING.lg,
-        },
-        scrollContent: {
-          paddingHorizontal: SPACING.xl,
-          paddingBottom: SPACING.xl,
-        },
-
-        // ── Header ───────────────────────────────────────────────────────────
-        iconContainer: {
-          alignSelf: 'center',
-          width: 72,
-          height: 72,
-          borderRadius: 36,
-          backgroundColor: `${colors.primary}18`,
-          justifyContent: 'center',
-          alignItems: 'center',
-          marginBottom: SPACING.lg,
-        },
-        appIcon: {
-          width: 40,
-          height: 40,
-        },
-        title: {
-          color: colors.text,
-          textAlign: 'center',
-          marginBottom: SPACING.lg,
-        },
-
-        // ── Version row ──────────────────────────────────────────────────────
-        versionRow: {
-          flexDirection: 'row',
-          alignItems: 'center',
-          justifyContent: 'center',
-          marginBottom: SPACING.lg,
-        },
-        versionBox: {
-          flex: 1,
-          backgroundColor: colors.background,
-          borderRadius: RADIUS.md,
-          padding: SPACING.md,
-          alignItems: 'center',
-        },
-        versionBoxNew: {
-          borderColor: colors.primary,
-          borderWidth: 1,
-        },
-        versionLabel: {
-          color: colors.textMuted,
-          marginBottom: SPACING.xs,
-        },
-        versionValue: {
-          color: colors.text,
-        },
-        arrowIcon: {
-          width: 20,
-          height: 20,
-          tintColor: colors.textMuted,
-          marginHorizontal: SPACING.md,
-        },
-
-        // ── Changelog ────────────────────────────────────────────────────────
-        changelogSection: {
-          backgroundColor: colors.background,
-          borderRadius: RADIUS.md,
-          padding: SPACING.lg,
-          marginBottom: SPACING.md,
-        },
-        changelogTitle: {
-          color: colors.textSecondary,
-          marginBottom: SPACING.sm,
-        },
-        changelogText: {
-          color: colors.textSecondary,
-          lineHeight: 20,
-        },
-
-        // ── Date ─────────────────────────────────────────────────────────────
-        dateText: {
-          color: colors.textMuted,
-          textAlign: 'center',
-          marginBottom: SPACING.md,
-        },
-
-        // ── Action buttons ───────────────────────────────────────────────────
-        actions: {
-          paddingHorizontal: SPACING.xl,
-          paddingBottom: SPACING.xxxl,
-          paddingTop: SPACING.sm,
-          borderTopWidth: 1,
-          borderTopColor: colors.border,
-        },
-        updateButton: {
-          flexDirection: 'row',
-          alignItems: 'center',
-          justifyContent: 'center',
-          backgroundColor: colors.primary,
-          borderRadius: RADIUS.full,
-          paddingVertical: SPACING.md,
-          minHeight: 50,
-          marginBottom: SPACING.md,
-          ...colors.shadowGlow,
-        },
-        updateButtonText: {
-          color: '#FFFFFF',
-          fontWeight: '700',
-          marginLeft: SPACING.sm,
-        },
-        btnIcon: {
-          width: 22,
-          height: 22,
-          tintColor: '#FFFFFF',
-        },
-        skipButton: {
-          alignSelf: 'center',
-          paddingVertical: SPACING.sm,
-          paddingHorizontal: SPACING.xl,
-        },
-        skipText: {
-          color: colors.textMuted,
-        },
-      }),
-    [colors],
-  );
-
-  // ── Derived values (guarded) ─────────────────────────────────────────────
-  const version = safe(release, 'version');
-  const downloadUrl = safe(release, 'downloadUrl');
-  const changelog = safe(release, 'changelog');
-  const publishedAt = safe(release, 'publishedAt');
-
-  const handleDownload = useCallback(() => {
-    if (downloadUrl) {
-      onDownload(downloadUrl);
-    }
-  }, [downloadUrl, onDownload]);
-
-  const handleSkip = useCallback(() => {
-    if (version) {
-      onSkip(version);
-    }
-  }, [version, onSkip]);
+  const {t} = useTranslation();
 
   if (!release) return null;
 
+  const formatDate = (dateStr: string) => {
+    try {
+      return new Date(dateStr).toLocaleDateString();
+    } catch {
+      return dateStr;
+    }
+  };
+
   return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="slide"
-      hardwareAccelerated
-      onRequestClose={onDismiss}>
-      {/* ── Backdrop ────────────────────────────────────────────────────── */}
-      <TouchableOpacity
-        style={styles.backdrop}
-        activeOpacity={1}
-        onPress={onDismiss}>
-        <View style={styles.backdropOverlay} />
-      </TouchableOpacity>
-
-      {/* ── Bottom‑sheet card ──────────────────────────────────────────── */}
-      <View style={styles.sheet}>
-        <ScrollView
-          bounces={false}
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.scrollContent}>
-          {/* Handle bar */}
-          <View style={styles.handleBar} />
-
-          {/* App icon */}
-          <View style={styles.iconContainer}>
-            <Image
-              source={require('../../assets/icons/tv.png')}
-              style={styles.appIcon}
-              resizeMode="contain"
-            />
+    <Modal visible={visible} transparent animationType="fade">
+      <View style={styles.overlay}>
+        <View style={styles.modal}>
+          {/* Header */}
+          <View style={styles.header}>
+            <View style={styles.iconContainer}>
+              <Icon name="rocket-outline" size={32} color={Colors.dark.primary} />
+            </View>
+            <Text style={styles.title}>{t('update_available')}</Text>
+            <Text style={styles.subtitle}>{t('update_description')}</Text>
           </View>
 
-          {/* Title */}
-          <Text style={[styles.title, FONTS.heading2]}>
-            {t('update_available')}
-          </Text>
-
-          {/* Version comparison */}
+          {/* Version info */}
           <View style={styles.versionRow}>
             <View style={styles.versionBox}>
-              <Text style={[styles.versionLabel, FONTS.captionSmall]}>
-                {t('current_version')}
-              </Text>
-              <Text style={[styles.versionValue, FONTS.heading3]}>
-                v{currentVersion ?? '—'}
-              </Text>
+              <Text style={styles.versionLabel}>{t('current_version')}</Text>
+              <Text style={styles.versionValue}>v{currentVersion}</Text>
             </View>
-
-            <Image
-              source={require('../../assets/icons/arrow.png')}
-              style={styles.arrowIcon}
-              resizeMode="contain"
-            />
-
+            <Icon name="arrow-forward" size={20} color={Colors.dark.textMuted} />
             <View style={[styles.versionBox, styles.versionBoxNew]}>
-              <Text style={[styles.versionLabel, FONTS.captionSmall]}>
-                {t('latest_version')}
-              </Text>
-              <Text
-                style={[
-                  styles.versionValue,
-                  FONTS.heading3,
-                  { color: colors.primary },
-                ]}>
-                v{version || '—'}
-              </Text>
+              <Text style={styles.versionLabel}>{t('latest_version')}</Text>
+              <Text style={[styles.versionValue, {color: Colors.dark.primary}]}>v{release.version}</Text>
             </View>
           </View>
 
-          {/* "What's New" changelog section */}
-          {changelog ? (
-            <View style={styles.changelogSection}>
-              <Text style={[styles.changelogTitle, FONTS.captionSmall]}>
-                {t('update_changelog')}
-              </Text>
-              <Text style={[styles.changelogText, FONTS.bodySmall]}>
-                {changelog}
-              </Text>
+          {/* Changelog */}
+          {release.changelog && (
+            <View style={styles.changelogContainer}>
+              <Text style={styles.changelogTitle}>{t('update_changelog')}</Text>
+              <ScrollView style={styles.changelogScroll} showsVerticalScrollIndicator={false}>
+                <Text style={styles.changelogText}>{release.changelog}</Text>
+              </ScrollView>
             </View>
-          ) : null}
+          )}
 
-          {/* Release date */}
-          {publishedAt ? (
-            <Text style={[styles.dateText, FONTS.caption]}>
-              {formatDate(publishedAt)}
-            </Text>
-          ) : null}
-        </ScrollView>
+          {/* Date */}
+          <Text style={styles.dateText}>
+            📅 {formatDate(release.publishedAt)}
+          </Text>
 
-        {/* ── Action buttons (fixed at bottom of sheet) ─────────────────── */}
-        <View style={styles.actions}>
-          {/* Update Now */}
+          {/* Actions */}
           <TouchableOpacity
-            style={styles.updateButton}
-            onPress={handleDownload}
-            activeOpacity={0.85}
-            accessibilityLabel={t('download_update')}
-            accessibilityRole="button">
-            <Image
-              source={require('../../assets/icons/files.png')}
-              style={styles.btnIcon}
-              resizeMode="contain"
-            />
-            <Text style={[styles.updateButtonText, FONTS.bodyLarge]}>
-              {t('download_update')}
-            </Text>
+            style={styles.downloadButton}
+            onPress={() => onDownload(release.downloadUrl)}
+          >
+            <Icon name="download" size={22} color="#fff" />
+            <Text style={styles.downloadButtonText}>{t('download_update')}</Text>
           </TouchableOpacity>
 
-          {/* Skip */}
-          <TouchableOpacity
-            style={styles.skipButton}
-            onPress={handleSkip}
-            activeOpacity={0.7}
-            accessibilityLabel={t('skip_version')}
-            accessibilityRole="button">
-            <Text style={[styles.skipText, FONTS.body]}>
-              {t('skip_version')}
-            </Text>
-          </TouchableOpacity>
+          <View style={styles.bottomRow}>
+            <TouchableOpacity style={styles.skipButton} onPress={() => onSkip(release.version)}>
+              <Text style={styles.skipText}>{t('skip_version')}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.laterButton} onPress={onDismiss}>
+              <Text style={styles.laterText}>{t('later')}</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
     </Modal>
   );
 };
+
+const styles = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  modal: {
+    width: SCREEN_WIDTH - 48,
+    backgroundColor: Colors.dark.surface,
+    borderRadius: 20,
+    padding: 24,
+    maxHeight: SCREEN_WIDTH - 24,
+  },
+  header: {
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  iconContainer: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: `${Colors.dark.primary}20`,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  title: {
+    color: Colors.dark.text,
+    fontSize: Typography.sizes.xxl,
+    fontWeight: Typography.weights.bold,
+  },
+  subtitle: {
+    color: Colors.dark.textSecondary,
+    fontSize: Typography.sizes.sm,
+    marginTop: 4,
+    textAlign: 'center',
+  },
+  versionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  versionBox: {
+    backgroundColor: Colors.dark.background,
+    borderRadius: 12,
+    padding: 12,
+    alignItems: 'center',
+    flex: 1,
+  },
+  versionBoxNew: {
+    borderColor: Colors.dark.primary,
+    borderWidth: 1,
+  },
+  versionLabel: {
+    color: Colors.dark.textMuted,
+    fontSize: Typography.sizes.xs,
+    marginBottom: 4,
+  },
+  versionValue: {
+    color: Colors.dark.text,
+    fontSize: Typography.sizes.lg,
+    fontWeight: Typography.weights.bold,
+  },
+  changelogContainer: {
+    backgroundColor: Colors.dark.background,
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 12,
+  },
+  changelogTitle: {
+    color: Colors.dark.textSecondary,
+    fontSize: Typography.sizes.sm,
+    fontWeight: Typography.weights.semibold,
+    marginBottom: 8,
+  },
+  changelogScroll: {
+    maxHeight: 120,
+  },
+  changelogText: {
+    color: Colors.dark.textSecondary,
+    fontSize: Typography.sizes.sm,
+    lineHeight: 20,
+  },
+  dateText: {
+    color: Colors.dark.textMuted,
+    fontSize: Typography.sizes.xs,
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  downloadButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.dark.primary,
+    borderRadius: 14,
+    paddingVertical: 14,
+    marginBottom: 12,
+  },
+  downloadButtonText: {
+    color: '#fff',
+    fontSize: Typography.sizes.lg,
+    fontWeight: Typography.weights.bold,
+    marginLeft: 8,
+  },
+  bottomRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+  },
+  skipButton: {
+    paddingHorizontal: 20,
+    paddingVertical: 8,
+  },
+  skipText: {
+    color: Colors.dark.textSecondary,
+    fontSize: Typography.sizes.md,
+  },
+  laterButton: {
+    paddingHorizontal: 20,
+    paddingVertical: 8,
+  },
+  laterText: {
+    color: Colors.dark.primary,
+    fontSize: Typography.sizes.md,
+    fontWeight: Typography.weights.semibold,
+  },
+});

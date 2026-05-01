@@ -132,4 +132,27 @@ export const ar = {
   of_10: 'من 10',
   random_picks: 'موصى به',
   asian_series: 'مسلسلات آسيوية',
+  // الحالة
+  status_ongoing: 'مستمر',
+  status_completed: 'مكتمل',
+  status_label: 'الحالة',
+  // التفاصيل - حقول جديدة
+  type: 'النوع',
+  viewing_level: 'التصنيف العمري',
+  episode_duration: 'مدة الحلقة',
+  release_date: 'تاريخ الإصدار',
+  play_first_episode: 'تشغيل الحلقة الأولى',
+  // شرائح البطاقات
+  badge_movie: 'فيلم',
+  badge_dubbed: 'مدبلج',
+  badge_hindi: 'هندي',
+  badge_asian: 'آسيوي',
+  badge_anime: 'أنمي',
+  badge_anime_film: 'فيلم أنمي',
+  badge_series: 'مسلسل',
+  badge_tvshow: 'برنامج تلفزيوني',
+  badge_kdrama: 'مسلسل كوري',
+  // مختار الموسم
+  select_season: 'اختر الموسم',
+  select_episode: 'اختر حلقة',
 };

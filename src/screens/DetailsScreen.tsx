@@ -3,20 +3,17 @@
  *
  * Merge of Claude's episode UI with our bug fixes:
  *   - recordPlay() called WITHOUT .catch() (it's sync)
- *   - Title in visible styled box (surface bg, rounded, bordered)
- *   - Poster corner badges (category + quality + viewing level) using PNG icons
- *   - Season picker modal (bottom sheet) with FlatList + season poster
+ *   - Title in visible styled box
+ *   - Poster corner badges (category + quality) using Image icons (not emoji)
+ *   - Season picker modal (bottom sheet)
  *   - Episode indexer with numbered circles + play buttons
- *   - All metadata fields in info table with RTL support
- *   - localizeGenres() for genre translation
- *   - Full-screen extracting overlay with rotating status messages
- *   - Extracted URL validation (reject ads/tracking pixels)
- *   - Better error state with icon + Go Back button
- *   - Rating fetched from /api/ratings endpoint
+ *   - All metadata fields in info table
+ *   - buildFaselUrl for reliable URL construction
+ *   - Localized genres via localizeGenres()
  *
  * Play flow:
- *   Movies:   buildFaselUrl(id) -> POST /extract -> validate URL -> Player
- *   Episodes: episode URL directly -> POST /extract -> validate URL -> Player
+ *   Movies:   buildFaselUrl(id) → POST /extract → Player
+ *   Episodes: episode URL directly → POST /extract → Player
  */
 
 import React, {useState, useCallback, useMemo, useEffect, useRef} from 'react';
@@ -37,50 +34,42 @@ import {useTranslation} from 'react-i18next';
 import {localizeGenres} from '../i18n/genres';
 import {API_BASE} from '../constants/endpoints';
 
-// ── Constants ────────────────────────────────────────────────────────
 const FASEL_BASE = 'https://www.fasel-hd.cam';
 
 const {width: SW} = Dimensions.get('window');
 const POSTER_W = Math.min(SW * 0.48, 200);
 const POSTER_H = POSTER_W * 1.52;
 
-const EXTRACT_STATUSES = [
-  'Connecting to server...',
-  'Fetching page...',
-  'Extracting stream URL...',
-  'Almost there...',
+const STATUS_MSGS = [
+  'Connecting to server…',
+  'Fetching page…',
+  'Extracting stream…',
+  'Almost there…',
 ];
 
-// ── Category -> short badge label (i18n key) ─────────────────────────
-const CAT_BADGE_KEY: Record<string, string> = {
-  movies: 'badge_movie',
-  'dubbed-movies': 'badge_dubbed',
-  hindi: 'badge_hindi',
-  'asian-movies': 'badge_asian',
-  anime: 'badge_anime',
-  'anime-movies': 'badge_anime_film',
-  series: 'badge_series',
-  tvshows: 'badge_tvshow',
-  'asian-series': 'badge_kdrama',
+// Map category key → i18n key for poster badge
+const CAT_I18N: Record<string, string> = {
+  movies:          'movies',
+  'dubbed-movies': 'dubbed_movies',
+  hindi:           'hindi',
+  'asian-movies':  'asian_movies',
+  anime:           'anime',
+  'anime-movies':  'anime_movies',
+  series:          'series',
+  tvshows:         'tvshows',
+  'asian-series':  'asian_series',
 };
 
-// ── Info table row with RTL support ──────────────────────────────────
+// ── Info table row ───────────────────────────────────────────────────
 interface InfoRowProps {
   label: string;
   value: string;
   accent?: boolean;
-  isRTL?: boolean;
 }
-
-const InfoRow: React.FC<InfoRowProps> = ({label, value, accent, isRTL}) => (
-  <View style={[rowS.row, {flexDirection: isRTL ? 'row-reverse' : 'row'}]}>
-    <Text style={[rowS.label, {textAlign: isRTL ? 'right' : 'left'}]}>{label}</Text>
-    <Text
-      style={[rowS.value, accent && rowS.accent, {textAlign: isRTL ? 'left' : 'right'}]}
-      numberOfLines={3}
-    >
-      {value}
-    </Text>
+const InfoRow: React.FC<InfoRowProps> = ({label, value, accent}) => (
+  <View style={rowS.row}>
+    <Text style={rowS.label}>{label}</Text>
+    <Text style={[rowS.value, accent && rowS.accent]} numberOfLines={3}>{value}</Text>
   </View>
 );
 
@@ -123,19 +112,6 @@ const fetchEpisodes = async (category: string, id: string) => {
   return r.data;
 };
 
-// ── Extracted URL validator ──────────────────────────────────────────
-const isValidStreamUrl = (url: string): boolean => {
-  if (!url) return false;
-  const lower = url.toLowerCase();
-  // Reject known ad/tracking patterns
-  const badPatterns = ['ping.gif', 'pixel.gif', 'tracking', 'doubleclick', '/ad/', '/ads/'];
-  if (badPatterns.some(p => lower.includes(p))) return false;
-  // Must have media extension or known CDN host
-  const hasExtension = /\.(m3u8|mp4|mkv|m4a|ts|mpd)(\?|$)/i.test(url);
-  const hasMediaHost = lower.includes('scdns.io') || lower.includes('/master') || lower.includes('.m3u8');
-  return hasExtension || hasMediaHost;
-};
-
 // ══════════════════════════════════════════════════════════════════════
 export const DetailsScreen: React.FC = () => {
   const route = useRoute<any>();
@@ -164,7 +140,6 @@ export const DetailsScreen: React.FC = () => {
   const statusTimer = useRef<ReturnType<typeof setInterval>>();
 
   const lang = i18n.language === 'ar' ? 'ar' : 'en';
-  const isRTL = lang === 'ar';
   const raw = item as any;
 
   const category = (item?.Category || 'movies').toLowerCase();
@@ -201,6 +176,21 @@ export const DetailsScreen: React.FC = () => {
   }, [item?.id, category]);
 
   useEffect(() => () => clearInterval(statusTimer.current), []);
+
+  // ── Empty state ───────────────────────────────────────────────────
+  if (!item) {
+    return (
+      <View style={S.container}>
+        <TouchableOpacity
+          style={[S.navBtn, {margin: 20, marginTop: insets.top + 20}]}
+          onPress={() => nav.goBack()}
+        >
+          <Image source={require('../../assets/icons/arrow.png')} style={S.iconNav} />
+        </TouchableOpacity>
+        <Text style={S.fallback}>{t('error_loading')}</Text>
+      </View>
+    );
+  }
 
   // ── Field helpers ─────────────────────────────────────────────────
   const genresDisplay = useMemo(() => {
@@ -269,7 +259,7 @@ export const DetailsScreen: React.FC = () => {
   const startStatusTimer = () => {
     setStatusIdx(0);
     statusTimer.current = setInterval(
-      () => setStatusIdx(p => (p + 1) % EXTRACT_STATUSES.length), 3500,
+      () => setStatusIdx(p => (p + 1) % STATUS_MSGS.length), 4000,
     );
   };
   const stopStatusTimer = () => clearInterval(statusTimer.current);
@@ -283,26 +273,15 @@ export const DetailsScreen: React.FC = () => {
       const url = `${FASEL_BASE}/?p=${item.id}`;
       const result = await extractVideoUrl(url);
       stopStatusTimer();
-
-      // Validate extracted URL is actually a playable stream
-      const streamUrl = result.video_url || '';
-      if (!isValidStreamUrl(streamUrl)) {
-        console.warn('[Details] Extracted URL looks invalid:', streamUrl.substring(0, 150));
-        setExtracting(false);
-        setExtractError(t('video_unavailable') || 'Could not extract a valid stream URL.');
-        return;
-      }
-
       setExtracting(false);
-      // recordPlay is sync - do NOT .catch()
+      // recordPlay is sync — do NOT .catch()
       recordPlay(item.id, category);
       nav.navigate('Player', {
-        url: streamUrl,
+        url: result.video_url,
         qualities: result.quality_options,
         title: item.Title,
         contentId: item.id,
         category,
-        pageUrl: url, // for cache-bust retry on expired URLs
       });
     } catch (err: any) {
       stopStatusTimer();
@@ -319,26 +298,15 @@ export const DetailsScreen: React.FC = () => {
     try {
       const result = await extractVideoUrl(epUrl);
       stopStatusTimer();
-
-      // Validate extracted URL
-      const streamUrl = result.video_url || '';
-      if (!isValidStreamUrl(streamUrl)) {
-        console.warn('[Details] Episode URL looks invalid:', streamUrl.substring(0, 150));
-        setExtractingEp(null);
-        setExtractError(t('video_unavailable') || 'Could not extract a valid stream URL.');
-        return;
-      }
-
       setExtractingEp(null);
-      // recordPlay is sync - do NOT .catch()
+      // recordPlay is sync — do NOT .catch()
       recordPlay(item.id, category);
       nav.navigate('Player', {
-        url: streamUrl,
+        url: result.video_url,
         qualities: result.quality_options,
         title: `${item.Title} - ${t('season')} ${selSeason} ${t('episode')} ${epNum}`,
         contentId: item.id,
         category,
-        pageUrl: epUrl,
       });
     } catch (err: any) {
       stopStatusTimer();
@@ -351,41 +319,7 @@ export const DetailsScreen: React.FC = () => {
     Share.share({message: `${item.Title} - AbdoBest`});
 
   // ══════════════════════════════════════════════════════════════════════
-  // ── Empty state (item is missing) ─────────────────────────────────
-  // ══════════════════════════════════════════════════════════════════════
-  if (!item) {
-    return (
-      <View style={S.container}>
-        <StatusBar barStyle="light-content" backgroundColor={Colors.dark.background} translucent />
-        <TouchableOpacity
-          style={[S.navBtn, {margin: 20, marginTop: insets.top + 20}]}
-          onPress={() => nav.goBack()}
-        >
-          <Image source={require('../../assets/icons/arrow.png')} style={S.iconNav} />
-        </TouchableOpacity>
-        <View style={S.errorStateWrap}>
-          <Image
-            source={require('../../assets/icons/clapboard.png')}
-            style={S.errorStateIcon}
-          />
-          <Text style={S.errorStateText}>
-            {t('error_loading') || 'Content not found'}
-          </Text>
-          <TouchableOpacity
-            style={S.errorStateBtn}
-            onPress={() => nav.goBack()}
-          >
-            <Text style={S.errorStateBtnText}>
-              {lang === 'ar' ? '\u0639\u0648\u062F\u0629' : 'Go Back'}
-            </Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    );
-  }
-
-  // ══════════════════════════════════════════════════════════════════════
-  // ── Main render ────────────────────────────────────────────────────
+  // ── Render ─────────────────────────────────────────────────────────
   // ══════════════════════════════════════════════════════════════════════
   return (
     <View style={S.container}>
@@ -405,7 +339,7 @@ export const DetailsScreen: React.FC = () => {
           </TouchableOpacity>
         </View>
 
-        {/* ── Title box (surface bg, rounded, bordered) ── */}
+        {/* ── Title box ── */}
         <View style={S.titleBox}>
           <Text style={S.title} numberOfLines={4}>{item.Title}</Text>
         </View>
@@ -421,28 +355,25 @@ export const DetailsScreen: React.FC = () => {
             />
           ) : (
             <View style={[S.poster, S.posterPlaceholder]}>
-              <Image
-                source={require('../../assets/icons/clapboard.png')}
-                style={{width: 52, height: 52, tintColor: Colors.dark.textMuted}}
-              />
+              <Image source={require('../../assets/icons/clapboard.png')} style={{width: 52, height: 52, tintColor: Colors.dark.textMuted}} />
             </View>
           )}
 
-          {/* Category badge - top-left (PNG icon, no emoji) */}
-          {CAT_BADGE_KEY[category] ? (
+          {/* Category badge — top-left */}
+          {CAT_I18N[category] ? (
             <View style={S.catChip}>
-              <Text style={S.catChipText}>{t(CAT_BADGE_KEY[category])}</Text>
+              <Text style={S.catChipText}>{t(CAT_I18N[category])}</Text>
             </View>
           ) : null}
 
-          {/* Quality badge - bottom-right */}
+          {/* Quality badge — bottom-right */}
           {format ? (
             <View style={S.fmtChip}>
               <Text style={S.fmtChipText}>{format}</Text>
             </View>
           ) : null}
 
-          {/* Viewing level badge - top-right */}
+          {/* Viewing level badge — top-right */}
           {viewingLvl && viewingLvl !== 'Documentary , History' ? (
             <View style={S.vlChip}>
               <Text style={S.vlChipText}>{viewingLvl}</Text>
@@ -450,18 +381,13 @@ export const DetailsScreen: React.FC = () => {
           ) : null}
         </View>
 
-        {/* ── Rating + Views + Status pills (PNG icons, no emoji) ── */}
+        {/* ── Rating + Views + Status pills ── */}
         <View style={S.pillsRow}>
           {rating ? (
             <View style={S.pill}>
-              <Image
-                source={require('../../assets/icons/star.png')}
-                style={[S.pillIcon, {tintColor: '#FFD700'}]}
-              />
+              <Image source={require('../../assets/icons/star.png')} style={[S.pillIcon, {tintColor: '#FFD700'}]} />
               <Text style={[S.pillTxt, {color: '#FFD700'}]}>{rating}</Text>
-              <Text style={S.pillSub}>
-                {lang === 'ar' ? '\u0645\u0646 10' : '/ 10'}
-              </Text>
+              <Text style={S.pillSub}>{lang === 'ar' ? '\u0645\u0646 10' : '/ 10'}</Text>
             </View>
           ) : ratingLoading ? (
             <View style={S.pill}>
@@ -470,10 +396,7 @@ export const DetailsScreen: React.FC = () => {
           ) : null}
           {views ? (
             <View style={S.pill}>
-              <Image
-                source={require('../../assets/icons/eyes.png')}
-                style={S.pillIcon}
-              />
+              <Image source={require('../../assets/icons/eyes.png')} style={S.pillIcon} />
               <Text style={S.pillTxt}>{views}</Text>
             </View>
           ) : null}
@@ -511,16 +434,11 @@ export const DetailsScreen: React.FC = () => {
             {extracting && !isEpisodic ? (
               <>
                 <ActivityIndicator color="#fff" size="small" />
-                <Text style={S.playBtnTxt} numberOfLines={1}>
-                  {EXTRACT_STATUSES[statusIdx]}
-                </Text>
+                <Text style={S.playBtnTxt} numberOfLines={1}>{STATUS_MSGS[statusIdx]}</Text>
               </>
             ) : (
               <>
-                <Image
-                  source={require('../../assets/icons/clapboard.png')}
-                  style={{width: 18, height: 18, tintColor: '#fff'}}
-                />
+                <Image source={require('../../assets/icons/clapboard.png')} style={{width: 18, height: 18, tintColor: '#fff'}} />
                 <Text style={S.playBtnTxt}>
                   {isEpisodic ? t('select_episode') : t('play')}
                 </Text>
@@ -529,26 +447,17 @@ export const DetailsScreen: React.FC = () => {
           </TouchableOpacity>
 
           <TouchableOpacity style={S.dlBtn} activeOpacity={0.84}>
-            <Image
-              source={require('../../assets/icons/files.png')}
-              style={[S.iconMed, {tintColor: Colors.dark.accentLight}]}
-            />
+            <Image source={require('../../assets/icons/files.png')} style={[S.iconMed, {tintColor: Colors.dark.accentLight}]} />
             <Text style={S.dlBtnTxt}>{t('download')}</Text>
           </TouchableOpacity>
         </View>
 
-        {/* ── Extract error banner ── */}
+        {/* ── Extract error ── */}
         {extractError ? (
           <View style={S.errBanner}>
             <Text style={S.errTxt} numberOfLines={3}>{extractError}</Text>
-            <TouchableOpacity
-              style={S.retryBtn}
-              onPress={() => extractingEp ? null : handlePlay()}
-            >
-              <Image
-                source={require('../../assets/icons/undoreturn.png')}
-                style={{width: 14, height: 14, tintColor: Colors.dark.primary}}
-              />
+            <TouchableOpacity style={S.retryBtn} onPress={() => handlePlay()}>
+              <Image source={require('../../assets/icons/undoreturn.png')} style={{width: 14, height: 14, tintColor: Colors.dark.primary}} />
               <Text style={S.retryTxt}>{t('retry')}</Text>
             </TouchableOpacity>
           </View>
@@ -562,40 +471,29 @@ export const DetailsScreen: React.FC = () => {
           </View>
         ) : null}
 
-        {/* ── Info table (RTL-aware) ── */}
+        {/* ── Info table ── */}
         <View style={S.infoTable}>
-          {releaseDate ? <InfoRow label={t('release_date')} value={String(releaseDate).slice(0, 10)} accent isRTL={isRTL} /> : null}
-          {!releaseDate && year ? <InfoRow label={t('year')} value={String(year)} accent isRTL={isRTL} /> : null}
-          {item.Category ? <InfoRow label={t('category')} value={t(item.Category) || item.Category} accent isRTL={isRTL} /> : null}
-          {genresDisplay ? <InfoRow label={t('genres')} value={genresDisplay} accent isRTL={isRTL} /> : null}
-          {language ? <InfoRow label={t('language')} value={language} isRTL={isRTL} /> : null}
-          {format ? <InfoRow label={t('quality')} value={format} isRTL={isRTL} /> : null}
-          {country ? <InfoRow label={t('country')} value={country} accent isRTL={isRTL} /> : null}
-          {directors ? <InfoRow label={t('directors')} value={directors} accent isRTL={isRTL} /> : null}
-          {viewType ? <InfoRow label={t('type')} value={viewType} isRTL={isRTL} /> : null}
-          {viewingLvl ? <InfoRow label={t('viewing_level')} value={viewingLvl} isRTL={isRTL} /> : null}
-          {displayStatus ? <InfoRow label={t('status_label')} value={displayStatus} accent={isOngoing} isRTL={isRTL} /> : null}
-          {isEpisodic && totalEps > 0 ? <InfoRow label={t('episodes')} value={String(totalEps)} isRTL={isRTL} /> : null}
-          {epDuration && epDuration !== 'min\u062F' ? <InfoRow label={t('episode_duration')} value={epDuration} isRTL={isRTL} /> : null}
-          {!isEpisodic && runtime ? <InfoRow label={t('duration')} value={runtime} isRTL={isRTL} /> : null}
+          {releaseDate ? <InfoRow label={t('release_date')} value={String(releaseDate).slice(0, 10)} accent /> : null}
+          {!releaseDate && year ? <InfoRow label={t('year')} value={String(year)} accent /> : null}
+          {item.Category ? <InfoRow label={t('category')} value={t(item.Category) || item.Category} accent /> : null}
+          {genresDisplay ? <InfoRow label={t('genres')} value={genresDisplay} accent /> : null}
+          {language ? <InfoRow label={t('language')} value={language} /> : null}
+          {format ? <InfoRow label={t('quality')} value={format} /> : null}
+          {country ? <InfoRow label={t('country')} value={country} accent /> : null}
+          {directors ? <InfoRow label={t('directors')} value={directors} accent /> : null}
+          {viewType ? <InfoRow label={t('type')} value={viewType} /> : null}
+          {viewingLvl ? <InfoRow label={t('viewing_level')} value={viewingLvl} /> : null}
+          {displayStatus ? <InfoRow label={t('status_label')} value={displayStatus} accent={isOngoing} /> : null}
+          {isEpisodic && totalEps > 0 ? <InfoRow label={t('episodes')} value={String(totalEps)} /> : null}
+          {epDuration && epDuration !== 'min\u062F' ? <InfoRow label={t('episode_duration')} value={epDuration} /> : null}
+          {!isEpisodic && runtime ? <InfoRow label={t('duration')} value={runtime} /> : null}
           {/* Rating row with star icon */}
           {rating ? (
-            <View style={[rowS.row, {flexDirection: isRTL ? 'row-reverse' : 'row'}]}>
-              <Text style={[rowS.label, {textAlign: isRTL ? 'right' : 'left'}]}>{t('rating')}</Text>
-              <View style={{
-                flex: 2,
-                flexDirection: 'row',
-                justifyContent: isRTL ? 'flex-start' : 'flex-end',
-                alignItems: 'center',
-                gap: 6,
-              }}>
-                <Text style={[rowS.value, {textAlign: isRTL ? 'left' : 'right'}]}>
-                  {rating} {lang === 'ar' ? '\u0645\u0646 10' : '/ 10'}
-                </Text>
-                <Image
-                  source={require('../../assets/icons/star.png')}
-                  style={{width: 16, height: 16, tintColor: '#FFD700'}}
-                />
+            <View style={rowS.row}>
+              <Text style={rowS.label}>{t('rating')}</Text>
+              <View style={{flex: 2, flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', gap: 6}}>
+                <Text style={rowS.value}>{rating} {lang === 'ar' ? '\u0645\u0646 10' : '/ 10'}</Text>
+                <Image source={require('../../assets/icons/star.png')} style={{width: 16, height: 16, tintColor: '#FFD700'}} />
               </View>
             </View>
           ) : null}
@@ -605,18 +503,9 @@ export const DetailsScreen: React.FC = () => {
         {isEpisodic && (
           <View style={S.epsSection}>
             <View style={S.epsHeader}>
-              <Image
-                source={require('../../assets/icons/tv.png')}
-                style={[S.sectionIcon, {tintColor: Colors.dark.primary}]}
-              />
+              <Image source={require('../../assets/icons/tv.png')} style={[S.sectionIcon, {tintColor: Colors.dark.primary}]} />
               <Text style={S.epsTitle}>{t('episodes')}</Text>
-              {loadingEps && (
-                <ActivityIndicator
-                  size="small"
-                  color={Colors.dark.primary}
-                  style={{marginLeft: 8}}
-                />
-              )}
+              {loadingEps && <ActivityIndicator size="small" color={Colors.dark.primary} style={{marginLeft: 8}} />}
 
               {/* Season picker button */}
               {seasonKeys.length > 1 && (
@@ -624,10 +513,7 @@ export const DetailsScreen: React.FC = () => {
                   style={S.seasonBtn}
                   onPress={() => setShowSeasonDlg(true)}
                 >
-                  <Image
-                    source={require('../../assets/icons/tv.png')}
-                    style={[S.seasonBtnIcon, {tintColor: Colors.dark.primary}]}
-                  />
+                  <Image source={require('../../assets/icons/tv.png')} style={[S.seasonBtnIcon, {tintColor: Colors.dark.primary}]} />
                   <Text style={S.seasonBtnTxt}>
                     {t('season')} {selSeason}
                   </Text>
@@ -636,7 +522,7 @@ export const DetailsScreen: React.FC = () => {
               )}
             </View>
 
-            {/* Season poster (changes per season) */}
+            {/* Season poster */}
             {seasonPoster ? (
               <View style={S.seasonPosterWrap}>
                 <FastImage
@@ -663,9 +549,7 @@ export const DetailsScreen: React.FC = () => {
                   >
                     {/* Episode number circle */}
                     <View style={[S.epNumCircle, isExtractingThis && S.epNumActive]}>
-                      <Text style={[S.epNum, isExtractingThis && S.epNumActiveTxt]}>
-                        {idx + 1}
-                      </Text>
+                      <Text style={[S.epNum, isExtractingThis && S.epNumActiveTxt]}>{idx + 1}</Text>
                     </View>
 
                     {/* Episode info */}
@@ -692,38 +576,13 @@ export const DetailsScreen: React.FC = () => {
               })
             ) : !loadingEps ? (
               <View style={S.noEpsWrap}>
-                <Image
-                  source={require('../../assets/icons/files.png')}
-                  style={{width: 32, height: 32, tintColor: Colors.dark.textMuted}}
-                />
+                <Image source={require('../../assets/icons/files.png')} style={{width: 32, height: 32, tintColor: Colors.dark.textMuted}} />
                 <Text style={S.noEpsTxt}>{t('not_available')}</Text>
               </View>
             ) : null}
           </View>
         )}
       </ScrollView>
-
-      {/* ── Full-screen extracting overlay ── */}
-      {extracting && (
-        <View style={S.extractOverlay}>
-          <View style={S.extractCard}>
-            <ActivityIndicator size="large" color={Colors.dark.primary} />
-            <Text style={S.extractStatus} numberOfLines={2}>
-              {EXTRACT_STATUSES[statusIdx]}
-            </Text>
-            <TouchableOpacity
-              style={S.extractCancel}
-              onPress={() => {
-                stopStatusTimer();
-                setExtracting(false);
-                setExtractError(t('video_unavailable') || 'Cancelled');
-              }}
-            >
-              <Text style={S.extractCancelTxt}>{t('cancel')}</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      )}
 
       {/* ── Season picker modal (bottom sheet) ── */}
       <Modal
@@ -740,58 +599,22 @@ export const DetailsScreen: React.FC = () => {
           <View style={S.modalSheet}>
             <View style={S.modalHandle} />
             <Text style={S.modalTitle}>{t('select_season')}</Text>
-
-            {/* Season poster preview in modal */}
-            {seasonPoster ? (
-              <FastImage
-                source={{uri: seasonPoster}}
-                style={S.modalPoster}
-                resizeMode={FastImage.resizeMode.cover}
-              />
-            ) : null}
-
             <FlatList
               data={seasonKeys}
               keyExtractor={s => s}
-              style={{maxHeight: 280}}
-              renderItem={({item: sk}) => {
-                const skPoster = epData?.seasons?.[sk]?.poster || '';
-                const skEps = epData?.seasons?.[sk]?.episodes || [];
-                const isActive = selSeason === sk;
-                return (
-                  <TouchableOpacity
-                    style={[S.modalOpt, isActive && S.modalOptActive]}
-                    onPress={() => { setSelSeason(sk); setShowSeasonDlg(false); }}
-                  >
-                    {/* Season thumbnail in modal */}
-                    {skPoster ? (
-                      <FastImage
-                        source={{uri: skPoster}}
-                        style={S.modalThumb}
-                        resizeMode={FastImage.resizeMode.cover}
-                      />
-                    ) : (
-                      <View style={S.modalThumbFallback}>
-                        <Image
-                          source={require('../../assets/icons/tv.png')}
-                          style={{width: 18, height: 18, tintColor: Colors.dark.textMuted}}
-                        />
-                      </View>
-                    )}
-                    <View style={S.modalOptInfo}>
-                      <Text style={[S.modalOptTxt, isActive && S.modalOptTxtActive]}>
-                        {t('season')} {sk}
-                      </Text>
-                      <Text style={S.modalOptSub}>
-                        {skEps.length} {t('episodes')}
-                      </Text>
-                    </View>
-                    {isActive && (
-                      <Text style={{color: Colors.dark.primary, fontSize: 16}}>&#10003;</Text>
-                    )}
-                  </TouchableOpacity>
-                );
-              }}
+              renderItem={({item: sk}) => (
+                <TouchableOpacity
+                  style={[S.modalOpt, selSeason === sk && S.modalOptActive]}
+                  onPress={() => { setSelSeason(sk); setShowSeasonDlg(false); }}
+                >
+                  <Text style={[S.modalOptTxt, selSeason === sk && S.modalOptTxtActive]}>
+                    {t('season')} {sk}
+                  </Text>
+                  {selSeason === sk && (
+                    <Text style={{color: Colors.dark.primary, fontSize: 16}}>&#10003;</Text>
+                  )}
+                </TouchableOpacity>
+              )}
             />
           </View>
         </TouchableOpacity>
@@ -806,46 +629,12 @@ const S = StyleSheet.create({
   scroll:     {paddingTop: 0},
   fallback:   {color: Colors.dark.textMuted, textAlign: 'center', fontFamily: 'Rubik', marginTop: 40},
 
-  // ── Top nav ──
   topNav:     {flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 16, paddingBottom: 12},
   navBtn:     {width: 42, height: 42, borderRadius: 21, backgroundColor: Colors.dark.surface, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: Colors.dark.border},
   iconNav:    {width: 20, height: 20, tintColor: Colors.dark.text},
   iconMed:    {width: 20, height: 20},
 
-  // ── Error state ──
-  errorStateWrap: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 24,
-    gap: 16,
-  },
-  errorStateIcon: {
-    width: 64,
-    height: 64,
-    tintColor: Colors.dark.textMuted,
-  },
-  errorStateText: {
-    color: Colors.dark.textSecondary,
-    fontSize: 15,
-    fontFamily: 'Rubik',
-    textAlign: 'center',
-  },
-  errorStateBtn: {
-    marginTop: 8,
-    paddingHorizontal: 28,
-    paddingVertical: 12,
-    borderRadius: 14,
-    backgroundColor: Colors.dark.primary,
-  },
-  errorStateBtnText: {
-    color: '#fff',
-    fontSize: 15,
-    fontWeight: '700',
-    fontFamily: 'Rubik',
-  },
-
-  // ── Title box ──
+  // Title box
   titleBox: {
     marginHorizontal: 16,
     marginBottom: 20,
@@ -865,12 +654,12 @@ const S = StyleSheet.create({
     lineHeight: 29,
   },
 
-  // ── Poster ──
+  // Poster
   posterWrap:        {alignSelf: 'center', marginBottom: 16, position: 'relative'},
   poster:            {width: POSTER_W, height: POSTER_H, borderRadius: 16, backgroundColor: Colors.dark.surfaceLight, elevation: 14, shadowColor: '#000', shadowOffset: {width: 0, height: 8}, shadowOpacity: 0.55, shadowRadius: 16},
   posterPlaceholder: {justifyContent: 'center', alignItems: 'center'},
 
-  // ── Poster corner badges ──
+  // Poster corner badges
   catChip:     {position: 'absolute', top: 10, left: 10, backgroundColor: Colors.dark.primaryLight, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 7},
   catChipText: {color: '#000', fontSize: 11, fontWeight: '700', fontFamily: 'Rubik'},
   fmtChip:     {position: 'absolute', bottom: 10, right: 10, backgroundColor: 'rgba(0,0,0,0.88)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 7, borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)'},
@@ -878,7 +667,7 @@ const S = StyleSheet.create({
   vlChip:      {position: 'absolute', top: 10, right: 10, backgroundColor: 'rgba(0,0,0,0.88)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 7, borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)'},
   vlChipText:  {color: '#FFD700', fontSize: 11, fontWeight: '700', fontFamily: 'Rubik'},
 
-  // ── Pills row ──
+  // Pills row
   pillsRow:      {flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 8, marginBottom: 14, paddingHorizontal: 16},
   pill:          {flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.dark.surface, paddingHorizontal: 11, paddingVertical: 7, borderRadius: 22, gap: 5, borderWidth: 1, borderColor: Colors.dark.border},
   pillIcon:      {width: 13, height: 13},
@@ -888,12 +677,12 @@ const S = StyleSheet.create({
   statusComplete:{backgroundColor: Colors.dark.success, borderColor: Colors.dark.success},
   statusTxt:     {fontSize: 12, fontWeight: '600', fontFamily: 'Rubik'},
 
-  // ── Count badges ──
-  countRow:       {flexDirection: 'row', justifyContent: 'center', gap: 8, marginBottom: 14, paddingHorizontal: 16, flexWrap: 'wrap'},
-  countBadge:     {backgroundColor: Colors.dark.surface, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, borderWidth: 1, borderColor: Colors.dark.border},
-  countBadgeText: {color: Colors.dark.textSecondary, fontSize: 12, fontWeight: '600', fontFamily: 'Rubik'},
+  // Count badges (seasons/episodes)
+  countRow:      {flexDirection: 'row', justifyContent: 'center', gap: 8, marginBottom: 14, paddingHorizontal: 16, flexWrap: 'wrap'},
+  countBadge:    {backgroundColor: Colors.dark.surface, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, borderWidth: 1, borderColor: Colors.dark.border},
+  countBadgeText:{color: Colors.dark.textSecondary, fontSize: 12, fontWeight: '600', fontFamily: 'Rubik'},
 
-  // ── Action buttons ──
+  // Action buttons
   actions:       {flexDirection: 'row', paddingHorizontal: 18, marginBottom: 12, gap: 12},
   playBtn:       {flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', height: 54, borderRadius: 16, backgroundColor: Colors.dark.primary, gap: 8, elevation: 8, shadowColor: Colors.dark.primary, shadowOffset: {width: 0, height: 4}, shadowOpacity: 0.5, shadowRadius: 10},
   playBtnBusy:   {backgroundColor: `${Colors.dark.primary}CC`},
@@ -901,21 +690,21 @@ const S = StyleSheet.create({
   dlBtn:         {flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', height: 54, borderRadius: 16, backgroundColor: Colors.dark.surface, gap: 8, borderWidth: 1.5, borderColor: Colors.dark.accentLight},
   dlBtnTxt:      {color: Colors.dark.accentLight, fontSize: 15, fontWeight: '700', fontFamily: 'Rubik'},
 
-  // ── Error banner ──
+  // Error banner
   errBanner: {marginHorizontal: 18, marginBottom: 12, backgroundColor: `${Colors.dark.error}16`, borderRadius: 12, padding: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderWidth: 1, borderColor: `${Colors.dark.error}30`, gap: 10},
   errTxt:    {flex: 1, color: Colors.dark.error, fontSize: 13, fontFamily: 'Rubik'},
   retryBtn:  {flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 7, borderRadius: 9, backgroundColor: `${Colors.dark.primary}22`},
   retryTxt:  {color: Colors.dark.primary, fontSize: 13, fontWeight: '700', fontFamily: 'Rubik'},
 
-  // ── Description ──
+  // Description
   descBox:   {marginHorizontal: 16, marginBottom: 14, backgroundColor: Colors.dark.surface, borderRadius: 14, padding: 16, borderWidth: 1, borderColor: Colors.dark.border},
   descLabel: {color: Colors.dark.text, fontSize: 14, fontWeight: '700', fontFamily: 'Rubik', marginBottom: 8},
   descTxt:   {color: Colors.dark.textSecondary, fontSize: 14, lineHeight: 22, fontFamily: 'Rubik'},
 
-  // ── Info table ──
+  // Info table
   infoTable: {marginHorizontal: 16, backgroundColor: Colors.dark.surface, borderRadius: 16, overflow: 'hidden', borderWidth: 1, borderColor: Colors.dark.border, marginBottom: 20},
 
-  // ── Episodes section ──
+  // Episodes section
   epsSection:      {marginHorizontal: 16, marginBottom: 20, backgroundColor: Colors.dark.surface, borderRadius: 16, overflow: 'hidden', borderWidth: 1, borderColor: Colors.dark.border},
   epsHeader:       {flexDirection: 'row', alignItems: 'center', paddingHorizontal: 18, paddingVertical: 14, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: Colors.dark.border, gap: 8},
   sectionIcon:     {width: 20, height: 20},
@@ -925,11 +714,11 @@ const S = StyleSheet.create({
   seasonBtnTxt:    {color: Colors.dark.primary, fontSize: 13, fontWeight: '700', fontFamily: 'Rubik'},
   seasonBtnArrow:  {color: Colors.dark.primary, fontSize: 10},
 
-  // ── Season poster ──
+  // Season poster
   seasonPosterWrap: {paddingVertical: 10, alignItems: 'center'},
   seasonPoster:     {width: 120, height: 180, borderRadius: 10, backgroundColor: Colors.dark.surfaceLight},
 
-  // ── Episode row ──
+  // Episode row
   epRow:           {flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: Colors.dark.border, gap: 12},
   epRowDisabled:   {opacity: 0.5},
   epNumCircle:     {width: 38, height: 38, borderRadius: 19, backgroundColor: `${Colors.dark.primary}20`, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: `${Colors.dark.primary}40`},
@@ -944,58 +733,13 @@ const S = StyleSheet.create({
   noEpsWrap:       {alignItems: 'center', paddingVertical: 24, gap: 8},
   noEpsTxt:        {color: Colors.dark.textMuted, fontSize: 14, fontFamily: 'Rubik'},
 
-  // ── Extracting overlay (full-screen) ──
-  extractOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.75)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 10,
-  },
-  extractCard: {
-    backgroundColor: Colors.dark.surface,
-    borderRadius: 20,
-    padding: 28,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: Colors.dark.border,
-    gap: 14,
-    minWidth: 220,
-  },
-  extractStatus: {
-    color: Colors.dark.textSecondary,
-    fontSize: 14,
-    fontFamily: 'Rubik',
-    textAlign: 'center',
-  },
-  extractCancel: {
-    marginTop: 6,
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 12,
-    backgroundColor: `${Colors.dark.error}20`,
-    borderWidth: 1,
-    borderColor: `${Colors.dark.error}40`,
-  },
-  extractCancelTxt: {
-    color: Colors.dark.error,
-    fontSize: 14,
-    fontWeight: '600',
-    fontFamily: 'Rubik',
-  },
-
-  // ── Season modal ──
+  // Season modal
   modalBg:         {flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end'},
-  modalSheet:      {backgroundColor: Colors.dark.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingBottom: 40, maxHeight: '70%'},
+  modalSheet:      {backgroundColor: Colors.dark.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingBottom: 40, maxHeight: '60%'},
   modalHandle:     {width: 40, height: 4, borderRadius: 2, backgroundColor: Colors.dark.border, alignSelf: 'center', marginTop: 12, marginBottom: 4},
   modalTitle:      {color: Colors.dark.text, fontSize: 17, fontWeight: '700', fontFamily: 'Rubik', textAlign: 'center', paddingVertical: 14},
-  modalPoster:     {width: 100, height: 150, borderRadius: 10, alignSelf: 'center', marginBottom: 12, backgroundColor: Colors.dark.surfaceLight},
-  modalOpt:        {flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 14, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: Colors.dark.border, gap: 12},
+  modalOpt:        {flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 24, paddingVertical: 16, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: Colors.dark.border},
   modalOptActive:  {backgroundColor: `${Colors.dark.primary}15`},
-  modalThumb:      {width: 44, height: 62, borderRadius: 8, backgroundColor: Colors.dark.surfaceLight},
-  modalThumbFallback: {width: 44, height: 62, borderRadius: 8, backgroundColor: Colors.dark.surfaceLight, justifyContent: 'center', alignItems: 'center'},
-  modalOptInfo:    {flex: 1},
   modalOptTxt:     {color: Colors.dark.textSecondary, fontSize: 15, fontFamily: 'Rubik'},
-  modalOptTxtActive:{color: Colors.dark.primary, fontWeight: '700', fontFamily: 'Rubik'},
-  modalOptSub:     {color: Colors.dark.textMuted, fontSize: 12, fontFamily: 'Rubik', marginTop: 2},
+  modalOptTxtActive:{color: Colors.dark.primary, fontWeight: '700'},
 });

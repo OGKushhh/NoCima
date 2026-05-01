@@ -13,7 +13,6 @@
 import axios from 'axios';
 import {API_BASE} from '../constants/endpoints';
 import {getVideoUrlCache, setVideoUrlCache} from '../storage/cache';
-import {storage, storageKeys} from '../storage';
 
 const api = axios.create({
   baseURL: API_BASE,
@@ -29,7 +28,7 @@ export interface ExtractResult {
 /**
  * Extract a playable stream URL for a given page URL.
  *
- * Cache layer (5h TTL — CDN URLs last 6+ hrs):
+ * Cache layer (6 h):
  *  1. Local MMKV cache → instant, no network
  *  2. Backend /extract → may trigger Playwright scraping (slow first run)
  *     Backend itself also caches and returns `cached: true` on hits.
@@ -39,7 +38,7 @@ export const extractVideoUrl = async (pageUrl: string): Promise<ExtractResult> =
     throw new Error('Invalid or missing source URL for extraction');
   }
 
-  // 1. Local 5h cache
+  // 1. Local 6-hour cache
   const localHit = getVideoUrlCache(pageUrl);
   if (localHit) {
     console.log('[API] Local cache hit');
@@ -71,10 +70,10 @@ export const extractVideoUrl = async (pageUrl: string): Promise<ExtractResult> =
 };
 
 export const refreshVideoUrl = async (pageUrl: string): Promise<ExtractResult> => {
-  // Properly bust the MMKV cache entry so extractVideoUrl skips cache
-  storage.delete(storageKeys.VIDEO_URL_CACHE + pageUrl);
-  // Call extractVideoUrl with the CLEAN url — it will now hit the backend
-  return extractVideoUrl(pageUrl);
+  // Delete local cache entry so we force a fresh /extract call
+  // (we can't call storage.delete here directly but we can pass a busted key)
+  const bustUrl = `${pageUrl}${pageUrl.includes('?') ? '&' : '?'}_nc=${Date.now()}`;
+  return extractVideoUrl(bustUrl);
 };
 
 export const checkApiHealth = async (): Promise<boolean> => {
