@@ -21,6 +21,17 @@ const HLS_QUALITIES = [
   {label: '360p',  bitrate: 800000},
 ];
 
+// Auto-detect video type from URL extension
+const detectVideoType = (urlStr: string): string | undefined => {
+  if (!urlStr) return undefined;
+  const lower = urlStr.toLowerCase().split('?')[0].split('#')[0];
+  if (lower.endsWith('.m3u8') || lower.includes('.m3u8')) return 'm3u8';
+  if (lower.endsWith('.mpd')) return 'mpd';
+  if (lower.endsWith('.mp4')) return 'mp4';
+  if (lower.endsWith('.webm')) return 'webm';
+  return undefined; // let the player auto-detect
+};
+
 export const PlayerScreen: React.FC = () => {
   const route = useRoute<any>();
   const navigation = useNavigation<any>();
@@ -35,6 +46,7 @@ export const PlayerScreen: React.FC = () => {
   const [buffering, setBuffering] = useState(true);
   const [showControls, setShowControls] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
   // Build quality list: prefer qualities from extraction result, fallback to HLS defaults
   const qualityList = useMemo(() => {
     if (paramQualities && paramQualities.length > 0) {
@@ -47,6 +59,16 @@ export const PlayerScreen: React.FC = () => {
   }, [paramQualities]);
 
   const [selectedQuality, setSelectedQuality] = useState<{label: string; bitrate?: number}>(qualityList[0] ?? HLS_QUALITIES[0]);
+
+  // Resolve source with auto-detect
+  const videoSource = useMemo(() => {
+    const detectedType = detectVideoType(url);
+    const source: any = {uri: url};
+    if (detectedType) {
+      source.type = detectedType;
+    }
+    return source;
+  }, [url]);
   const [showQualityPicker, setShowQualityPicker] = useState(false);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const viewTracked = useRef(false);
@@ -152,11 +174,7 @@ export const PlayerScreen: React.FC = () => {
       <TouchableOpacity style={styles.videoContainer} activeOpacity={1} onPress={toggleControls}>
         <Video
           ref={videoRef}
-          source={{
-            uri: url,
-            type: 'm3u8',
-            ...(selectedQuality.bitrate ? {headers: {}} : {}),
-          }}
+          source={videoSource}
           resizeMode={ResizeMode.CONTAIN}
           onProgress={handleProgress}
           onLoad={handleLoad}
@@ -169,14 +187,7 @@ export const PlayerScreen: React.FC = () => {
           style={styles.video}
           preventsDisplaySleepDuringVideoPlayback={true}
           minLoadRetryCount={3}
-          maxBitRate={selectedQuality.bitrate || 0}
-          // Force buffer for reliability
-          bufferConfig={{
-            minBufferMs: 5000,
-            maxBufferMs: 30000,
-            bufferForPlaybackMs: 2500,
-            bufferForPlaybackAfterRebufferMs: 5000,
-          }}
+          maxBitRate={selectedQuality.bitrate || undefined}
         />
 
         {buffering && (
