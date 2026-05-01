@@ -1,17 +1,15 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { View, ActivityIndicator, Text, StyleSheet } from 'react-native';
-import { Colors, SPACING } from '../theme/colors';
+import { SPACING } from '../theme/colors';
 import { FONTS } from '../theme/typography';
+import { useTheme } from '../hooks/useTheme';
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 interface LoadingSpinnerProps {
-  /** RN ActivityIndicator size – defaults to 'large' when undefined */
   size?: 'small' | 'large' | number;
-  /** Optional label rendered below the spinner */
   text?: string;
-  /** Render inline (false) or full‑screen centred (true) */
   fullScreen?: boolean;
 }
 
@@ -23,13 +21,15 @@ export const LoadingSpinner: React.FC<LoadingSpinnerProps> = ({
   text,
   fullScreen = true,
 }) => {
-  // Guard against undefined size prop – default to 'large'
+  const { colors } = useTheme();
   const safeSize: 'small' | 'large' | number = size ?? 'large';
+
+  const styles = useMemo(() => createStyles(colors), [colors]);
 
   const spinner = (
     <ActivityIndicator
       size={safeSize}
-      color={Colors.dark.primary}
+      color={colors.primary}
       accessibilityLabel="Loading"
     />
   );
@@ -58,12 +58,12 @@ export const LoadingSpinner: React.FC<LoadingSpinnerProps> = ({
 // ---------------------------------------------------------------------------
 // Styles
 // ---------------------------------------------------------------------------
-const styles = StyleSheet.create({
+const createStyles = (colors: any) => StyleSheet.create({
   container: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: Colors.dark.surface,
+    backgroundColor: colors.background,
   },
   inlineContainer: {
     justifyContent: 'center',
@@ -71,7 +71,7 @@ const styles = StyleSheet.create({
     paddingVertical: SPACING.lg,
   },
   text: {
-    color: Colors.dark.textMuted,
+    color: colors.textMuted,
     marginTop: SPACING.md,
     textAlign: 'center',
   },

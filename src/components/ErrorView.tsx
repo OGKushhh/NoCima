@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   View,
   Text,
@@ -7,9 +7,10 @@ import {
   Image,
   SafeAreaView,
 } from 'react-native';
-import { Colors, RADIUS, SPACING } from '../theme/colors';
+import { RADIUS, SPACING } from '../theme/colors';
 import { FONTS } from '../theme/typography';
 import { useTranslation } from 'react-i18next';
+import { useTheme } from '../hooks/useTheme';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -35,6 +36,69 @@ export const ErrorView: React.FC<ErrorViewProps> = ({
   onGoBack,
 }) => {
   const { t } = useTranslation();
+  const { colors } = useTheme();
+
+  const styles = useMemo(
+    () =>
+      StyleSheet.create({
+        safeArea: {
+          flex: 1,
+          backgroundColor: colors.background,
+        },
+        container: {
+          flex: 1,
+          justifyContent: 'center',
+          alignItems: 'center',
+          paddingHorizontal: SPACING.xl,
+        },
+        icon: {
+          width: 56,
+          height: 56,
+          resizeMode: 'contain',
+          marginBottom: SPACING.lg,
+        },
+        title: {
+          color: colors.text,
+          textAlign: 'center',
+        },
+        subtitle: {
+          color: colors.textMuted,
+          textAlign: 'center',
+          marginTop: SPACING.sm,
+        },
+        retryButton: {
+          marginTop: SPACING.xl,
+          backgroundColor: colors.primary,
+          borderRadius: RADIUS.md,
+          paddingHorizontal: SPACING.xxl,
+          paddingVertical: SPACING.md,
+          minHeight: 48,
+          justifyContent: 'center',
+          alignItems: 'center',
+          ...colors.shadowSm,
+        },
+        retryText: {
+          color: '#FFFFFF',
+          fontWeight: '700',
+        },
+        goBackButton: {
+          marginTop: SPACING.md,
+          backgroundColor: colors.surface,
+          borderRadius: RADIUS.md,
+          borderWidth: 1,
+          borderColor: colors.border,
+          paddingHorizontal: SPACING.xxl,
+          paddingVertical: SPACING.md,
+          minHeight: 48,
+          justifyContent: 'center',
+          alignItems: 'center',
+        },
+        goBackText: {
+          color: colors.textSecondary,
+        },
+      }),
+    [colors],
+  );
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -42,7 +106,7 @@ export const ErrorView: React.FC<ErrorViewProps> = ({
         {/* Error icon */}
         <Image
           source={require('../../assets/icons/nlp.png')}
-          style={[styles.icon, { tintColor: Colors.dark.error }]}
+          style={[styles.icon, { tintColor: colors.error }]}
         />
 
         {/* Title */}
@@ -85,64 +149,3 @@ export const ErrorView: React.FC<ErrorViewProps> = ({
     </SafeAreaView>
   );
 };
-
-// ---------------------------------------------------------------------------
-// Styles
-// ---------------------------------------------------------------------------
-const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: Colors.dark.background,
-  },
-  container: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: SPACING.xl,
-  },
-  icon: {
-    width: 56,
-    height: 56,
-    resizeMode: 'contain',
-    marginBottom: SPACING.lg,
-  },
-  title: {
-    color: Colors.dark.text,
-    textAlign: 'center',
-  },
-  subtitle: {
-    color: Colors.dark.textMuted,
-    textAlign: 'center',
-    marginTop: SPACING.sm,
-  },
-  retryButton: {
-    marginTop: SPACING.xl,
-    backgroundColor: Colors.dark.primary,
-    borderRadius: RADIUS.md,
-    paddingHorizontal: SPACING.xxl,
-    paddingVertical: SPACING.md,
-    minHeight: 48,
-    justifyContent: 'center',
-    alignItems: 'center',
-    ...Colors.dark.shadowSm,
-  },
-  retryText: {
-    color: '#FFFFFF',
-    fontWeight: '700',
-  },
-  goBackButton: {
-    marginTop: SPACING.md,
-    backgroundColor: Colors.dark.surface,
-    borderRadius: RADIUS.md,
-    borderWidth: 1,
-    borderColor: Colors.dark.border,
-    paddingHorizontal: SPACING.xxl,
-    paddingVertical: SPACING.md,
-    minHeight: 48,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  goBackText: {
-    color: Colors.dark.textSecondary,
-  },
-});

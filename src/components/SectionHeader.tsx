@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   View,
   Text,
@@ -7,7 +7,8 @@ import {
   Image,
   ImageSourcePropType,
 } from 'react-native';
-import { Colors, SPACING } from '../theme/colors';
+import { SPACING } from '../theme/colors';
+import { useTheme } from '../hooks/useTheme';
 import { FONTS } from '../theme/typography';
 import { useTranslation } from 'react-i18next';
 
@@ -35,6 +36,47 @@ export const SectionHeader: React.FC<SectionHeaderProps> = ({
   seeAllLabel,
 }) => {
   const { t } = useTranslation();
+  const { colors } = useTheme();
+
+  const styles = useMemo(
+    () =>
+      StyleSheet.create({
+        container: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          paddingHorizontal: SPACING.lg,
+          paddingVertical: SPACING.md,
+          position: 'relative',
+        },
+        leftRow: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: SPACING.sm,
+          flexShrink: 1,
+        },
+        iconImg: {
+          width: 22,
+          height: 22,
+        },
+        title: {
+          color: colors.text,
+        },
+        seeAllText: {
+          color: colors.accent,
+        },
+        bottomBorder: {
+          position: 'absolute',
+          bottom: 0,
+          left: SPACING.lg,
+          right: SPACING.lg,
+          height: 1,
+          backgroundColor: colors.border,
+          opacity: 0.6,
+        },
+      }),
+    [colors],
+  );
 
   return (
     <View style={styles.container}>
@@ -43,7 +85,7 @@ export const SectionHeader: React.FC<SectionHeaderProps> = ({
         {icon ? (
           <Image
             source={icon}
-            style={[styles.iconImg, { tintColor: Colors.dark.primary }]}
+            style={[styles.iconImg, { tintColor: colors.primary }]}
             resizeMode="contain"
           />
         ) : null}
@@ -69,42 +111,3 @@ export const SectionHeader: React.FC<SectionHeaderProps> = ({
     </View>
   );
 };
-
-// ---------------------------------------------------------------------------
-// Styles
-// ---------------------------------------------------------------------------
-const styles = StyleSheet.create({
-  container: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: SPACING.lg,
-    paddingVertical: SPACING.md,
-    position: 'relative',
-  },
-  leftRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.sm,
-    flexShrink: 1,
-  },
-  iconImg: {
-    width: 22,
-    height: 22,
-  },
-  title: {
-    color: Colors.dark.text,
-  },
-  seeAllText: {
-    color: Colors.dark.accent,
-  },
-  bottomBorder: {
-    position: 'absolute',
-    bottom: 0,
-    left: SPACING.lg,
-    right: SPACING.lg,
-    height: 1,
-    backgroundColor: Colors.dark.border,
-    opacity: 0.6,
-  },
-});

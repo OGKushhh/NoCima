@@ -1,4 +1,4 @@
-import React, {useState, useCallback} from 'react';
+import React, {useState, useCallback, useMemo} from 'react';
 import {
   View,
   Text,
@@ -11,8 +11,9 @@ import {
 } from 'react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {useFocusEffect} from '@react-navigation/native';
-import {Colors, SPACING, RADIUS, Shadows} from '../theme/colors';
+import {SPACING, RADIUS} from '../theme/colors';
 import {FONTS} from '../theme/typography';
+import {useTheme} from '../hooks/useTheme';
 import {getDownloadState, saveDownloadState} from '../services/videoService';
 import {useTranslation} from 'react-i18next';
 
@@ -32,14 +33,6 @@ interface DownloadEntry {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-const STATUS_COLORS: Record<string, string> = {
-  completed: Colors.dark.success,
-  downloading: Colors.dark.accent,
-  paused: Colors.dark.warning,
-  failed: Colors.dark.error,
-  pending: Colors.dark.textMuted,
-};
-
 const STATUS_LABELS: Record<string, string> = {
   completed: 'downloaded',
   downloading: 'downloading',
@@ -55,6 +48,7 @@ const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v
 // ---------------------------------------------------------------------------
 export const DownloadsScreen: React.FC = () => {
   const {t} = useTranslation();
+  const {colors} = useTheme();
   const insets = useSafeAreaInsets();
   const [downloads, setDownloads] = useState<DownloadEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -123,6 +117,188 @@ export const DownloadsScreen: React.FC = () => {
   );
 
   // ── Render helpers ────────────────────────────────────────────────────
+  // ── Dynamic status color map ─────────────────────────────────────────
+  const STATUS_COLORS = useMemo<Record<string, string>>(
+    () => ({
+      completed: colors.success,
+      downloading: colors.accent,
+      paused: colors.warning,
+      failed: colors.error,
+      pending: colors.textMuted,
+    }),
+    [colors],
+  );
+
+  // ── Dynamic styles ──────────────────────────────────────────────────
+  const styles = useMemo(
+    () =>
+      StyleSheet.create({
+        // ── Container & background ──────────────────────────────────────
+        container: {
+          flex: 1,
+          backgroundColor: colors.background,
+        },
+
+        // ── Header ──────────────────────────────────────────────────────
+        header: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          paddingHorizontal: SPACING.xxl,
+          paddingBottom: SPACING.lg,
+          gap: SPACING.md,
+        },
+        headerTitle: {
+          color: colors.text,
+          flex: 1,
+        },
+        countBadge: {
+          backgroundColor: colors.primary,
+          paddingHorizontal: SPACING.sm + 2,
+          paddingVertical: SPACING.xs - 1,
+          borderRadius: RADIUS.full,
+        },
+        countText: {
+          color: '#FFFFFF',
+        },
+
+        // ── List ────────────────────────────────────────────────────────
+        listContent: {
+          paddingHorizontal: SPACING.lg,
+          paddingTop: SPACING.xs,
+        },
+
+        // ── Download card ───────────────────────────────────────────────
+        card: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          backgroundColor: colors.surface,
+          borderRadius: RADIUS.lg,
+          padding: SPACING.md,
+          marginBottom: SPACING.md,
+          ...colors.shadowMd,
+        },
+
+        // Poster
+        poster: {
+          width: 64,
+          height: 96,
+          borderRadius: RADIUS.sm,
+          backgroundColor: colors.surfaceElevated,
+        },
+        posterPlaceholder: {
+          justifyContent: 'center',
+          alignItems: 'center',
+        },
+        posterPlaceholderIcon: {
+          width: 24,
+          height: 24,
+          tintColor: colors.textMuted,
+        },
+
+        // Info column
+        cardInfo: {
+          flex: 1,
+          marginLeft: SPACING.md,
+          marginRight: SPACING.sm,
+          justifyContent: 'center',
+        },
+        cardTitle: {
+          color: colors.text,
+          marginBottom: SPACING.sm - 2,
+        },
+
+        // Status
+        statusRow: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: SPACING.xs,
+        },
+        statusDot: {
+          width: 8,
+          height: 8,
+          borderRadius: 4,
+        },
+        qualityBadge: {
+          backgroundColor: `${colors.accent}20`,
+          paddingHorizontal: SPACING.xs,
+          paddingVertical: 1,
+          borderRadius: RADIUS.sm,
+          marginLeft: SPACING.xs,
+        },
+        qualityText: {
+          color: colors.accent,
+        },
+
+        // Progress bar
+        progressTrack: {
+          marginTop: SPACING.sm,
+          height: 4,
+          backgroundColor: colors.border,
+          borderRadius: 2,
+          overflow: 'hidden',
+        },
+        progressFill: {
+          height: '100%',
+          backgroundColor: colors.accent,
+          borderRadius: 2,
+        },
+
+        // Delete button (× icon in a subtle circle)
+        deleteButton: {
+          justifyContent: 'center',
+          alignItems: 'center',
+        },
+        deleteIconBg: {
+          width: 30,
+          height: 30,
+          borderRadius: RADIUS.full,
+          backgroundColor: `${colors.error}18`,
+          justifyContent: 'center',
+          alignItems: 'center',
+        },
+        deleteIconText: {
+          color: colors.error,
+          fontSize: 18,
+          fontWeight: '700',
+          lineHeight: 20,
+        },
+
+        // ── Empty state ────────────────────────────────────────────────
+        emptyContainer: {
+          flex: 1,
+          justifyContent: 'center',
+          alignItems: 'center',
+          paddingHorizontal: SPACING.xxxl + SPACING.lg,
+        },
+        emptyIconRing: {
+          width: 120,
+          height: 120,
+          borderRadius: 60,
+          backgroundColor: colors.surface,
+          borderWidth: 1,
+          borderColor: colors.border,
+          justifyContent: 'center',
+          alignItems: 'center',
+          marginBottom: SPACING.xxl,
+        },
+        emptyIcon: {
+          width: 52,
+          height: 52,
+          tintColor: colors.textMuted,
+        },
+        emptyTitle: {
+          color: colors.text,
+          textAlign: 'center',
+          marginBottom: SPACING.sm,
+        },
+        emptySubtitle: {
+          color: colors.textMuted,
+          textAlign: 'center',
+        },
+      }),
+    [colors],
+  );
+
   const renderEmpty = () => (
     <View style={styles.emptyContainer}>
       {/* Background circle */}
@@ -144,7 +320,7 @@ export const DownloadsScreen: React.FC = () => {
 
   const renderCard = ({item, index}: {item: DownloadEntry; index: number}) => {
     const status = item.status ?? 'pending';
-    const statusColor = STATUS_COLORS[status] ?? Colors.dark.textMuted;
+    const statusColor = STATUS_COLORS[status] ?? colors.textMuted;
     const statusLabel = t(STATUS_LABELS[status] ?? 'pending') ?? status;
     const progressPct = clamp(item.progress ?? 0, 0, 1);
     const isDownloading = status === 'downloading';
@@ -220,7 +396,7 @@ export const DownloadsScreen: React.FC = () => {
   // ── Main render ───────────────────────────────────────────────────────
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor={Colors.dark.background} />
+      <StatusBar barStyle="light-content" backgroundColor={colors.background} />
 
       {/* ── Header ─────────────────────────────────────────────────── */}
       <View style={[styles.header, {paddingTop: insets.top + SPACING.md}]}>
@@ -254,170 +430,4 @@ export const DownloadsScreen: React.FC = () => {
   );
 };
 
-// ---------------------------------------------------------------------------
-// Styles
-// ---------------------------------------------------------------------------
-const styles = StyleSheet.create({
-  // ── Container & background ────────────────────────────────────────
-  container: {
-    flex: 1,
-    backgroundColor: Colors.dark.background,
-  },
 
-  // ── Header ────────────────────────────────────────────────────────
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: SPACING.xxl,
-    paddingBottom: SPACING.lg,
-    gap: SPACING.md,
-  },
-  headerTitle: {
-    color: Colors.dark.text,
-    flex: 1,
-  },
-  countBadge: {
-    backgroundColor: Colors.dark.primary,
-    paddingHorizontal: SPACING.sm + 2,
-    paddingVertical: SPACING.xs - 1,
-    borderRadius: RADIUS.full,
-  },
-  countText: {
-    color: '#FFFFFF',
-  },
-
-  // ── List ──────────────────────────────────────────────────────────
-  listContent: {
-    paddingHorizontal: SPACING.lg,
-    paddingTop: SPACING.xs,
-  },
-
-  // ── Download card ─────────────────────────────────────────────────
-  card: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.dark.surface,
-    borderRadius: RADIUS.lg,
-    padding: SPACING.md,
-    marginBottom: SPACING.md,
-    ...Shadows.shadowMd,
-  },
-
-  // Poster
-  poster: {
-    width: 64,
-    height: 96,
-    borderRadius: RADIUS.sm,
-    backgroundColor: Colors.dark.surfaceElevated,
-  },
-  posterPlaceholder: {
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  posterPlaceholderIcon: {
-    width: 24,
-    height: 24,
-    tintColor: Colors.dark.textMuted,
-  },
-
-  // Info column
-  cardInfo: {
-    flex: 1,
-    marginLeft: SPACING.md,
-    marginRight: SPACING.sm,
-    justifyContent: 'center',
-  },
-  cardTitle: {
-    color: Colors.dark.text,
-    marginBottom: SPACING.sm - 2,
-  },
-
-  // Status
-  statusRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.xs,
-  },
-  statusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  qualityBadge: {
-    backgroundColor: `${Colors.dark.accent}20`,
-    paddingHorizontal: SPACING.xs,
-    paddingVertical: 1,
-    borderRadius: RADIUS.sm,
-    marginLeft: SPACING.xs,
-  },
-  qualityText: {
-    color: Colors.dark.accent,
-  },
-
-  // Progress bar
-  progressTrack: {
-    marginTop: SPACING.sm,
-    height: 4,
-    backgroundColor: Colors.dark.border,
-    borderRadius: 2,
-    overflow: 'hidden',
-  },
-  progressFill: {
-    height: '100%',
-    backgroundColor: Colors.dark.accent,
-    borderRadius: 2,
-  },
-
-  // Delete button (× icon in a subtle circle)
-  deleteButton: {
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  deleteIconBg: {
-    width: 30,
-    height: 30,
-    borderRadius: RADIUS.full,
-    backgroundColor: `${Colors.dark.error}18`,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  deleteIconText: {
-    color: Colors.dark.error,
-    fontSize: 18,
-    fontWeight: '700',
-    lineHeight: 20,
-  },
-
-  // ── Empty state ───────────────────────────────────────────────────
-  emptyContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: SPACING.xxxl + SPACING.lg,
-  },
-  emptyIconRing: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    backgroundColor: Colors.dark.surface,
-    borderWidth: 1,
-    borderColor: Colors.dark.border,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: SPACING.xxl,
-  },
-  emptyIcon: {
-    width: 52,
-    height: 52,
-    tintColor: Colors.dark.textMuted,
-  },
-  emptyTitle: {
-    color: Colors.dark.text,
-    textAlign: 'center',
-    marginBottom: SPACING.sm,
-  },
-  emptySubtitle: {
-    color: Colors.dark.textMuted,
-    textAlign: 'center',
-  },
-});

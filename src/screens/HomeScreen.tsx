@@ -54,10 +54,11 @@ import { MovieCard } from '../components/MovieCard';
 import { SectionHeader } from '../components/SectionHeader';
 import { SearchBar } from '../components/SearchBar';
 import { ErrorView } from '../components/ErrorView';
-import { Colors, SPACING } from '../theme/colors';
+import { SPACING } from '../theme/colors';
 import { FONTS } from '../theme/typography';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
+import { useTheme, type ThemeColors } from '../hooks/useTheme';
 
 // ===========================================================================
 // Constants
@@ -125,63 +126,87 @@ const mapTrendingToItem = (t: TrendingItem): ContentItem => ({
 // Skeleton placeholders (shown while data is loading)
 // ===========================================================================
 
+/** Dynamic skeleton styles — takes theme colors so it works outside the component */
+const createSkStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
+    skeletonCard: {
+      marginRight: 10,
+    },
+    skeletonPoster: {
+      backgroundColor: colors.surfaceElevated,
+      borderRadius: 12,
+    },
+    skeletonLine: {
+      backgroundColor: colors.surfaceElevated,
+      borderRadius: 4,
+      height: 12,
+      marginTop: 8,
+    },
+    skeletonHeader: {
+      height: 24,
+      width: 150,
+      backgroundColor: colors.surfaceElevated,
+      borderRadius: 6,
+      marginBottom: SPACING.md,
+      marginLeft: SPACING.lg,
+    },
+    skeletonList: {
+      flexDirection: 'row',
+      paddingLeft: SPACING.lg,
+    },
+    skeletonSection: {
+      marginBottom: 24,
+    },
+  });
+
 /** A single skeleton card — gray rectangle with surfaceElevated bg */
-const SkeletonCard: React.FC<{ width?: number }> = memo(({ width = CAROUSEL_CARD_W }) => (
-  <View style={[skStyles.skeletonCard, { width }]}>
-    <View style={[skStyles.skeletonPoster, { height: width * 1.5 }]} />
-    <View style={[skStyles.skeletonLine, { width: width * 0.8 }]} />
-    <View style={[skStyles.skeletonLine, { width: width * 0.5, height: 10 }]} />
-  </View>
-));
+const SkeletonCard: React.FC<{ width?: number; colors: ThemeColors }> = memo(
+  ({ width = CAROUSEL_CARD_W, colors }) => {
+    const skStyles = useMemo(() => createSkStyles(colors), [colors]);
+    return (
+      <View style={[skStyles.skeletonCard, { width }]}>
+        <View style={[skStyles.skeletonPoster, { height: width * 1.5 }]} />
+        <View style={[skStyles.skeletonLine, { width: width * 0.8 }]} />
+        <View style={[skStyles.skeletonLine, { width: width * 0.5, height: 10 }]} />
+      </View>
+    );
+  },
+);
 SkeletonCard.displayName = 'SkeletonCard';
 
 /** A full skeleton section: header bar + 5 skeleton cards */
-const SkeletonRow: React.FC = memo(() => (
-  <View style={skStyles.skeletonSection}>
-    <View style={skStyles.skeletonHeader} />
-    <View style={skStyles.skeletonList}>
-      {Array.from({ length: SKELETON_COUNT }, (_, i) => (
-        <SkeletonCard key={i} />
-      ))}
+const SkeletonRow: React.FC<{ colors: ThemeColors }> = memo(({ colors }) => {
+  const skStyles = useMemo(() => createSkStyles(colors), [colors]);
+  return (
+    <View style={skStyles.skeletonSection}>
+      <View style={skStyles.skeletonHeader} />
+      <View style={skStyles.skeletonList}>
+        {Array.from({ length: SKELETON_COUNT }, (_, i) => (
+          <SkeletonCard key={i} colors={colors} />
+        ))}
+      </View>
     </View>
-  </View>
-));
-SkeletonRow.displayName = 'SkeletonRow';
-
-const skStyles = StyleSheet.create({
-  skeletonCard: {
-    marginRight: 10,
-  },
-  skeletonPoster: {
-    backgroundColor: Colors.dark.surfaceElevated,
-    borderRadius: 12,
-  },
-  skeletonLine: {
-    backgroundColor: Colors.dark.surfaceElevated,
-    borderRadius: 4,
-    height: 12,
-    marginTop: 8,
-  },
-  skeletonHeader: {
-    height: 24,
-    width: 150,
-    backgroundColor: Colors.dark.surfaceElevated,
-    borderRadius: 6,
-    marginBottom: SPACING.md,
-    marginLeft: SPACING.lg,
-  },
-  skeletonList: {
-    flexDirection: 'row',
-    paddingLeft: SPACING.lg,
-  },
-  skeletonSection: {
-    marginBottom: 24,
-  },
+  );
 });
+SkeletonRow.displayName = 'SkeletonRow';
 
 // ===========================================================================
 // HRow — memoised horizontal carousel
 // ===========================================================================
+
+/** Static layout styles for HRow (no color references — safe at module level) */
+const hRowStyles = StyleSheet.create({
+  section: {
+    marginBottom: 24,
+  },
+  hList: {
+    paddingLeft: SPACING.lg,
+    paddingRight: SPACING.lg,
+  },
+  cardWrap: {
+    marginRight: 10,
+  },
+});
 
 interface HRowProps {
   title: string;
@@ -196,13 +221,13 @@ const HRow: React.FC<HRowProps> = memo(
     if (!items?.length) return null;
 
     return (
-      <View style={styles.section}>
+      <View style={hRowStyles.section}>
         <SectionHeader title={title} icon={icon} onSeeAll={onSeeAll} />
         <FlatList
           data={items}
           horizontal
           showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.hList}
+          contentContainerStyle={hRowStyles.hList}
           keyExtractor={(i) => i?.id ?? Math.random().toString(36)}
           initialNumToRender={5}
           maxToRenderPerBatch={5}
@@ -210,7 +235,7 @@ const HRow: React.FC<HRowProps> = memo(
           removeClippedSubviews
           renderItem={({ item }) =>
             item ? (
-              <View style={styles.cardWrap}>
+              <View style={hRowStyles.cardWrap}>
                 <MovieCard
                   item={item}
                   width={CAROUSEL_CARD_W}
@@ -238,6 +263,7 @@ export const HomeScreen: React.FC = () => {
   const { t } = useTranslation();
   const navigation = useNavigation<any>();
   const insets = useSafeAreaInsets();
+  const { colors } = useTheme();
 
   // ── Data state ──────────────────────────────────────────────────────
   const [trending, setTrending] = useState<ContentItem[]>([]);
@@ -426,6 +452,85 @@ export const HomeScreen: React.FC = () => {
   // ── Derived flags ──────────────────────────────────────────────────
   const isSearchActive = searchExpanded && searchQuery.trim().length > 0;
 
+  // ── Dynamic styles (re-created when theme colors change) ────────────
+  const styles = useMemo(
+    () =>
+      StyleSheet.create({
+        // ── Root ──
+        container: {
+          flex: 1,
+          backgroundColor: colors.background,
+        },
+
+        // ── Header (fixed top) ──
+        header: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          paddingHorizontal: SPACING.lg,
+          paddingBottom: SPACING.sm,
+        },
+        appTitle: {
+          color: colors.primary,
+        },
+        searchIconBtn: {
+          width: 40,
+          height: 40,
+          borderRadius: 20,
+          backgroundColor: colors.surface,
+          justifyContent: 'center',
+          alignItems: 'center',
+        },
+        headerIcon: {
+          width: 20,
+          height: 20,
+        },
+
+        // ── Search bar animation wrapper ──
+        animatedSearchWrap: {
+          backgroundColor: colors.background,
+        },
+        searchBarInner: {
+          paddingHorizontal: SPACING.lg,
+          paddingBottom: SPACING.sm,
+        },
+
+        // ── Skeleton loading area ──
+        skeletonArea: {
+          paddingTop: SPACING.sm,
+        },
+
+        // ── Search results grid ──
+        searchGrid: {
+          paddingHorizontal: SPACING.sm,
+          paddingBottom: 80,
+          paddingTop: SPACING.sm,
+        },
+        searchRow: {
+          justifyContent: 'space-between',
+          paddingHorizontal: SPACING.xs,
+        },
+
+        // ── Empty search state ──
+        emptySearch: {
+          flex: 1,
+          justifyContent: 'center',
+          alignItems: 'center',
+          marginTop: 80,
+        },
+        emptySearchIcon: {
+          width: 52,
+          height: 52,
+          marginBottom: SPACING.md,
+          opacity: 0.4,
+        },
+        emptySearchText: {
+          color: colors.textMuted,
+        },
+      }),
+    [colors],
+  );
+
   // =====================================================================
   // RENDER
   // =====================================================================
@@ -434,7 +539,7 @@ export const HomeScreen: React.FC = () => {
   if (loading) {
     return (
       <View style={styles.container}>
-        <StatusBar barStyle="light-content" backgroundColor={Colors.dark.background} />
+        <StatusBar barStyle={colors.statusBar} backgroundColor={colors.background} />
 
         {/* Header */}
         <View style={[styles.header, { paddingTop: insets.top + SPACING.sm }]}>
@@ -446,7 +551,7 @@ export const HomeScreen: React.FC = () => {
           >
             <Image
               source={ICON_SEARCH}
-              style={[styles.headerIcon, { tintColor: Colors.dark.text }]}
+              style={[styles.headerIcon, { tintColor: colors.text }]}
               resizeMode="contain"
             />
           </TouchableOpacity>
@@ -476,7 +581,7 @@ export const HomeScreen: React.FC = () => {
         {/* Skeleton rows */}
         <View style={styles.skeletonArea}>
           {Array.from({ length: 5 }, (_, i) => (
-            <SkeletonRow key={i} />
+            <SkeletonRow key={i} colors={colors} />
           ))}
         </View>
       </View>
@@ -492,7 +597,7 @@ export const HomeScreen: React.FC = () => {
   if (isSearchActive) {
     return (
       <View style={styles.container}>
-        <StatusBar barStyle="light-content" backgroundColor={Colors.dark.background} />
+        <StatusBar barStyle={colors.statusBar} backgroundColor={colors.background} />
 
         {/* Header */}
         <View style={[styles.header, { paddingTop: insets.top + SPACING.sm }]}>
@@ -504,7 +609,7 @@ export const HomeScreen: React.FC = () => {
           >
             <Image
               source={ICON_SEARCH}
-              style={[styles.headerIcon, { tintColor: Colors.dark.text }]}
+              style={[styles.headerIcon, { tintColor: colors.text }]}
               resizeMode="contain"
             />
           </TouchableOpacity>
@@ -543,7 +648,7 @@ export const HomeScreen: React.FC = () => {
           <View style={styles.emptySearch}>
             <Image
               source={ICON_SEARCH}
-              style={[styles.emptySearchIcon, { tintColor: Colors.dark.textMuted }]}
+              style={[styles.emptySearchIcon, { tintColor: colors.textMuted }]}
               resizeMode="contain"
             />
             <Text style={[styles.emptySearchText, FONTS.body]}>
@@ -558,7 +663,7 @@ export const HomeScreen: React.FC = () => {
   // ── 4. Main home layout ────────────────────────────────────────────
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor={Colors.dark.background} />
+      <StatusBar barStyle={colors.statusBar} backgroundColor={colors.background} />
 
       {/* ── Fixed header ──────────────────────────────────────────── */}
       <View style={[styles.header, { paddingTop: insets.top + SPACING.sm }]}>
@@ -570,7 +675,7 @@ export const HomeScreen: React.FC = () => {
         >
           <Image
             source={ICON_SEARCH}
-            style={[styles.headerIcon, { tintColor: Colors.dark.text }]}
+            style={[styles.headerIcon, { tintColor: colors.text }]}
             resizeMode="contain"
           />
         </TouchableOpacity>
@@ -608,8 +713,8 @@ export const HomeScreen: React.FC = () => {
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            tintColor={Colors.dark.primary}
-            colors={[Colors.dark.primary]}
+            tintColor={colors.primary}
+            colors={[colors.primary]}
           />
         }
         ListHeaderComponent={
@@ -681,93 +786,3 @@ export const HomeScreen: React.FC = () => {
     </View>
   );
 };
-
-// ===========================================================================
-// Styles
-// ===========================================================================
-
-const styles = StyleSheet.create({
-  // ── Root ──
-  container: {
-    flex: 1,
-    backgroundColor: Colors.dark.background,
-  },
-
-  // ── Header (fixed top) ──
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: SPACING.lg,
-    paddingBottom: SPACING.sm,
-  },
-  appTitle: {
-    color: Colors.dark.primary,
-  },
-  searchIconBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: Colors.dark.surface,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  headerIcon: {
-    width: 20,
-    height: 20,
-  },
-
-  // ── Search bar animation wrapper ──
-  animatedSearchWrap: {
-    backgroundColor: Colors.dark.background,
-  },
-  searchBarInner: {
-    paddingHorizontal: SPACING.lg,
-    paddingBottom: SPACING.sm,
-  },
-
-  // ── Carousel sections ──
-  section: {
-    marginBottom: 24,
-  },
-  hList: {
-    paddingLeft: SPACING.lg,
-    paddingRight: SPACING.lg,
-  },
-  cardWrap: {
-    marginRight: 10,
-  },
-
-  // ── Skeleton loading area ──
-  skeletonArea: {
-    paddingTop: SPACING.sm,
-  },
-
-  // ── Search results grid ──
-  searchGrid: {
-    paddingHorizontal: SPACING.sm,
-    paddingBottom: 80,
-    paddingTop: SPACING.sm,
-  },
-  searchRow: {
-    justifyContent: 'space-between',
-    paddingHorizontal: SPACING.xs,
-  },
-
-  // ── Empty search state ──
-  emptySearch: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: 80,
-  },
-  emptySearchIcon: {
-    width: 52,
-    height: 52,
-    marginBottom: SPACING.md,
-    opacity: 0.4,
-  },
-  emptySearchText: {
-    color: Colors.dark.textMuted,
-  },
-});

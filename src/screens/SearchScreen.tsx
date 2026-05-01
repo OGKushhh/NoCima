@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect, useRef, memo } from 'react';
+import React, { useState, useCallback, useEffect, useRef, memo, useMemo } from 'react';
 import {
   View,
   StyleSheet,
@@ -17,8 +17,9 @@ import { ContentItem } from '../types';
 import { MovieCard } from '../components/MovieCard';
 import { SearchBar } from '../components/SearchBar';
 import { ErrorView } from '../components/ErrorView';
-import { Colors, SPACING, RADIUS } from '../theme/colors';
+import { SPACING, RADIUS } from '../theme/colors';
 import { FONTS } from '../theme/typography';
+import { useTheme } from '../hooks/useTheme';
 
 // =============================================================================
 // Constants
@@ -57,7 +58,46 @@ interface SkeletonCardProps {
 }
 
 const SkeletonCard: React.FC<SkeletonCardProps> = ({ width }) => {
+  const { colors } = useTheme();
   const opacity = useRef(new Animated.Value(0.3)).current;
+
+  const skeletonStyles = useMemo(
+    () =>
+      StyleSheet.create({
+        container: {
+          borderRadius: RADIUS.lg,
+          backgroundColor: colors.surfaceElevated,
+          overflow: 'hidden',
+        },
+        poster: {
+          width: '100%',
+          backgroundColor: colors.surfaceElevated,
+          borderRadius: RADIUS.lg,
+          overflow: 'hidden',
+          justifyContent: 'center',
+          alignItems: 'center',
+        },
+        shimmerOverlay: {
+          height: '100%',
+          borderRadius: RADIUS.sm,
+          backgroundColor: 'rgba(255, 255, 255, 0.08)',
+        },
+        titleRow: {
+          paddingHorizontal: 4,
+          paddingTop: 8,
+        },
+        subtitleRow: {
+          paddingHorizontal: 4,
+          paddingTop: 6,
+        },
+        textLine: {
+          height: 12,
+          borderRadius: 4,
+          backgroundColor: 'rgba(255, 255, 255, 0.08)',
+        },
+      }),
+    [colors],
+  );
 
   useEffect(() => {
     const loop = Animated.loop(
@@ -115,40 +155,6 @@ const SkeletonCard: React.FC<SkeletonCardProps> = ({ width }) => {
   );
 };
 
-const skeletonStyles = StyleSheet.create({
-  container: {
-    borderRadius: RADIUS.lg,
-    backgroundColor: Colors.dark.surfaceElevated,
-    overflow: 'hidden',
-  },
-  poster: {
-    width: '100%',
-    backgroundColor: Colors.dark.surfaceElevated,
-    borderRadius: RADIUS.lg,
-    overflow: 'hidden',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  shimmerOverlay: {
-    height: '100%',
-    borderRadius: RADIUS.sm,
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
-  },
-  titleRow: {
-    paddingHorizontal: 4,
-    paddingTop: 8,
-  },
-  subtitleRow: {
-    paddingHorizontal: 4,
-    paddingTop: 6,
-  },
-  textLine: {
-    height: 12,
-    borderRadius: 4,
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
-  },
-});
-
 // =============================================================================
 // Memoized MovieCard wrapper
 // =============================================================================
@@ -174,6 +180,102 @@ const SKELETON_DATA = Array.from({ length: SKELETON_COUNT }, (_, i) => ({
 export const SearchScreen: React.FC = () => {
   const navigation = useNavigation<any>();
   const insets = useSafeAreaInsets();
+  const { colors } = useTheme();
+
+  // ── Dynamic styles ──────────────────────────────────────────────────────
+  const styles = useMemo(
+    () =>
+      StyleSheet.create({
+        // ── Root ──
+        container: {
+          flex: 1,
+          backgroundColor: colors.background,
+        },
+
+        // ── Header ──
+        header: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          paddingHorizontal: SPACING.lg,
+          paddingBottom: SPACING.md,
+          gap: SPACING.sm,
+        },
+        backButton: {
+          width: 40,
+          height: 40,
+          justifyContent: 'center',
+          alignItems: 'center',
+        },
+        backIcon: {
+          width: 24,
+          height: 24,
+          tintColor: colors.text,
+        },
+        headerTitle: {
+          ...FONTS.heading3,
+          color: colors.text,
+          fontSize: 20,
+        },
+        searchBarWrap: {
+          flex: 1,
+        },
+
+        // ── Body ──
+        body: {
+          flex: 1,
+        },
+
+        // ── Results count ──
+        resultCount: {
+          ...FONTS.captionSmall,
+          color: colors.textMuted,
+          paddingHorizontal: SPACING.lg,
+          paddingTop: SPACING.xs,
+          paddingBottom: SPACING.sm,
+        },
+
+        // ── Grid ──
+        grid: {
+          paddingHorizontal: GRID_PADDING,
+        },
+        row: {
+          gap: GRID_GAP,
+        },
+
+        // ── Loading skeleton grid ──
+        loadingGridWrap: {
+          flex: 1,
+          paddingTop: SPACING.xs,
+        },
+
+        // ── Empty state ──
+        emptyContainer: {
+          flex: 1,
+          justifyContent: 'center',
+          alignItems: 'center',
+          paddingVertical: 80,
+          paddingHorizontal: SPACING.xxl,
+        },
+        emptyIcon: {
+          width: 56,
+          height: 56,
+          tintColor: colors.textMuted,
+          opacity: 0.6,
+          marginBottom: SPACING.lg,
+        },
+        emptyTitle: {
+          ...FONTS.heading3,
+          color: colors.textSecondary,
+          marginBottom: SPACING.sm,
+        },
+        emptySubtitle: {
+          ...FONTS.body,
+          color: colors.textMuted,
+          textAlign: 'center',
+        },
+      }),
+    [colors],
+  );
 
   // ── State ──────────────────────────────────────────────────────────────
   const [query, setQuery] = useState('');
@@ -298,7 +400,7 @@ export const SearchScreen: React.FC = () => {
         </Text>
       </View>
     );
-  }, [loading, error]);
+  }, [loading, error, styles]);
 
   // ── Render: loading skeleton grid ──────────────────────────────────────
   const renderLoadingGrid = useCallback(
@@ -315,7 +417,7 @@ export const SearchScreen: React.FC = () => {
         />
       </View>
     ),
-    [renderSkeletonItem],
+    [renderSkeletonItem, styles],
   );
 
   // ── Main render ────────────────────────────────────────────────────────
@@ -395,96 +497,3 @@ export const SearchScreen: React.FC = () => {
     </View>
   );
 };
-
-// =============================================================================
-// Styles
-// =============================================================================
-const styles = StyleSheet.create({
-  // ── Root ──
-  container: {
-    flex: 1,
-    backgroundColor: Colors.dark.background,
-  },
-
-  // ── Header ──
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: SPACING.lg,
-    paddingBottom: SPACING.md,
-    gap: SPACING.sm,
-  },
-  backButton: {
-    width: 40,
-    height: 40,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  backIcon: {
-    width: 24,
-    height: 24,
-    tintColor: Colors.dark.text,
-  },
-  headerTitle: {
-    ...FONTS.heading3,
-    color: Colors.dark.text,
-    fontSize: 20,
-  },
-  searchBarWrap: {
-    flex: 1,
-  },
-
-  // ── Body ──
-  body: {
-    flex: 1,
-  },
-
-  // ── Results count ──
-  resultCount: {
-    ...FONTS.captionSmall,
-    color: Colors.dark.textMuted,
-    paddingHorizontal: SPACING.lg,
-    paddingTop: SPACING.xs,
-    paddingBottom: SPACING.sm,
-  },
-
-  // ── Grid ──
-  grid: {
-    paddingHorizontal: GRID_PADDING,
-  },
-  row: {
-    gap: GRID_GAP,
-  },
-
-  // ── Loading skeleton grid ──
-  loadingGridWrap: {
-    flex: 1,
-    paddingTop: SPACING.xs,
-  },
-
-  // ── Empty state ──
-  emptyContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: 80,
-    paddingHorizontal: SPACING.xxl,
-  },
-  emptyIcon: {
-    width: 56,
-    height: 56,
-    tintColor: Colors.dark.textMuted,
-    opacity: 0.6,
-    marginBottom: SPACING.lg,
-  },
-  emptyTitle: {
-    ...FONTS.heading3,
-    color: Colors.dark.textSecondary,
-    marginBottom: SPACING.sm,
-  },
-  emptySubtitle: {
-    ...FONTS.body,
-    color: Colors.dark.textMuted,
-    textAlign: 'center',
-  },
-});

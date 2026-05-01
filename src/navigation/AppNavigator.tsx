@@ -1,10 +1,11 @@
 import React, { useMemo } from 'react';
 import { Image, StyleSheet, View } from 'react-native';
-import { NavigationContainer, DarkTheme } from '@react-navigation/native';
+import { NavigationContainer, DarkTheme, DefaultTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { Colors } from '../theme/colors';
+import { Colors, ThemeColors } from '../theme/colors';
 import { FONTS } from '../theme/typography';
+import { useTheme, ThemeProvider } from '../hooks/useTheme';
 import { HomeScreen } from '../screens/HomeScreen';
 import { CategoryScreen } from '../screens/CategoryScreen';
 import { DetailsScreen } from '../screens/DetailsScreen';
@@ -62,37 +63,34 @@ const TabIcon: React.FC<{
 // =============================================================================
 const HomeTabs: React.FC = () => {
   const { t } = useTranslation();
+  const { colors } = useTheme();
 
   const tabScreenOptions = useMemo(
     () => ({
       tabBarStyle: {
-        backgroundColor: Colors.dark.tabBar,
-        borderTopColor: Colors.dark.tabBarBorder,
+        backgroundColor: colors.tabBar,
+        borderTopColor: colors.tabBarBorder,
         borderTopWidth: 0.5,
         height: 68,
         paddingBottom: 10,
         paddingTop: 6,
-        // Subtle upward shadow sitting above the tab bar
         shadowColor: '#000000',
-        shadowOffset: { width: 0, height: -1 } as {
-          width: number;
-          height: number;
-        },
+        shadowOffset: { width: 0, height: -1 } as { width: number; height: number },
         shadowOpacity: 0.2,
         shadowRadius: 4,
         elevation: 8,
-      } as const,
-      tabBarActiveTintColor: Colors.dark.tabBarActive,
-      tabBarInactiveTintColor: Colors.dark.tabBarInactive,
+      },
+      tabBarActiveTintColor: colors.tabBarActive,
+      tabBarInactiveTintColor: colors.tabBarInactive,
       tabBarLabelStyle: {
-        fontSize: FONTS.caption.fontSize, // 12
+        fontSize: FONTS.caption.fontSize,
         fontWeight: '600' as const,
         fontFamily: 'Rubik',
         marginTop: 2,
       },
       headerShown: false,
     }),
-    [],
+    [colors],
   );
 
   try {
@@ -142,32 +140,14 @@ const HomeTabs: React.FC = () => {
       </Tab.Navigator>
     );
   } catch (error) {
-    // Fallback render — prevents the entire navigator from crashing if a tab
-    // icon asset is missing or an unexpected error occurs during rendering.
     console.error('[AppNavigator] HomeTabs render error:', error);
     return (
-      <View style={styles.fallbackContainer}>
+      <View style={[styles.fallbackContainer, { backgroundColor: colors.background }]}>
         <Tab.Navigator screenOptions={tabScreenOptions}>
-          <Tab.Screen
-            name="HomeTab"
-            component={HomeScreen}
-            options={{ tabBarLabel: t('home') }}
-          />
-          <Tab.Screen
-            name="BrowseTab"
-            component={CategoryScreen}
-            options={{ tabBarLabel: t('browse') }}
-          />
-          <Tab.Screen
-            name="DownloadsTab"
-            component={DownloadsScreen}
-            options={{ tabBarLabel: t('downloads') }}
-          />
-          <Tab.Screen
-            name="SettingsTab"
-            component={SettingsScreen}
-            options={{ tabBarLabel: t('settings') }}
-          />
+          <Tab.Screen name="HomeTab" component={HomeScreen} options={{ tabBarLabel: t('home') }} />
+          <Tab.Screen name="BrowseTab" component={CategoryScreen} options={{ tabBarLabel: t('browse') }} />
+          <Tab.Screen name="DownloadsTab" component={DownloadsScreen} options={{ tabBarLabel: t('downloads') }} />
+          <Tab.Screen name="SettingsTab" component={SettingsScreen} options={{ tabBarLabel: t('settings') }} />
         </Tab.Navigator>
       </View>
     );
@@ -175,73 +155,67 @@ const HomeTabs: React.FC = () => {
 };
 
 // =============================================================================
-// Navigation theme — dark palette matching AbdoBest design tokens
+// AppNavigator — root stack (inside ThemeProvider)
 // =============================================================================
-const AbdoBestTheme = {
-  ...DarkTheme,
-  dark: true,
-  colors: {
-    ...DarkTheme.colors,
-    primary: Colors.dark.primary,
-    background: Colors.dark.background,
-    card: Colors.dark.surface,
-    text: Colors.dark.text,
-    border: Colors.dark.border,
-    notification: Colors.dark.error,
-  },
-};
+const AppNavigatorInner: React.FC = () => {
+  const { colors, isDark } = useTheme();
 
-// =============================================================================
-// AppNavigator — root stack
-// =============================================================================
-export const AppNavigator: React.FC = () => {
+  const navTheme = useMemo(
+    () => ({
+      ...(isDark ? DarkTheme : DefaultTheme),
+      dark: isDark,
+      colors: {
+        ...(isDark ? DarkTheme.colors : DefaultTheme.colors),
+        primary: colors.primary,
+        background: colors.background,
+        card: colors.surface,
+        text: colors.text,
+        border: colors.border,
+        notification: colors.error,
+      },
+    }),
+    [isDark, colors],
+  );
+
   return (
-    <NavigationContainer theme={AbdoBestTheme}>
+    <NavigationContainer theme={navTheme}>
       <Stack.Navigator
         screenOptions={{
           headerShown: false,
           gestureEnabled: true,
           fullScreenGestureEnabled: true,
-          contentStyle: { backgroundColor: Colors.dark.background },
+          contentStyle: { backgroundColor: colors.background },
         }}
       >
-        {/* Tab hub */}
         <Stack.Screen name="Home" component={HomeTabs} />
-
-        {/* Category / browse listing */}
         <Stack.Screen
           name="Category"
           component={CategoryScreen}
-          options={{
-            animation: 'slide_from_right',
-            animationDuration: 220,
-          }}
+          options={{ animation: 'slide_from_right', animationDuration: 220 }}
         />
-
-        {/* Content details — rises from bottom */}
         <Stack.Screen
           name="Details"
           component={DetailsScreen}
-          options={{
-            animation: 'fade_from_bottom',
-            animationDuration: 280,
-          }}
+          options={{ animation: 'fade_from_bottom', animationDuration: 280 }}
         />
-
-        {/* Full-screen player — supports all orientations */}
         <Stack.Screen
           name="Player"
           component={PlayerScreen}
-          options={{
-            animation: 'fade',
-            animationDuration: 180,
-            orientation: 'all',
-          }}
+          options={{ animation: 'fade', animationDuration: 180, orientation: 'all' }}
         />
       </Stack.Navigator>
     </NavigationContainer>
   );
 };
+
+// =============================================================================
+// Exported AppNavigator — wraps everything in ThemeProvider
+// =============================================================================
+export const AppNavigator: React.FC = () => (
+  <ThemeProvider>
+    <AppNavigatorInner />
+  </ThemeProvider>
+);
 
 // =============================================================================
 // Styles
@@ -253,6 +227,5 @@ const styles = StyleSheet.create({
   },
   fallbackContainer: {
     flex: 1,
-    backgroundColor: Colors.dark.background,
   },
 });

@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import {
   View,
   TextInput,
@@ -8,8 +8,9 @@ import {
   Text,
   I18nManager,
 } from 'react-native';
-import { Colors, RADIUS, SPACING } from '../theme/colors';
+import { RADIUS, SPACING } from '../theme/colors';
 import { FONTS } from '../theme/typography';
+import { useTheme } from '../hooks/useTheme';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -41,7 +42,58 @@ export const SearchBar: React.FC<SearchBarProps> = ({
   onToggle,
 }) => {
   const [isFocused, setIsFocused] = useState(false);
+  const { colors } = useTheme();
   const isRTL = I18nManager.isRTL;
+
+  const styles = useMemo(
+    () =>
+      StyleSheet.create({
+        container: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          backgroundColor: colors.surface,
+          borderRadius: RADIUS.full,
+          borderWidth: 1,
+          borderColor: colors.border,
+          paddingHorizontal: SPACING.md,
+          height: 44,
+        },
+        focused: {
+          borderColor: colors.primary,
+          borderWidth: 1.5,
+        },
+        iconImg: {
+          width: 20,
+          height: 20,
+          resizeMode: 'contain',
+        },
+        input: {
+          flex: 1,
+          ...FONTS.body,
+          color: colors.text,
+          paddingVertical: 0,
+          padding: 0,
+          height: '100%',
+          textAlign: 'left',
+        },
+        inputRTL: {
+          textAlign: 'right',
+        },
+        clearText: {
+          color: colors.textSecondary,
+          fontSize: 16,
+          fontWeight: '700',
+          textAlign: 'center',
+        },
+        iconButton: {
+          width: 44,
+          height: 44,
+          justifyContent: 'center',
+          alignItems: 'center',
+        },
+      }),
+    [colors],
+  );
 
   // Gracefully handle undefined onChangeText
   const handleChangeText = useCallback(
@@ -69,7 +121,7 @@ export const SearchBar: React.FC<SearchBarProps> = ({
         accessibilityRole="button">
         <Image
           source={require('../../assets/icons/search.png')}
-          style={[styles.iconImg, { tintColor: Colors.dark.textSecondary }]}
+          style={[styles.iconImg, { tintColor: colors.textSecondary }]}
         />
       </TouchableOpacity>
     );
@@ -84,8 +136,8 @@ export const SearchBar: React.FC<SearchBarProps> = ({
           styles.iconImg,
           {
             tintColor: isFocused
-              ? Colors.dark.primary
-              : Colors.dark.textSecondary,
+              ? colors.primary
+              : colors.textSecondary,
             marginRight: isRTL ? 0 : SPACING.md,
             marginLeft: isRTL ? SPACING.md : 0,
           },
@@ -99,7 +151,7 @@ export const SearchBar: React.FC<SearchBarProps> = ({
         onFocus={() => setIsFocused(true)}
         onBlur={() => setIsFocused(false)}
         placeholder={placeholder}
-        placeholderTextColor={Colors.dark.textMuted}
+        placeholderTextColor={colors.textMuted}
         returnKeyType="search"
         onSubmitEditing={onSubmit}
         autoCorrect={false}
@@ -129,52 +181,3 @@ export const SearchBar: React.FC<SearchBarProps> = ({
     </View>
   );
 };
-
-// ---------------------------------------------------------------------------
-// Styles
-// ---------------------------------------------------------------------------
-const styles = StyleSheet.create({
-  container: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.dark.surface,
-    borderRadius: RADIUS.full,
-    borderWidth: 1,
-    borderColor: Colors.dark.border,
-    paddingHorizontal: SPACING.md,
-    height: 44,
-  },
-  focused: {
-    borderColor: Colors.dark.primary,
-    borderWidth: 1.5,
-  },
-  iconImg: {
-    width: 20,
-    height: 20,
-    resizeMode: 'contain',
-  },
-  input: {
-    flex: 1,
-    ...FONTS.body,
-    color: Colors.dark.text,
-    paddingVertical: 0,
-    padding: 0,
-    height: '100%',
-    textAlign: 'left',
-  },
-  inputRTL: {
-    textAlign: 'right',
-  },
-  clearText: {
-    color: Colors.dark.textSecondary,
-    fontSize: 16,
-    fontWeight: '700',
-    textAlign: 'center',
-  },
-  iconButton: {
-    width: 44,
-    height: 44,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-});

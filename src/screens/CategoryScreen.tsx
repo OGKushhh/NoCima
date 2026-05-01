@@ -48,7 +48,8 @@ import { MovieCard } from '../components/MovieCard';
 import { LoadingSpinner } from '../components/LoadingSpinner';
 import { ErrorView } from '../components/ErrorView';
 import { SearchBar } from '../components/SearchBar';
-import { Colors, SPACING } from '../theme/colors';
+import { SPACING } from '../theme/colors';
+import { useTheme } from '../hooks/useTheme';
 import { FONTS } from '../theme/typography';
 import { CATEGORIES } from '../constants/categories';
 import { useTranslation } from 'react-i18next';
@@ -84,6 +85,8 @@ export const CategoryScreen: React.FC = () => {
   const navigation = useNavigation<any>();
   const insets = useSafeAreaInsets();
   const { t, i18n } = useTranslation();
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
 
   // ── Guard: category from route params ──────────────────────────────────
   const category: string = route.params?.category ?? 'movies';
@@ -261,7 +264,7 @@ export const CategoryScreen: React.FC = () => {
         </Text>
       </View>
     );
-  }, [loading, error, isSearching, t, loadData]);
+  }, [loading, error, isSearching, t, loadData, styles]);
 
   // ── Results count label (shown when searching) ─────────────────────────
   const ResultsCount = useMemo(() => {
@@ -276,14 +279,14 @@ export const CategoryScreen: React.FC = () => {
         </Text>
       </View>
     );
-  }, [isSearching, displayItems.length, t]);
+  }, [isSearching, displayItems.length, t, styles]);
 
   // ══════════════════════════════════════════════════════════════════════
   // RENDER
   // ══════════════════════════════════════════════════════════════════════
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor={Colors.dark.background} />
+      <StatusBar barStyle="light-content" backgroundColor={colors.background} />
 
       {/* ── Header ─────────────────────────────────────────────────────── */}
       <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
@@ -297,7 +300,7 @@ export const CategoryScreen: React.FC = () => {
           accessibilityRole="button">
           <Image
             source={ICON_BACK}
-            style={[styles.headerIcon, { tintColor: Colors.dark.text }]}
+            style={[styles.headerIcon, { tintColor: colors.text }]}
             resizeMode="contain"
           />
         </TouchableOpacity>
@@ -318,7 +321,7 @@ export const CategoryScreen: React.FC = () => {
             accessibilityRole="button">
             <Image
               source={ICON_SEARCH}
-              style={[styles.headerIcon, { tintColor: Colors.dark.textSecondary }]}
+              style={[styles.headerIcon, { tintColor: colors.textSecondary }]}
               resizeMode="contain"
             />
           </TouchableOpacity>
@@ -364,9 +367,9 @@ export const CategoryScreen: React.FC = () => {
           <RefreshControl
             refreshing={refreshing}
             onRefresh={handleRefresh}
-            tintColor={Colors.dark.primary}
-            colors={[Colors.dark.primary]}
-            progressBackgroundColor={Colors.dark.surfaceElevated}
+            tintColor={colors.primary}
+            colors={[colors.primary]}
+            progressBackgroundColor={colors.surfaceElevated}
           />
         }
       />
@@ -377,83 +380,84 @@ export const CategoryScreen: React.FC = () => {
 // ══════════════════════════════════════════════════════════════════════════
 // Styles
 // ══════════════════════════════════════════════════════════════════════════
-const styles = StyleSheet.create({
-  // ── Root ──
-  container: {
-    flex: 1,
-    backgroundColor: Colors.dark.background,
-  },
+const createStyles = (colors: any) =>
+  StyleSheet.create({
+    // ── Root ──
+    container: {
+      flex: 1,
+      backgroundColor: colors.background,
+    },
 
-  // ── Header ──
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: SPACING.lg,
-    paddingBottom: SPACING.md,
-    gap: SPACING.md,
-    backgroundColor: Colors.dark.surface,
-  },
-  backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: Colors.dark.surfaceElevated,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  headerIcon: {
-    width: 20,
-    height: 20,
-  },
-  headerTitle: {
-    flex: 1,
-    color: Colors.dark.text,
-  },
-  searchToggleButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: Colors.dark.surfaceElevated,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
+    // ── Header ──
+    header: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: SPACING.lg,
+      paddingBottom: SPACING.md,
+      gap: SPACING.md,
+      backgroundColor: colors.surface,
+    },
+    backButton: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+      backgroundColor: colors.surfaceElevated,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    headerIcon: {
+      width: 20,
+      height: 20,
+    },
+    headerTitle: {
+      flex: 1,
+      color: colors.text,
+    },
+    searchToggleButton: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+      backgroundColor: colors.surfaceElevated,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
 
-  // ── Search bar ──
-  searchBarContainer: {
-    paddingHorizontal: SPACING.lg,
-    paddingBottom: SPACING.md,
-    backgroundColor: Colors.dark.surface,
-  },
+    // ── Search bar ──
+    searchBarContainer: {
+      paddingHorizontal: SPACING.lg,
+      paddingBottom: SPACING.md,
+      backgroundColor: colors.surface,
+    },
 
-  // ── Results count ──
-  resultsCountWrap: {
-    paddingHorizontal: SPACING.lg,
-    paddingTop: SPACING.xs,
-    paddingBottom: SPACING.sm,
-  },
-  resultsCountText: {
-    color: Colors.dark.textMuted,
-  },
+    // ── Results count ──
+    resultsCountWrap: {
+      paddingHorizontal: SPACING.lg,
+      paddingTop: SPACING.xs,
+      paddingBottom: SPACING.sm,
+    },
+    resultsCountText: {
+      color: colors.textMuted,
+    },
 
-  // ── Grid ──
-  gridContent: {
-    paddingHorizontal: HORIZONTAL_PADDING,
-    paddingTop: SPACING.xs,
-  },
-  columnWrapper: {
-    gap: CARD_GAP,
-    marginBottom: CARD_GAP,
-  },
+    // ── Grid ──
+    gridContent: {
+      paddingHorizontal: HORIZONTAL_PADDING,
+      paddingTop: SPACING.xs,
+    },
+    columnWrapper: {
+      gap: CARD_GAP,
+      marginBottom: CARD_GAP,
+    },
 
-  // ── Empty state ──
-  emptyContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingTop: 140,
-  },
-  emptyText: {
-    color: Colors.dark.textSecondary,
-    textAlign: 'center',
-  },
-});
+    // ── Empty state ──
+    emptyContainer: {
+      flex: 1,
+      justifyContent: 'center',
+      alignItems: 'center',
+      paddingTop: 140,
+    },
+    emptyText: {
+      color: colors.textSecondary,
+      textAlign: 'center',
+    },
+  });

@@ -47,10 +47,12 @@ import axios from 'axios';
 import { ContentItem } from '../types';
 import { extractVideoUrl } from '../services/api';
 import { recordPlay } from '../services/viewService';
-import { Colors, SPACING } from '../theme/colors';
+import { SPACING } from '../theme/colors';
+import type { ThemeColors } from '../theme/colors';
 import { FONTS } from '../theme/typography';
 import { API_BASE } from '../constants/endpoints';
 import { useTranslation } from 'react-i18next';
+import { useTheme } from '../hooks/useTheme';
 
 // ── Constants ────────────────────────────────────────────────────────
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -82,19 +84,27 @@ interface SeasonData {
 }
 
 // ── Surface Card ─────────────────────────────────────────────────────
+const createSurfaceCardStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
+    card: {
+      backgroundColor: colors.surface,
+      borderRadius: 16,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+  });
+
 const SurfaceCard: React.FC<{ children: React.ReactNode; style?: any }> = ({
   children,
   style,
-}) => <View style={[surfaceCardStyles.card, style]}>{children}</View>;
-
-const surfaceCardStyles = StyleSheet.create({
-  card: {
-    backgroundColor: Colors.dark.surface,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: Colors.dark.border,
-  },
-});
+}) => {
+  const { colors } = useTheme();
+  const surfaceCardStyle = useMemo(
+    () => createSurfaceCardStyles(colors),
+    [colors],
+  );
+  return <View style={[surfaceCardStyle.card, style]}>{children}</View>;
+};
 
 // ── Info Table Row ───────────────────────────────────────────────────
 interface InfoRowProps {
@@ -103,50 +113,58 @@ interface InfoRowProps {
   accent?: boolean;
 }
 
-const InfoRow: React.FC<InfoRowProps> = ({ label, value, accent }) => (
-  <View style={infoRowStyles.row}>
-    <Text style={infoRowStyles.label}>{label}</Text>
-    <View style={infoRowStyles.valueWrap}>
-      <Text
-        style={[infoRowStyles.value, accent && infoRowStyles.valueAccent]}
-        numberOfLines={2}
-      >
-        {value}
-      </Text>
-    </View>
-  </View>
-);
+const createInfoRowStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
+    row: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingVertical: SPACING.md,
+      paddingHorizontal: SPACING.lg,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: colors.border,
+    },
+    label: {
+      flex: 1.1,
+      color: colors.textSecondary,
+      ...FONTS.bodySmall,
+    },
+    valueWrap: {
+      flex: 2,
+      flexDirection: 'row',
+      justifyContent: 'flex-end',
+      alignItems: 'center',
+      gap: 6,
+    },
+    value: {
+      color: colors.text,
+      ...FONTS.bodySmall,
+      textAlign: 'right',
+    },
+    valueAccent: {
+      color: colors.accentLight,
+    },
+  });
 
-const infoRowStyles = StyleSheet.create({
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: SPACING.md,
-    paddingHorizontal: SPACING.lg,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: Colors.dark.border,
-  },
-  label: {
-    flex: 1.1,
-    color: Colors.dark.textSecondary,
-    ...FONTS.bodySmall,
-  },
-  valueWrap: {
-    flex: 2,
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    alignItems: 'center',
-    gap: 6,
-  },
-  value: {
-    color: Colors.dark.text,
-    ...FONTS.bodySmall,
-    textAlign: 'right',
-  },
-  valueAccent: {
-    color: Colors.dark.accentLight,
-  },
-});
+const InfoRow: React.FC<InfoRowProps> = ({ label, value, accent }) => {
+  const { colors } = useTheme();
+  const infoRowStyle = useMemo(
+    () => createInfoRowStyles(colors),
+    [colors],
+  );
+  return (
+    <View style={infoRowStyle.row}>
+      <Text style={infoRowStyle.label}>{label}</Text>
+      <View style={infoRowStyle.valueWrap}>
+        <Text
+          style={[infoRowStyle.value, accent && infoRowStyle.valueAccent]}
+          numberOfLines={2}
+        >
+          {value}
+        </Text>
+      </View>
+    </View>
+  );
+};
 
 // =============================================================================
 // DetailsScreen
@@ -156,6 +174,7 @@ export const DetailsScreen: React.FC = () => {
   const navigation = useNavigation<any>();
   const { t, i18n } = useTranslation();
   const insets = useSafeAreaInsets();
+  const { colors } = useTheme();
 
   // ── Item (may be undefined) ─────────────────────────────────────────
   const item: ContentItem | undefined = route.params?.item;
@@ -171,6 +190,10 @@ export const DetailsScreen: React.FC = () => {
 
   const lang = i18n.language === 'ar' ? 'ar' : 'en';
   const rotateTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // ── Dynamic styles ──────────────────────────────────────────────────
+  const S = useMemo(() => createStyles(colors), [colors]);
+  const infoRowStyles = useMemo(() => createInfoRowStyles(colors), [colors]);
 
   // ── Derived: series / anime check ───────────────────────────────────
   const isSeries = useMemo(() => {
@@ -439,7 +462,7 @@ export const DetailsScreen: React.FC = () => {
               source={require('../../assets/icons/clapboard.png')}
               style={[
                 S.epPlayIcon,
-                { tintColor: Colors.dark.primaryLight },
+                { tintColor: colors.primaryLight },
               ]}
             />
           ) : (
@@ -448,7 +471,7 @@ export const DetailsScreen: React.FC = () => {
         </TouchableOpacity>
       );
     },
-    [selectedEpisode, handlePlay, t],
+    [selectedEpisode, handlePlay, t, S, colors],
   );
 
   // ── Season header render ────────────────────────────────────────────
@@ -470,8 +493,8 @@ export const DetailsScreen: React.FC = () => {
               S.seasonIcon,
               {
                 tintColor: isExpanded
-                  ? Colors.dark.primary
-                  : Colors.dark.textSecondary,
+                  ? colors.primary
+                  : colors.textSecondary,
               },
             ]}
           />
@@ -488,7 +511,7 @@ export const DetailsScreen: React.FC = () => {
               style={[
                 S.chevron,
                 {
-                  tintColor: Colors.dark.textMuted,
+                  tintColor: colors.textMuted,
                   transform: [{ rotate: isExpanded ? '90deg' : '0deg' }],
                 },
               ]}
@@ -497,7 +520,7 @@ export const DetailsScreen: React.FC = () => {
         </TouchableOpacity>
       );
     },
-    [expandedSeason, t],
+    [expandedSeason, t, S, colors],
   );
 
   // ════════════════════════════════════════════════════════════════════
@@ -508,7 +531,7 @@ export const DetailsScreen: React.FC = () => {
       <View style={S.container}>
         <StatusBar
           barStyle="light-content"
-          backgroundColor={Colors.dark.background}
+          backgroundColor={colors.background}
           translucent
         />
         <TouchableOpacity
@@ -543,7 +566,7 @@ export const DetailsScreen: React.FC = () => {
     <View style={S.container}>
       <StatusBar
         barStyle="light-content"
-        backgroundColor={Colors.dark.background}
+        backgroundColor={colors.background}
         translucent
       />
 
@@ -594,7 +617,7 @@ export const DetailsScreen: React.FC = () => {
                 style={{
                   width: 52,
                   height: 52,
-                  tintColor: Colors.dark.textMuted,
+                  tintColor: colors.textMuted,
                 }}
               />
             </View>
@@ -633,7 +656,7 @@ export const DetailsScreen: React.FC = () => {
 
           {item?.Category ? (
             <View
-              style={[S.pill, { borderColor: `${Colors.dark.accentLight}40` }]}
+              style={[S.pill, { borderColor: `${colors.accentLight}40` }]}
             >
               <Text style={S.pillCategory}>
                 {t(item?.Category) || item?.Category}
@@ -645,7 +668,7 @@ export const DetailsScreen: React.FC = () => {
             <View
               style={[
                 S.pill,
-                { borderColor: `${Colors.dark.primaryLight}30` },
+                { borderColor: `${colors.primaryLight}30` },
               ]}
             >
               <Text style={S.pillFormat}>{format}</Text>
@@ -725,7 +748,7 @@ export const DetailsScreen: React.FC = () => {
               source={require('../../assets/icons/files.png')}
               style={[
                 S.downloadBtnIcon,
-                { tintColor: Colors.dark.accentLight },
+                { tintColor: colors.accentLight },
               ]}
             />
             <Text style={S.downloadBtnText}>{t('download')}</Text>
@@ -758,13 +781,13 @@ export const DetailsScreen: React.FC = () => {
             <View style={S.sectionHeader}>
               <Image
                 source={require('../../assets/icons/tv.png')}
-                style={[S.sectionIcon, { tintColor: Colors.dark.primary }]}
+                style={[S.sectionIcon, { tintColor: colors.primary }]}
               />
               <Text style={S.sectionTitle}>{t('episodes')}</Text>
               {episodesLoading && (
                 <ActivityIndicator
                   size="small"
-                  color={Colors.dark.primary}
+                  color={colors.primary}
                   style={{ marginLeft: SPACING.sm }}
                 />
               )}
@@ -778,7 +801,7 @@ export const DetailsScreen: React.FC = () => {
                   style={{
                     width: 32,
                     height: 32,
-                    tintColor: Colors.dark.textMuted,
+                    tintColor: colors.textMuted,
                   }}
                 />
                 <Text style={S.emptyEpisodesText}>
@@ -861,436 +884,437 @@ export const DetailsScreen: React.FC = () => {
 };
 
 // =============================================================================
-// Styles
+// Styles — factory function for dynamic theming
 // =============================================================================
 
-const S = StyleSheet.create({
-  // ── Container & scroll ───────────────────────────────────────────────
-  container: {
-    flex: 1,
-    backgroundColor: Colors.dark.background,
-  },
-  scrollContent: {
-    paddingTop: 0,
-  },
+const createStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
+    // ── Container & scroll ───────────────────────────────────────────────
+    container: {
+      flex: 1,
+      backgroundColor: colors.background,
+    },
+    scrollContent: {
+      paddingTop: 0,
+    },
 
-  // ── Error state ─────────────────────────────────────────────────────
-  errorStateWrap: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: SPACING.xl,
-    gap: SPACING.lg,
-  },
-  errorStateIcon: {
-    width: 64,
-    height: 64,
-    tintColor: Colors.dark.textMuted,
-  },
-  errorStateText: {
-    color: Colors.dark.textSecondary,
-    ...FONTS.body,
-    textAlign: 'center',
-  },
-  errorStateBtn: {
-    marginTop: SPACING.sm,
-    paddingHorizontal: SPACING.xl,
-    paddingVertical: SPACING.md,
-    borderRadius: 12,
-    backgroundColor: Colors.dark.primary,
-  },
-  errorStateBtnText: {
-    color: '#fff',
-    ...FONTS.body,
-    fontWeight: '700',
-  },
+    // ── Error state ─────────────────────────────────────────────────────
+    errorStateWrap: {
+      flex: 1,
+      justifyContent: 'center',
+      alignItems: 'center',
+      paddingHorizontal: SPACING.xl,
+      gap: SPACING.lg,
+    },
+    errorStateIcon: {
+      width: 64,
+      height: 64,
+      tintColor: colors.textMuted,
+    },
+    errorStateText: {
+      color: colors.textSecondary,
+      ...FONTS.body,
+      textAlign: 'center',
+    },
+    errorStateBtn: {
+      marginTop: SPACING.sm,
+      paddingHorizontal: SPACING.xl,
+      paddingVertical: SPACING.md,
+      borderRadius: 12,
+      backgroundColor: colors.primary,
+    },
+    errorStateBtnText: {
+      color: '#fff',
+      ...FONTS.body,
+      fontWeight: '700',
+    },
 
-  // ── 1. Nav bar ──────────────────────────────────────────────────────
-  navBar: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: SPACING.lg,
-    paddingBottom: SPACING.md,
-  },
-  navBtn: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: Colors.dark.surface,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: Colors.dark.border,
-  },
-  iconNav: {
-    width: 20,
-    height: 20,
-    tintColor: Colors.dark.text,
-  },
+    // ── 1. Nav bar ──────────────────────────────────────────────────────
+    navBar: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      paddingHorizontal: SPACING.lg,
+      paddingBottom: SPACING.md,
+    },
+    navBtn: {
+      width: 42,
+      height: 42,
+      borderRadius: 21,
+      backgroundColor: colors.surface,
+      justifyContent: 'center',
+      alignItems: 'center',
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    iconNav: {
+      width: 20,
+      height: 20,
+      tintColor: colors.text,
+    },
 
-  // ── 2. Title ────────────────────────────────────────────────────────
-  title: {
-    color: Colors.dark.text,
-    ...FONTS.heading1,
-    textAlign: 'center',
-    paddingHorizontal: SPACING.xl,
-    marginBottom: SPACING.xl,
-  },
+    // ── 2. Title ────────────────────────────────────────────────────────
+    title: {
+      color: colors.text,
+      ...FONTS.heading1,
+      textAlign: 'center',
+      paddingHorizontal: SPACING.xl,
+      marginBottom: SPACING.xl,
+    },
 
-  // ── 3. Poster ───────────────────────────────────────────────────────
-  posterWrap: {
-    alignSelf: 'center',
-    marginBottom: SPACING.lg,
-    position: 'relative',
-  },
-  poster: {
-    width: POSTER_W,
-    height: POSTER_H,
-    borderRadius: 12,
-    backgroundColor: Colors.dark.surfaceLight,
-    ...Colors.dark.shadowLg,
-  },
-  posterPlaceholder: {
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  qualityBadge: {
-    position: 'absolute',
-    bottom: SPACING.sm,
-    right: SPACING.sm,
-    backgroundColor: 'rgba(0,0,0,0.88)',
-    paddingHorizontal: SPACING.sm,
-    paddingVertical: SPACING.xs,
-    borderRadius: 7,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.2)',
-  },
-  qualityBadgeText: {
-    color: '#FFFFFF',
-    ...FONTS.caption,
-  },
+    // ── 3. Poster ───────────────────────────────────────────────────────
+    posterWrap: {
+      alignSelf: 'center',
+      marginBottom: SPACING.lg,
+      position: 'relative',
+    },
+    poster: {
+      width: POSTER_W,
+      height: POSTER_H,
+      borderRadius: 12,
+      backgroundColor: colors.surfaceLight,
+      ...colors.shadowLg,
+    },
+    posterPlaceholder: {
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    qualityBadge: {
+      position: 'absolute',
+      bottom: SPACING.sm,
+      right: SPACING.sm,
+      backgroundColor: 'rgba(0,0,0,0.88)',
+      paddingHorizontal: SPACING.sm,
+      paddingVertical: SPACING.xs,
+      borderRadius: 7,
+      borderWidth: 1,
+      borderColor: 'rgba(255,255,255,0.2)',
+    },
+    qualityBadgeText: {
+      color: '#FFFFFF',
+      ...FONTS.caption,
+    },
 
-  // ── 4. Meta pills ───────────────────────────────────────────────────
-  metaRow: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    flexWrap: 'wrap',
-    gap: SPACING.sm,
-    marginBottom: SPACING.lg,
-    paddingHorizontal: SPACING.xl,
-  },
-  pill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.dark.surface,
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.sm,
-    borderRadius: 20,
-    gap: SPACING.xs,
-    borderWidth: 1,
-    borderColor: Colors.dark.border,
-  },
-  iconPill: {
-    width: 13,
-    height: 13,
-    tintColor: Colors.dark.text,
-  },
-  pillRating: {
-    color: Colors.dark.rating,
-    ...FONTS.caption,
-    fontWeight: '700',
-  },
-  pillSub: {
-    color: Colors.dark.textMuted,
-    ...FONTS.micro,
-  },
-  pillViews: {
-    color: Colors.dark.textSecondary,
-    ...FONTS.caption,
-    fontWeight: '600',
-  },
-  pillCategory: {
-    color: Colors.dark.accentLight,
-    ...FONTS.caption,
-    fontWeight: '600',
-  },
-  pillFormat: {
-    color: Colors.dark.primaryLight,
-    ...FONTS.caption,
-    fontWeight: '600',
-  },
+    // ── 4. Meta pills ───────────────────────────────────────────────────
+    metaRow: {
+      flexDirection: 'row',
+      justifyContent: 'center',
+      flexWrap: 'wrap',
+      gap: SPACING.sm,
+      marginBottom: SPACING.lg,
+      paddingHorizontal: SPACING.xl,
+    },
+    pill: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: colors.surface,
+      paddingHorizontal: SPACING.md,
+      paddingVertical: SPACING.sm,
+      borderRadius: 20,
+      gap: SPACING.xs,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    iconPill: {
+      width: 13,
+      height: 13,
+      tintColor: colors.text,
+    },
+    pillRating: {
+      color: colors.rating,
+      ...FONTS.caption,
+      fontWeight: '700',
+    },
+    pillSub: {
+      color: colors.textMuted,
+      ...FONTS.micro,
+    },
+    pillViews: {
+      color: colors.textSecondary,
+      ...FONTS.caption,
+      fontWeight: '600',
+    },
+    pillCategory: {
+      color: colors.accentLight,
+      ...FONTS.caption,
+      fontWeight: '600',
+    },
+    pillFormat: {
+      color: colors.primaryLight,
+      ...FONTS.caption,
+      fontWeight: '600',
+    },
 
-  // ── 5. Season/Episode count badges ──────────────────────────────────
-  countBadgeRow: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: SPACING.sm,
-    marginBottom: SPACING.lg,
-    paddingHorizontal: SPACING.xl,
-  },
-  countBadge: {
-    backgroundColor: Colors.dark.surface,
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.sm,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: Colors.dark.border,
-  },
-  badgeOngoing: {
-    backgroundColor: Colors.dark.primary,
-    borderColor: Colors.dark.primary,
-  },
-  badgeComplete: {
-    backgroundColor: Colors.dark.success,
-    borderColor: Colors.dark.success,
-  },
-  countBadgeText: {
-    color: Colors.dark.textSecondary,
-    ...FONTS.caption,
-    fontWeight: '600',
-  },
+    // ── 5. Season/Episode count badges ──────────────────────────────────
+    countBadgeRow: {
+      flexDirection: 'row',
+      justifyContent: 'center',
+      gap: SPACING.sm,
+      marginBottom: SPACING.lg,
+      paddingHorizontal: SPACING.xl,
+    },
+    countBadge: {
+      backgroundColor: colors.surface,
+      paddingHorizontal: SPACING.md,
+      paddingVertical: SPACING.sm,
+      borderRadius: 16,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    badgeOngoing: {
+      backgroundColor: colors.primary,
+      borderColor: colors.primary,
+    },
+    badgeComplete: {
+      backgroundColor: colors.success,
+      borderColor: colors.success,
+    },
+    countBadgeText: {
+      color: colors.textSecondary,
+      ...FONTS.caption,
+      fontWeight: '600',
+    },
 
-  // ── 6. Action buttons ───────────────────────────────────────────────
-  actionsRow: {
-    flexDirection: 'row',
-    paddingHorizontal: SPACING.lg,
-    marginBottom: SPACING.md,
-    gap: SPACING.md,
-  },
-  playBtn: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    height: 56,
-    borderRadius: 16,
-    gap: SPACING.sm,
-    backgroundColor: Colors.dark.primary,
-    ...Colors.dark.shadowGlow,
-  },
-  playBtnDisabled: {
-    opacity: 0.7,
-  },
-  playBtnIcon: {
-    width: 18,
-    height: 18,
-    tintColor: '#fff',
-  },
-  playBtnText: {
-    color: '#fff',
-    ...FONTS.bodyLarge,
-    fontWeight: '700',
-    flexShrink: 1,
-  },
-  downloadBtn: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    height: 56,
-    borderRadius: 16,
-    gap: SPACING.sm,
-    backgroundColor: 'transparent',
-    borderWidth: 1.5,
-    borderColor: Colors.dark.accentLight,
-  },
-  downloadBtnIcon: {
-    width: 20,
-    height: 20,
-  },
-  downloadBtnText: {
-    color: Colors.dark.accentLight,
-    ...FONTS.bodyLarge,
-    fontWeight: '700',
-  },
+    // ── 6. Action buttons ───────────────────────────────────────────────
+    actionsRow: {
+      flexDirection: 'row',
+      paddingHorizontal: SPACING.lg,
+      marginBottom: SPACING.md,
+      gap: SPACING.md,
+    },
+    playBtn: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      height: 56,
+      borderRadius: 16,
+      gap: SPACING.sm,
+      backgroundColor: colors.primary,
+      ...colors.shadowGlow,
+    },
+    playBtnDisabled: {
+      opacity: 0.7,
+    },
+    playBtnIcon: {
+      width: 18,
+      height: 18,
+      tintColor: '#fff',
+    },
+    playBtnText: {
+      color: '#fff',
+      ...FONTS.bodyLarge,
+      fontWeight: '700',
+      flexShrink: 1,
+    },
+    downloadBtn: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      height: 56,
+      borderRadius: 16,
+      gap: SPACING.sm,
+      backgroundColor: 'transparent',
+      borderWidth: 1.5,
+      borderColor: colors.accentLight,
+    },
+    downloadBtnIcon: {
+      width: 20,
+      height: 20,
+    },
+    downloadBtnText: {
+      color: colors.accentLight,
+      ...FONTS.bodyLarge,
+      fontWeight: '700',
+    },
 
-  // ── 7. Error banner ─────────────────────────────────────────────────
-  errorBanner: {
-    marginHorizontal: SPACING.lg,
-    marginBottom: SPACING.md,
-    backgroundColor: `${Colors.dark.error}16`,
-    borderRadius: 12,
-    padding: SPACING.md,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    borderWidth: 1,
-    borderColor: `${Colors.dark.error}30`,
-    gap: SPACING.sm,
-  },
-  errorBannerText: {
-    flex: 1,
-    color: Colors.dark.error,
-    ...FONTS.bodySmall,
-  },
-  retryBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.xs,
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.sm,
-    borderRadius: 9,
-    backgroundColor: `${Colors.dark.primary}22`,
-  },
-  retryIcon: {
-    width: 14,
-    height: 14,
-    tintColor: Colors.dark.primary,
-  },
-  retryText: {
-    color: Colors.dark.primary,
-    ...FONTS.bodySmall,
-    fontWeight: '700',
-  },
+    // ── 7. Error banner ─────────────────────────────────────────────────
+    errorBanner: {
+      marginHorizontal: SPACING.lg,
+      marginBottom: SPACING.md,
+      backgroundColor: `${colors.error}16`,
+      borderRadius: 12,
+      padding: SPACING.md,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      borderWidth: 1,
+      borderColor: `${colors.error}30`,
+      gap: SPACING.sm,
+    },
+    errorBannerText: {
+      flex: 1,
+      color: colors.error,
+      ...FONTS.bodySmall,
+    },
+    retryBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: SPACING.xs,
+      paddingHorizontal: SPACING.md,
+      paddingVertical: SPACING.sm,
+      borderRadius: 9,
+      backgroundColor: `${colors.primary}22`,
+    },
+    retryIcon: {
+      width: 14,
+      height: 14,
+      tintColor: colors.primary,
+    },
+    retryText: {
+      color: colors.primary,
+      ...FONTS.bodySmall,
+      fontWeight: '700',
+    },
 
-  // ── 8. Episodes section ─────────────────────────────────────────────
-  episodesSection: {
-    marginHorizontal: SPACING.lg,
-    marginBottom: SPACING.md,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: SPACING.md,
-    gap: SPACING.sm,
-  },
-  sectionIcon: {
-    width: 20,
-    height: 20,
-  },
-  sectionTitle: {
-    color: Colors.dark.text,
-    ...FONTS.heading3,
-  },
-  emptyEpisodes: {
-    alignItems: 'center',
-    paddingVertical: SPACING.xxl,
-    gap: SPACING.sm,
-  },
-  emptyEpisodesText: {
-    color: Colors.dark.textMuted,
-    ...FONTS.body,
-  },
-  seasonBlock: {
-    marginBottom: SPACING.xs,
-  },
-  seasonHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.dark.surface,
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.md,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: Colors.dark.border,
-    gap: SPACING.sm,
-  },
-  seasonHeaderActive: {
-    backgroundColor: `${Colors.dark.primary}15`,
-    borderColor: `${Colors.dark.primary}40`,
-  },
-  seasonIcon: {
-    width: 18,
-    height: 18,
-  },
-  seasonTitle: {
-    flex: 1,
-    color: Colors.dark.textSecondary,
-    ...FONTS.body,
-    fontWeight: '600',
-  },
-  seasonTitleActive: {
-    color: Colors.dark.text,
-  },
-  seasonMeta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.sm,
-  },
-  seasonEpCount: {
-    color: Colors.dark.textMuted,
-    ...FONTS.caption,
-  },
-  chevron: {
-    width: 14,
-    height: 14,
-  },
-  episodeList: {
-    paddingTop: SPACING.sm,
-  },
-  episodeCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.dark.surface,
-    paddingVertical: SPACING.md,
-    paddingHorizontal: SPACING.md,
-    borderRadius: 10,
-    marginBottom: SPACING.xs,
-    borderWidth: 1,
-    borderColor: Colors.dark.border,
-    gap: SPACING.md,
-  },
-  episodeCardActive: {
-    borderColor: `${Colors.dark.primary}40`,
-    backgroundColor: `${Colors.dark.primary}10`,
-  },
-  episodeNumWrap: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.xs,
-    width: 50,
-  },
-  episodeNum: {
-    color: Colors.dark.textMuted,
-    ...FONTS.bodySmall,
-    fontWeight: '700',
-    width: 24,
-    textAlign: 'center',
-  },
-  epQualityBadge: {
-    backgroundColor: Colors.dark.badge.quality.backgroundColor,
-    paddingHorizontal: 3,
-    paddingVertical: 1,
-    borderRadius: 3,
-  },
-  epQualityText: {
-    color: Colors.dark.badge.quality.color,
-    ...FONTS.micro,
-  },
-  episodeInfo: {
-    flex: 1,
-  },
-  episodeTitle: {
-    color: Colors.dark.text,
-    ...FONTS.body,
-    lineHeight: 19,
-  },
-  epPlayIcon: {
-    width: 18,
-    height: 18,
-  },
-  epComingSoon: {
-    color: Colors.dark.textMuted,
-    ...FONTS.micro,
-  },
+    // ── 8. Episodes section ─────────────────────────────────────────────
+    episodesSection: {
+      marginHorizontal: SPACING.lg,
+      marginBottom: SPACING.md,
+    },
+    sectionHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginBottom: SPACING.md,
+      gap: SPACING.sm,
+    },
+    sectionIcon: {
+      width: 20,
+      height: 20,
+    },
+    sectionTitle: {
+      color: colors.text,
+      ...FONTS.heading3,
+    },
+    emptyEpisodes: {
+      alignItems: 'center',
+      paddingVertical: SPACING.xxl,
+      gap: SPACING.sm,
+    },
+    emptyEpisodesText: {
+      color: colors.textMuted,
+      ...FONTS.body,
+    },
+    seasonBlock: {
+      marginBottom: SPACING.xs,
+    },
+    seasonHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: colors.surface,
+      paddingHorizontal: SPACING.md,
+      paddingVertical: SPACING.md,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: colors.border,
+      gap: SPACING.sm,
+    },
+    seasonHeaderActive: {
+      backgroundColor: `${colors.primary}15`,
+      borderColor: `${colors.primary}40`,
+    },
+    seasonIcon: {
+      width: 18,
+      height: 18,
+    },
+    seasonTitle: {
+      flex: 1,
+      color: colors.textSecondary,
+      ...FONTS.body,
+      fontWeight: '600',
+    },
+    seasonTitleActive: {
+      color: colors.text,
+    },
+    seasonMeta: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: SPACING.sm,
+    },
+    seasonEpCount: {
+      color: colors.textMuted,
+      ...FONTS.caption,
+    },
+    chevron: {
+      width: 14,
+      height: 14,
+    },
+    episodeList: {
+      paddingTop: SPACING.sm,
+    },
+    episodeCard: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: colors.surface,
+      paddingVertical: SPACING.md,
+      paddingHorizontal: SPACING.md,
+      borderRadius: 10,
+      marginBottom: SPACING.xs,
+      borderWidth: 1,
+      borderColor: colors.border,
+      gap: SPACING.md,
+    },
+    episodeCardActive: {
+      borderColor: `${colors.primary}40`,
+      backgroundColor: `${colors.primary}10`,
+    },
+    episodeNumWrap: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: SPACING.xs,
+      width: 50,
+    },
+    episodeNum: {
+      color: colors.textMuted,
+      ...FONTS.bodySmall,
+      fontWeight: '700',
+      width: 24,
+      textAlign: 'center',
+    },
+    epQualityBadge: {
+      backgroundColor: colors.badge.quality.backgroundColor,
+      paddingHorizontal: 3,
+      paddingVertical: 1,
+      borderRadius: 3,
+    },
+    epQualityText: {
+      color: colors.badge.quality.color,
+      ...FONTS.micro,
+    },
+    episodeInfo: {
+      flex: 1,
+    },
+    episodeTitle: {
+      color: colors.text,
+      ...FONTS.body,
+      lineHeight: 19,
+    },
+    epPlayIcon: {
+      width: 18,
+      height: 18,
+    },
+    epComingSoon: {
+      color: colors.textMuted,
+      ...FONTS.micro,
+    },
 
-  // ── 9. Description ──────────────────────────────────────────────────
-  descCard: {
-    marginHorizontal: SPACING.lg,
-    marginBottom: SPACING.md,
-    padding: SPACING.lg,
-  },
-  descText: {
-    color: Colors.dark.textSecondary,
-    ...FONTS.body,
-    lineHeight: 22,
-  },
+    // ── 9. Description ──────────────────────────────────────────────────
+    descCard: {
+      marginHorizontal: SPACING.lg,
+      marginBottom: SPACING.md,
+      padding: SPACING.lg,
+    },
+    descText: {
+      color: colors.textSecondary,
+      ...FONTS.body,
+      lineHeight: 22,
+    },
 
-  // ── 10. Info table ──────────────────────────────────────────────────
-  infoTable: {
-    marginHorizontal: SPACING.lg,
-    marginBottom: SPACING.xxl,
-    overflow: 'hidden',
-  },
-});
+    // ── 10. Info table ──────────────────────────────────────────────────
+    infoTable: {
+      marginHorizontal: SPACING.lg,
+      marginBottom: SPACING.xxl,
+      overflow: 'hidden',
+    },
+  });

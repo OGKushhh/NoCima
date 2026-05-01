@@ -1,16 +1,14 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import { BadgeColors, BadgeVariant } from '../theme/colors';
 import { FONTS } from '../theme/typography';
+import { useTheme } from '../hooks/useTheme';
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 interface QualityBadgeProps {
-  /** Label displayed inside the badge */
   label: string;
-  /** Colour variant – maps to BadgeColors from the theme */
-  variant?: BadgeVariant;
+  variant?: 'quality' | 'genre' | 'rating';
 }
 
 // ---------------------------------------------------------------------------
@@ -20,18 +18,19 @@ export const QualityBadge: React.FC<QualityBadgeProps> = ({
   label,
   variant = 'quality',
 }) => {
-  // Guard against unknown variant
-  const colors = BadgeColors[variant] ?? BadgeColors.quality;
+  const { colors } = useTheme();
+  const badgeStyle = colors.badge[variant] ?? colors.badge.quality;
 
   return (
-    <View style={[styles.badge, { backgroundColor: colors.backgroundColor }]}>
+    <View style={[styles.badge, { backgroundColor: badgeStyle.backgroundColor }]}>
       <Text
         style={[
           styles.text,
           FONTS.caption,
-          { color: colors.color },
+          { color: badgeStyle.color },
         ]}
-        numberOfLines={1}>
+        numberOfLines={1}
+      >
         {label}
       </Text>
     </View>

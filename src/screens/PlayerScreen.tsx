@@ -7,7 +7,7 @@ import {
 import Video from 'react-native-video';
 import {useRoute, useNavigation} from '@react-navigation/native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
-import {Colors} from '../theme/colors';
+import {useTheme} from '../hooks/useTheme';
 import {FONTS} from '../theme/typography';
 import {useTranslation} from 'react-i18next';
 import {recordPlay} from '../services/viewService';
@@ -37,6 +37,8 @@ export const PlayerScreen: React.FC = () => {
   const {url, title, contentId, category, qualities: paramQualities} = route.params || {};
   const {t} = useTranslation();
   const insets = useSafeAreaInsets();
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
 
   const videoRef: any = useRef(null);
   const [playing, setPlaying] = useState(true);
@@ -292,7 +294,7 @@ export const PlayerScreen: React.FC = () => {
       {(buffering || loading) && (
         <View style={styles.bufferingOverlay} pointerEvents="none">
           <View style={styles.bufferingSpinnerRing}>
-            <ActivityIndicator size="large" color={Colors.dark.primary} />
+            <ActivityIndicator size="large" color={colors.primary} />
           </View>
           <Text style={[styles.bufferingLabel, FONTS.caption]}>
             {loading ? 'Connecting...' : 'Buffering...'}
@@ -449,7 +451,7 @@ export const PlayerScreen: React.FC = () => {
 // ═══════════════════════════════════════════════════════════════════════════════
 // Styles
 // ═══════════════════════════════════════════════════════════════════════════════
-const styles = StyleSheet.create({
+const createStyles = (colors: any) => StyleSheet.create({
   // ─── Container ────────────────────────────────────────────────────────
   container: {
     flex: 1,
@@ -594,7 +596,7 @@ const styles = StyleSheet.create({
   },
   seekBarFilled: {
     height: '100%',
-    backgroundColor: Colors.dark.primary,
+    backgroundColor: colors.primary,
     borderRadius: 3,
     flexDirection: 'row',
     justifyContent: 'flex-end',
@@ -659,10 +661,10 @@ const styles = StyleSheet.create({
     width: 68,
     height: 68,
     borderRadius: 34,
-    backgroundColor: Colors.dark.primary,
+    backgroundColor: colors.primary,
     justifyContent: 'center',
     alignItems: 'center',
-    ...Colors.dark.shadowGlow,
+    ...colors.shadowGlow,
   },
   playPauseGlyph: {
     color: '#FFFFFF',
@@ -750,7 +752,7 @@ const styles = StyleSheet.create({
   errorIcon: {
     width: 56,
     height: 56,
-    tintColor: Colors.dark.error,
+    tintColor: colors.error,
     resizeMode: 'contain',
     marginBottom: 8,
   },
@@ -772,10 +774,10 @@ const styles = StyleSheet.create({
   errorButtonPrimary: {
     flex: 1,
     paddingVertical: 14,
-    backgroundColor: Colors.dark.primary,
+    backgroundColor: colors.primary,
     borderRadius: 14,
     alignItems: 'center',
-    ...Colors.dark.shadowGlow,
+    ...colors.shadowGlow,
   },
   errorButtonLabel: {
     color: '#FFFFFF',

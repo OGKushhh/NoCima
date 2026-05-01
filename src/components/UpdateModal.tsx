@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import {
   View,
   Modal,
@@ -10,10 +10,11 @@ import {
   Dimensions,
   Platform,
 } from 'react-native';
-import { Colors, RADIUS, SPACING } from '../theme/colors';
+import { RADIUS, SPACING } from '../theme/colors';
 import { FONTS } from '../theme/typography';
 import { useTranslation } from 'react-i18next';
 import { ReleaseInfo } from '../services/updateService';
+import { useTheme } from '../hooks/useTheme';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -61,8 +62,170 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
   onDismiss,
 }) => {
   const { t } = useTranslation();
+  const { colors } = useTheme();
 
-  // ── Derived values (guarded) ───────────────────────────────────────────
+  const styles = useMemo(
+    () =>
+      StyleSheet.create({
+        // ── Backdrop ─────────────────────────────────────────────────────────
+        backdrop: {
+          ...StyleSheet.absoluteFillObject,
+          justifyContent: 'center',
+          zIndex: 0,
+        },
+        backdropOverlay: {
+          ...StyleSheet.absoluteFillObject,
+          backgroundColor: colors.overlay,
+        },
+
+        // ── Bottom sheet ─────────────────────────────────────────────────────
+        sheet: {
+          position: 'absolute',
+          bottom: 0,
+          left: 0,
+          right: 0,
+          backgroundColor: colors.surface,
+          borderTopLeftRadius: RADIUS.xl,
+          borderTopRightRadius: RADIUS.xl,
+          maxHeight: SCREEN_HEIGHT * 0.75,
+          overflow: 'hidden',
+          ...Platform.select({
+            ios: colors.shadowLg,
+            android: colors.shadowMd,
+          }),
+        },
+        handleBar: {
+          alignSelf: 'center',
+          width: 40,
+          height: 4,
+          borderRadius: 2,
+          backgroundColor: colors.border,
+          marginTop: SPACING.sm,
+          marginBottom: SPACING.lg,
+        },
+        scrollContent: {
+          paddingHorizontal: SPACING.xl,
+          paddingBottom: SPACING.xl,
+        },
+
+        // ── Header ───────────────────────────────────────────────────────────
+        iconContainer: {
+          alignSelf: 'center',
+          width: 72,
+          height: 72,
+          borderRadius: 36,
+          backgroundColor: `${colors.primary}18`,
+          justifyContent: 'center',
+          alignItems: 'center',
+          marginBottom: SPACING.lg,
+        },
+        appIcon: {
+          width: 40,
+          height: 40,
+        },
+        title: {
+          color: colors.text,
+          textAlign: 'center',
+          marginBottom: SPACING.lg,
+        },
+
+        // ── Version row ──────────────────────────────────────────────────────
+        versionRow: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'center',
+          marginBottom: SPACING.lg,
+        },
+        versionBox: {
+          flex: 1,
+          backgroundColor: colors.background,
+          borderRadius: RADIUS.md,
+          padding: SPACING.md,
+          alignItems: 'center',
+        },
+        versionBoxNew: {
+          borderColor: colors.primary,
+          borderWidth: 1,
+        },
+        versionLabel: {
+          color: colors.textMuted,
+          marginBottom: SPACING.xs,
+        },
+        versionValue: {
+          color: colors.text,
+        },
+        arrowIcon: {
+          width: 20,
+          height: 20,
+          tintColor: colors.textMuted,
+          marginHorizontal: SPACING.md,
+        },
+
+        // ── Changelog ────────────────────────────────────────────────────────
+        changelogSection: {
+          backgroundColor: colors.background,
+          borderRadius: RADIUS.md,
+          padding: SPACING.lg,
+          marginBottom: SPACING.md,
+        },
+        changelogTitle: {
+          color: colors.textSecondary,
+          marginBottom: SPACING.sm,
+        },
+        changelogText: {
+          color: colors.textSecondary,
+          lineHeight: 20,
+        },
+
+        // ── Date ─────────────────────────────────────────────────────────────
+        dateText: {
+          color: colors.textMuted,
+          textAlign: 'center',
+          marginBottom: SPACING.md,
+        },
+
+        // ── Action buttons ───────────────────────────────────────────────────
+        actions: {
+          paddingHorizontal: SPACING.xl,
+          paddingBottom: SPACING.xxxl,
+          paddingTop: SPACING.sm,
+          borderTopWidth: 1,
+          borderTopColor: colors.border,
+        },
+        updateButton: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: colors.primary,
+          borderRadius: RADIUS.full,
+          paddingVertical: SPACING.md,
+          minHeight: 50,
+          marginBottom: SPACING.md,
+          ...colors.shadowGlow,
+        },
+        updateButtonText: {
+          color: '#FFFFFF',
+          fontWeight: '700',
+          marginLeft: SPACING.sm,
+        },
+        btnIcon: {
+          width: 22,
+          height: 22,
+          tintColor: '#FFFFFF',
+        },
+        skipButton: {
+          alignSelf: 'center',
+          paddingVertical: SPACING.sm,
+          paddingHorizontal: SPACING.xl,
+        },
+        skipText: {
+          color: colors.textMuted,
+        },
+      }),
+    [colors],
+  );
+
+  // ── Derived values (guarded) ─────────────────────────────────────────────
   const version = safe(release, 'version');
   const downloadUrl = safe(release, 'downloadUrl');
   const changelog = safe(release, 'changelog');
@@ -145,7 +308,7 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
                 style={[
                   styles.versionValue,
                   FONTS.heading3,
-                  { color: Colors.dark.primary },
+                  { color: colors.primary },
                 ]}>
                 v{version || '—'}
               </Text>
@@ -207,163 +370,3 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
     </Modal>
   );
 };
-
-// ---------------------------------------------------------------------------
-// Styles
-// ---------------------------------------------------------------------------
-const styles = StyleSheet.create({
-  // ── Backdrop ───────────────────────────────────────────────────────────
-  backdrop: {
-    ...StyleSheet.absoluteFillObject,
-    justifyContent: 'center',
-    zIndex: 0,
-  },
-  backdropOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: Colors.dark.overlay,
-  },
-
-  // ── Bottom sheet ───────────────────────────────────────────────────────
-  sheet: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: Colors.dark.surface,
-    borderTopLeftRadius: RADIUS.xl,
-    borderTopRightRadius: RADIUS.xl,
-    maxHeight: SCREEN_HEIGHT * 0.75,
-    overflow: 'hidden',
-    ...Platform.select({
-      ios: Colors.dark.shadowLg,
-      android: Colors.dark.shadowMd,
-    }),
-  },
-  handleBar: {
-    alignSelf: 'center',
-    width: 40,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: Colors.dark.border,
-    marginTop: SPACING.sm,
-    marginBottom: SPACING.lg,
-  },
-  scrollContent: {
-    paddingHorizontal: SPACING.xl,
-    paddingBottom: SPACING.xl,
-  },
-
-  // ── Header ─────────────────────────────────────────────────────────────
-  iconContainer: {
-    alignSelf: 'center',
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: `${Colors.dark.primary}18`,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: SPACING.lg,
-  },
-  appIcon: {
-    width: 40,
-    height: 40,
-  },
-  title: {
-    color: Colors.dark.text,
-    textAlign: 'center',
-    marginBottom: SPACING.lg,
-  },
-
-  // ── Version row ────────────────────────────────────────────────────────
-  versionRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: SPACING.lg,
-  },
-  versionBox: {
-    flex: 1,
-    backgroundColor: Colors.dark.background,
-    borderRadius: RADIUS.md,
-    padding: SPACING.md,
-    alignItems: 'center',
-  },
-  versionBoxNew: {
-    borderColor: Colors.dark.primary,
-    borderWidth: 1,
-  },
-  versionLabel: {
-    color: Colors.dark.textMuted,
-    marginBottom: SPACING.xs,
-  },
-  versionValue: {
-    color: Colors.dark.text,
-  },
-  arrowIcon: {
-    width: 20,
-    height: 20,
-    tintColor: Colors.dark.textMuted,
-    marginHorizontal: SPACING.md,
-  },
-
-  // ── Changelog ──────────────────────────────────────────────────────────
-  changelogSection: {
-    backgroundColor: Colors.dark.background,
-    borderRadius: RADIUS.md,
-    padding: SPACING.lg,
-    marginBottom: SPACING.md,
-  },
-  changelogTitle: {
-    color: Colors.dark.textSecondary,
-    marginBottom: SPACING.sm,
-  },
-  changelogText: {
-    color: Colors.dark.textSecondary,
-    lineHeight: 20,
-  },
-
-  // ── Date ───────────────────────────────────────────────────────────────
-  dateText: {
-    color: Colors.dark.textMuted,
-    textAlign: 'center',
-    marginBottom: SPACING.md,
-  },
-
-  // ── Action buttons ─────────────────────────────────────────────────────
-  actions: {
-    paddingHorizontal: SPACING.xl,
-    paddingBottom: SPACING.xxxl,
-    paddingTop: SPACING.sm,
-    borderTopWidth: 1,
-    borderTopColor: Colors.dark.border,
-  },
-  updateButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: Colors.dark.primary,
-    borderRadius: RADIUS.full,
-    paddingVertical: SPACING.md,
-    minHeight: 50,
-    marginBottom: SPACING.md,
-    ...Colors.dark.shadowGlow,
-  },
-  updateButtonText: {
-    color: '#FFFFFF',
-    fontWeight: '700',
-    marginLeft: SPACING.sm,
-  },
-  btnIcon: {
-    width: 22,
-    height: 22,
-    tintColor: '#FFFFFF',
-  },
-  skipButton: {
-    alignSelf: 'center',
-    paddingVertical: SPACING.sm,
-    paddingHorizontal: SPACING.xl,
-  },
-  skipText: {
-    color: Colors.dark.textMuted,
-  },
-});

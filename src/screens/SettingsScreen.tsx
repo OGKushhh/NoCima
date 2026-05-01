@@ -1,4 +1,4 @@
-import React, {useState, useCallback} from 'react';
+import React, {useState, useCallback, useMemo} from 'react';
 import {
   View,
   StyleSheet,
@@ -12,8 +12,9 @@ import {
   Image,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
-import {Colors, SPACING, RADIUS} from '../theme/colors';
+import {SPACING, RADIUS} from '../theme/colors';
 import {FONTS} from '../theme/typography';
+import {useTheme} from '../hooks/useTheme';
 import {useTranslation} from 'react-i18next';
 import {getSettings, saveSettings} from '../storage';
 import {syncIfNeeded, getLastSyncTime} from '../services/metadataService';
@@ -40,28 +41,12 @@ interface QualityOption {
 }
 
 // =============================================================================
-// Sub-components
-// =============================================================================
-
-/** Section header label (captionSmall, textMuted, uppercase, letterSpacing) */
-const SectionHeader: React.FC<{label: string}> = ({label}) => (
-  <Text style={[FONTS.captionSmall, styles.sectionHeader]}>{label}</Text>
-);
-
-/** Chevron arrow (arrow.png rotated 90° for forward nav) */
-const Chevron: React.FC = () => (
-  <Image
-    source={require('../../assets/icons/arrow.png')}
-    style={[styles.chevronIcon, {tintColor: Colors.dark.textMuted}]}
-  />
-);
-
-// =============================================================================
 // SettingsScreen
 // =============================================================================
 
 export const SettingsScreen: React.FC = () => {
   const {t, i18n} = useTranslation();
+  const {colors, toggleTheme} = useTheme();
 
   // ── State ────────────────────────────────────────────────────────────
   const [settings, setSettings] = useState<SettingsState>(getSettings());
@@ -69,6 +54,227 @@ export const SettingsScreen: React.FC = () => {
   const [syncing, setSyncing] = useState(false);
   const [showQualityModal, setShowQualityModal] = useState(false);
   const [lastSyncDate, setLastSyncDate] = useState<string>(computeLastSync());
+
+  // ── Dynamic Styles ───────────────────────────────────────────────────
+  const styles = useMemo(
+    () =>
+      StyleSheet.create({
+        // ── Screen ─────────────────────────────────────────────────────
+        container: {
+          flex: 1,
+          backgroundColor: colors.background,
+        },
+        safeArea: {
+          flex: 1,
+        },
+        scrollContent: {
+          paddingBottom: SPACING.xxxl,
+        },
+        bottomSpacer: {
+          height: SPACING.xxxl,
+        },
+
+        // ── Header ─────────────────────────────────────────────────────
+        header: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          paddingHorizontal: SPACING.xl,
+          paddingTop: SPACING.xl,
+          paddingBottom: SPACING.sm,
+        },
+        headerLeft: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: SPACING.md,
+        },
+        headerIconWrap: {
+          width: 40,
+          height: 40,
+          borderRadius: RADIUS.md,
+          backgroundColor: `${colors.primary}20`,
+          justifyContent: 'center',
+          alignItems: 'center',
+        },
+        headerIcon: {
+          width: 22,
+          height: 22,
+          tintColor: colors.primary,
+        },
+        headerTitle: {
+          color: colors.text,
+        },
+        versionBadge: {
+          backgroundColor: colors.surface,
+          borderWidth: 1,
+          borderColor: colors.border,
+          borderRadius: RADIUS.sm,
+          paddingHorizontal: SPACING.sm,
+          paddingVertical: SPACING.xs,
+        },
+        versionText: {
+          color: colors.textMuted,
+        },
+
+        // ── Section Header ─────────────────────────────────────────────
+        sectionHeader: {
+          color: colors.textMuted,
+          textTransform: 'uppercase' as any,
+          letterSpacing: 1.5,
+          paddingHorizontal: SPACING.xl,
+          marginTop: SPACING.xxl,
+          marginBottom: SPACING.sm,
+        },
+
+        // ── Card ───────────────────────────────────────────────────────
+        card: {
+          backgroundColor: colors.surface,
+          borderRadius: RADIUS.lg,
+          marginHorizontal: SPACING.lg,
+          overflow: 'hidden',
+          borderWidth: 1,
+          borderColor: colors.border,
+        },
+
+        // ── Row ────────────────────────────────────────────────────────
+        row: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          paddingHorizontal: SPACING.lg,
+          paddingVertical: SPACING.lg,
+          borderBottomWidth: StyleSheet.hairlineWidth,
+          borderBottomColor: colors.border,
+        },
+        rowLast: {
+          borderBottomWidth: 0,
+        },
+        rowContent: {
+          flex: 1,
+          marginLeft: SPACING.md,
+        },
+        rowLabel: {
+          flex: 1,
+          color: colors.text,
+        },
+        rowSub: {
+          color: colors.textMuted,
+          marginTop: SPACING.xs,
+        },
+        rowValue: {
+          color: colors.textSecondary,
+          marginRight: SPACING.xs,
+        },
+        rowRight: {
+          flexDirection: 'row',
+          alignItems: 'center',
+        },
+
+        // ── Icon circle ────────────────────────────────────────────────
+        iconCircle: {
+          width: 36,
+          height: 36,
+          borderRadius: RADIUS.sm,
+          backgroundColor: `${colors.primary}18`,
+          justifyContent: 'center',
+          alignItems: 'center',
+        },
+        rowIcon: {
+          width: 20,
+          height: 20,
+          tintColor: colors.primaryLight,
+        },
+        chevronIcon: {
+          width: 16,
+          height: 16,
+          transform: [{rotate: '90deg'}],
+        },
+
+        // ── Ko-fi Button ───────────────────────────────────────────────
+        kofiButton: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'center',
+          marginHorizontal: SPACING.lg,
+          paddingVertical: SPACING.lg,
+          borderRadius: RADIUS.lg,
+          gap: SPACING.sm,
+          // Red gradient background
+          backgroundColor: '#E53935',
+          shadowColor: '#E53935',
+          shadowOffset: {width: 0, height: 4},
+          shadowOpacity: 0.4,
+          shadowRadius: 8,
+          elevation: 6,
+        },
+        kofiIcon: {
+          width: 20,
+          height: 20,
+          tintColor: '#FFFFFF',
+        },
+        kofiText: {
+          color: '#FFFFFF',
+        },
+
+        // ── Quality Modal ──────────────────────────────────────────────
+        modalBackdrop: {
+          ...StyleSheet.absoluteFillObject,
+          backgroundColor: colors.overlay,
+          justifyContent: 'center',
+          alignItems: 'center',
+        },
+        modalCard: {
+          backgroundColor: colors.surface,
+          borderRadius: RADIUS.lg,
+          padding: SPACING.xl,
+          width: 280,
+          borderWidth: 1,
+          borderColor: colors.border,
+          elevation: 16,
+          shadowColor: '#000000',
+          shadowOffset: {width: 0, height: 8},
+          shadowOpacity: 0.5,
+          shadowRadius: 24,
+        },
+        modalTitle: {
+          color: colors.text,
+          textAlign: 'center',
+          marginBottom: SPACING.md,
+        },
+        modalOption: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          paddingVertical: SPACING.md,
+          paddingHorizontal: SPACING.md,
+          borderRadius: RADIUS.sm,
+          marginBottom: SPACING.xs,
+        },
+        modalOptionActive: {
+          backgroundColor: `${colors.primary}20`,
+          borderWidth: 1,
+          borderColor: `${colors.primary}60`,
+        },
+        modalOptionText: {
+          color: colors.textSecondary,
+        },
+        modalOptionTextActive: {
+          color: colors.primary,
+          fontWeight: '700',
+        },
+        modalCheck: {
+          width: 20,
+          height: 20,
+          justifyContent: 'center',
+          alignItems: 'center',
+        },
+        modalCheckIcon: {
+          width: 16,
+          height: 16,
+          tintColor: colors.primary,
+        },
+      }),
+    [colors],
+  );
 
   // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -170,6 +376,56 @@ export const SettingsScreen: React.FC = () => {
   );
   const currentQualityLabel = currentQuality?.label ?? qualityOptions[0].label;
 
+  // ── Sub-components (inside SettingsScreen so they access dynamic styles) ──
+
+  /** Section header label (captionSmall, textMuted, uppercase, letterSpacing) */
+  const SectionHeader: React.FC<{label: string}> = ({label}) => (
+    <Text style={[FONTS.captionSmall, styles.sectionHeader]}>{label}</Text>
+  );
+
+  /** Chevron arrow (arrow.png rotated 90° for forward nav) */
+  const Chevron: React.FC = () => (
+    <Image
+      source={require('../../assets/icons/arrow.png')}
+      style={[styles.chevronIcon, {tintColor: colors.textMuted}]}
+    />
+  );
+
+  /** Reusable row with icon, label, optional value / right element */
+  const SettingRow: React.FC<{
+    icon: any;
+    label: string;
+    value?: string;
+    onPress?: () => void;
+    rightElement?: React.ReactNode;
+    isLast?: boolean;
+  }> = ({icon, label, value, onPress, rightElement, isLast}) => (
+    <TouchableOpacity
+      style={[styles.row, isLast && styles.rowLast]}
+      onPress={onPress}
+      activeOpacity={onPress ? 0.7 : 1}
+      disabled={!onPress}
+    >
+      {/* Icon in tinted circle */}
+      <View style={styles.iconCircle}>
+        <Image source={icon} style={styles.rowIcon} />
+      </View>
+
+      {/* Label (flex:1 so it pushes right content) */}
+      <Text style={[FONTS.body, styles.rowLabel]}>{label}</Text>
+
+      {/* Right side: custom element OR value + chevron */}
+      {rightElement ?? (
+        <View style={styles.rowRight}>
+          {value ? (
+            <Text style={[FONTS.caption, styles.rowValue]}>{value}</Text>
+          ) : null}
+          {onPress ? <Chevron /> : null}
+        </View>
+      )}
+    </TouchableOpacity>
+  );
+
   // ── Render ───────────────────────────────────────────────────────────
 
   return (
@@ -219,10 +475,10 @@ export const SettingsScreen: React.FC = () => {
               rightElement={
                 <Switch
                   value={settings?.darkMode !== false}
-                  onValueChange={(v: boolean) => updateSetting('darkMode', v)}
+                  onValueChange={toggleTheme}
                   trackColor={{
-                    false: Colors.dark.border,
-                    true: Colors.dark.primary,
+                    false: colors.border,
+                    true: colors.primary,
                   }}
                   thumbColor="#FFFFFF"
                 />
@@ -250,8 +506,8 @@ export const SettingsScreen: React.FC = () => {
                   value={!!settings?.autoPlay}
                   onValueChange={(v: boolean) => updateSetting('autoPlay', v)}
                   trackColor={{
-                    false: Colors.dark.border,
-                    true: Colors.dark.primary,
+                    false: colors.border,
+                    true: colors.primary,
                   }}
                   thumbColor="#FFFFFF"
                 />
@@ -269,8 +525,8 @@ export const SettingsScreen: React.FC = () => {
                     updateSetting('mobileDataWarning', v)
                   }
                   trackColor={{
-                    false: Colors.dark.border,
-                    true: Colors.dark.primary,
+                    false: colors.border,
+                    true: colors.primary,
                   }}
                   thumbColor="#FFFFFF"
                 />
@@ -289,8 +545,8 @@ export const SettingsScreen: React.FC = () => {
                     updateSetting('subtitleEnabled', v)
                   }
                   trackColor={{
-                    false: Colors.dark.border,
-                    true: Colors.dark.primary,
+                    false: colors.border,
+                    true: colors.primary,
                   }}
                   thumbColor="#FFFFFF"
                 />
@@ -325,7 +581,7 @@ export const SettingsScreen: React.FC = () => {
               {syncing ? (
                 <ActivityIndicator
                   size="small"
-                  color={Colors.dark.primary}
+                  color={colors.primary}
                 />
               ) : (
                 <Chevron />
@@ -379,7 +635,7 @@ export const SettingsScreen: React.FC = () => {
               {checkingUpdate ? (
                 <ActivityIndicator
                   size="small"
-                  color={Colors.dark.primary}
+                  color={colors.primary}
                 />
               ) : (
                 <Chevron />
@@ -461,270 +717,3 @@ export const SettingsScreen: React.FC = () => {
     </View>
   );
 };
-
-// =============================================================================
-// SettingRow — reusable row with icon, label, optional value / right element
-// =============================================================================
-
-interface SettingRowProps {
-  icon: any;
-  label: string;
-  value?: string;
-  onPress?: () => void;
-  rightElement?: React.ReactNode;
-  isLast?: boolean;
-}
-
-const SettingRow: React.FC<SettingRowProps> = ({
-  icon,
-  label,
-  value,
-  onPress,
-  rightElement,
-  isLast,
-}) => (
-  <TouchableOpacity
-    style={[styles.row, isLast && styles.rowLast]}
-    onPress={onPress}
-    activeOpacity={onPress ? 0.7 : 1}
-    disabled={!onPress}
-  >
-    {/* Icon in tinted circle */}
-    <View style={styles.iconCircle}>
-      <Image source={icon} style={styles.rowIcon} />
-    </View>
-
-    {/* Label (flex:1 so it pushes right content) */}
-    <Text style={[FONTS.body, styles.rowLabel]}>{label}</Text>
-
-    {/* Right side: custom element OR value + chevron */}
-    {rightElement ?? (
-      <View style={styles.rowRight}>
-        {value ? (
-          <Text style={[FONTS.caption, styles.rowValue]}>{value}</Text>
-        ) : null}
-        {onPress ? <Chevron /> : null}
-      </View>
-    )}
-  </TouchableOpacity>
-);
-
-// =============================================================================
-// Styles
-// =============================================================================
-
-const styles = StyleSheet.create({
-  // ── Screen ───────────────────────────────────────────────────────────
-  container: {
-    flex: 1,
-    backgroundColor: Colors.dark.background,
-  },
-  safeArea: {
-    flex: 1,
-  },
-  scrollContent: {
-    paddingBottom: SPACING.xxxl,
-  },
-  bottomSpacer: {
-    height: SPACING.xxxl,
-  },
-
-  // ── Header ───────────────────────────────────────────────────────────
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: SPACING.xl,
-    paddingTop: SPACING.xl,
-    paddingBottom: SPACING.sm,
-  },
-  headerLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.md,
-  },
-  headerIconWrap: {
-    width: 40,
-    height: 40,
-    borderRadius: RADIUS.md,
-    backgroundColor: `${Colors.dark.primary}20`,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  headerIcon: {
-    width: 22,
-    height: 22,
-    tintColor: Colors.dark.primary,
-  },
-  headerTitle: {
-    color: Colors.dark.text,
-  },
-  versionBadge: {
-    backgroundColor: Colors.dark.surface,
-    borderWidth: 1,
-    borderColor: Colors.dark.border,
-    borderRadius: RADIUS.sm,
-    paddingHorizontal: SPACING.sm,
-    paddingVertical: SPACING.xs,
-  },
-  versionText: {
-    color: Colors.dark.textMuted,
-  },
-
-  // ── Section Header ───────────────────────────────────────────────────
-  sectionHeader: {
-    color: Colors.dark.textMuted,
-    textTransform: 'uppercase' as any,
-    letterSpacing: 1.5,
-    paddingHorizontal: SPACING.xl,
-    marginTop: SPACING.xxl,
-    marginBottom: SPACING.sm,
-  },
-
-  // ── Card ─────────────────────────────────────────────────────────────
-  card: {
-    backgroundColor: Colors.dark.surface,
-    borderRadius: RADIUS.lg,
-    marginHorizontal: SPACING.lg,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: Colors.dark.border,
-  },
-
-  // ── Row ──────────────────────────────────────────────────────────────
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: SPACING.lg,
-    paddingVertical: SPACING.lg,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: Colors.dark.border,
-  },
-  rowLast: {
-    borderBottomWidth: 0,
-  },
-  rowContent: {
-    flex: 1,
-    marginLeft: SPACING.md,
-  },
-  rowLabel: {
-    flex: 1,
-    color: Colors.dark.text,
-  },
-  rowSub: {
-    color: Colors.dark.textMuted,
-    marginTop: SPACING.xs,
-  },
-  rowValue: {
-    color: Colors.dark.textSecondary,
-    marginRight: SPACING.xs,
-  },
-  rowRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-
-  // ── Icon circle ──────────────────────────────────────────────────────
-  iconCircle: {
-    width: 36,
-    height: 36,
-    borderRadius: RADIUS.sm,
-    backgroundColor: `${Colors.dark.primary}18`,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  rowIcon: {
-    width: 20,
-    height: 20,
-    tintColor: Colors.dark.primaryLight,
-  },
-  chevronIcon: {
-    width: 16,
-    height: 16,
-    transform: [{rotate: '90deg'}],
-  },
-
-  // ── Ko-fi Button ─────────────────────────────────────────────────────
-  kofiButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginHorizontal: SPACING.lg,
-    paddingVertical: SPACING.lg,
-    borderRadius: RADIUS.lg,
-    gap: SPACING.sm,
-    // Red gradient background
-    backgroundColor: '#E53935',
-    shadowColor: '#E53935',
-    shadowOffset: {width: 0, height: 4},
-    shadowOpacity: 0.4,
-    shadowRadius: 8,
-    elevation: 6,
-  },
-  kofiIcon: {
-    width: 20,
-    height: 20,
-    tintColor: '#FFFFFF',
-  },
-  kofiText: {
-    color: '#FFFFFF',
-  },
-
-  // ── Quality Modal ────────────────────────────────────────────────────
-  modalBackdrop: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: Colors.dark.overlay,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  modalCard: {
-    backgroundColor: Colors.dark.surface,
-    borderRadius: RADIUS.lg,
-    padding: SPACING.xl,
-    width: 280,
-    borderWidth: 1,
-    borderColor: Colors.dark.border,
-    elevation: 16,
-    shadowColor: '#000000',
-    shadowOffset: {width: 0, height: 8},
-    shadowOpacity: 0.5,
-    shadowRadius: 24,
-  },
-  modalTitle: {
-    color: Colors.dark.text,
-    textAlign: 'center',
-    marginBottom: SPACING.md,
-  },
-  modalOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: SPACING.md,
-    paddingHorizontal: SPACING.md,
-    borderRadius: RADIUS.sm,
-    marginBottom: SPACING.xs,
-  },
-  modalOptionActive: {
-    backgroundColor: `${Colors.dark.primary}20`,
-    borderWidth: 1,
-    borderColor: `${Colors.dark.primary}60`,
-  },
-  modalOptionText: {
-    color: Colors.dark.textSecondary,
-  },
-  modalOptionTextActive: {
-    color: Colors.dark.primary,
-    fontWeight: '700',
-  },
-  modalCheck: {
-    width: 20,
-    height: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  modalCheckIcon: {
-    width: 16,
-    height: 16,
-    tintColor: Colors.dark.primary,
-  },
-});
