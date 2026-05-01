@@ -341,7 +341,7 @@ export const DetailsScreen: React.FC = () => {
 
         {/* ── Title box ── */}
         <View style={S.titleBox}>
-          <Text style={S.title} numberOfLines={4}>{item.Title}</Text>
+          <Text style={S.title} numberOfLines={4}>{item.Title}{year ? ` (${year})` : ''}</Text>
         </View>
 
         {/* ── Poster with corner badges ── */}
@@ -410,7 +410,7 @@ export const DetailsScreen: React.FC = () => {
         {/* ── Episode/Season count badges (series/anime) ── */}
         {isEpisodic && (totalSeasons > 0 || totalEps > 0) && (
           <View style={S.countRow}>
-            {totalSeasons > 1 ? (
+            {totalSeasons >= 1 ? (
               <View style={S.countBadge}>
                 <Text style={S.countBadgeText}>{totalSeasons} {t('seasons')}</Text>
               </View>
@@ -426,12 +426,12 @@ export const DetailsScreen: React.FC = () => {
         {/* ── Action buttons ── */}
         <View style={S.actions}>
           <TouchableOpacity
-            style={[S.playBtn, extracting && S.playBtnBusy]}
+            style={[S.playBtn, (extracting || extractingEp) && S.playBtnBusy]}
             onPress={isEpisodic ? undefined : handlePlay}
-            disabled={extracting && !isEpisodic}
+            disabled={!!extracting || !!extractingEp}
             activeOpacity={0.84}
           >
-            {extracting && !isEpisodic ? (
+            {(extracting && !isEpisodic) ? (
               <>
                 <ActivityIndicator color="#fff" size="small" />
                 <Text style={S.playBtnTxt} numberOfLines={1}>{STATUS_MSGS[statusIdx]}</Text>
@@ -440,7 +440,7 @@ export const DetailsScreen: React.FC = () => {
               <>
                 <Image source={require('../../assets/icons/clapboard.png')} style={{width: 18, height: 18, tintColor: '#fff'}} />
                 <Text style={S.playBtnTxt}>
-                  {isEpisodic ? t('select_episode') : t('play')}
+                  {isEpisodic ? t('play_first_episode') : t('play')}
                 </Text>
               </>
             )}
@@ -507,8 +507,8 @@ export const DetailsScreen: React.FC = () => {
               <Text style={S.epsTitle}>{t('episodes')}</Text>
               {loadingEps && <ActivityIndicator size="small" color={Colors.dark.primary} style={{marginLeft: 8}} />}
 
-              {/* Season picker button */}
-              {seasonKeys.length > 1 && (
+              {/* Season picker button — always show when we have seasons */}
+              {seasonKeys.length >= 1 && (
                 <TouchableOpacity
                   style={S.seasonBtn}
                   onPress={() => setShowSeasonDlg(true)}
@@ -583,6 +583,29 @@ export const DetailsScreen: React.FC = () => {
           </View>
         )}
       </ScrollView>
+
+      {/* ── Full-screen extracting overlay (movie OR episode) ── */}
+      {(extracting || extractingEp) && (
+        <View style={S.extractOverlay}>
+          <View style={S.extractCard}>
+            <ActivityIndicator size="large" color={Colors.dark.primary} />
+            <Text style={S.extractStatus} numberOfLines={2}>
+              {STATUS_MSGS[statusIdx]}
+            </Text>
+            <TouchableOpacity
+              style={S.extractCancel}
+              onPress={() => {
+                stopStatusTimer();
+                setExtracting(false);
+                setExtractingEp(null);
+                setExtractError(t('video_unavailable'));
+              }}
+            >
+              <Text style={S.extractCancelTxt}>{t('cancel')}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
 
       {/* ── Season picker modal (bottom sheet) ── */}
       <Modal
@@ -732,6 +755,46 @@ const S = StyleSheet.create({
 
   noEpsWrap:       {alignItems: 'center', paddingVertical: 24, gap: 8},
   noEpsTxt:        {color: Colors.dark.textMuted, fontSize: 14, fontFamily: 'Rubik'},
+
+  // Extracting overlay (full-screen)
+  extractOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.75)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  extractCard: {
+    backgroundColor: Colors.dark.surface,
+    borderRadius: 20,
+    padding: 28,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
+    gap: 14,
+    minWidth: 220,
+  },
+  extractStatus: {
+    color: Colors.dark.textSecondary,
+    fontSize: 14,
+    fontFamily: 'Rubik',
+    textAlign: 'center',
+  },
+  extractCancel: {
+    marginTop: 6,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: `${Colors.dark.error}20`,
+    borderWidth: 1,
+    borderColor: `${Colors.dark.error}40`,
+  },
+  extractCancelTxt: {
+    color: Colors.dark.error,
+    fontSize: 14,
+    fontWeight: '600',
+    fontFamily: 'Rubik',
+  },
 
   // Season modal
   modalBg:         {flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end'},

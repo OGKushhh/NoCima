@@ -91,9 +91,28 @@ export const PlayerScreen: React.FC = () => {
 
   const handleError = (err: any) => {
     console.error('[Player] Video error:', err?.error?.errorString || err?.error || err);
-    setError(t('video_unavailable'));
+    const msg = err?.error?.errorString || '';
+    // CDNs sometimes return 403 when headers are wrong
+    if (msg.includes('403') || msg.includes('Forbidden')) {
+      setError(t('video_unavailable'));
+    } else {
+      setError(t('video_unavailable'));
+    }
     setBuffering(false);
   };
+
+  // Auto-retry on error after 3 seconds
+  const retryTimer = useRef<ReturnType<typeof setTimeout>>();
+  useEffect(() => {
+    if (error) {
+      retryTimer.current = setTimeout(() => {
+        setError(null);
+        setBuffering(true);
+        videoRef.current?.seek(0);
+      }, 3000);
+    }
+    return () => clearTimeout(retryTimer.current);
+  }, [error]);
 
   const formatTime = (seconds: number) => {
     const h = Math.floor(seconds / 3600);
@@ -140,7 +159,7 @@ export const PlayerScreen: React.FC = () => {
         <Icon name="alert-circle-outline" size={56} color={Colors.dark.error} />
         <Text style={styles.errorText}>{error}</Text>
         <TouchableOpacity style={styles.errorButton} onPress={() => navigation.goBack()}>
-          <Text style={styles.errorButtonText}>{t('retry')}</Text>
+          <Text style={styles.errorButtonText}>{t('go_back')}</Text>
         </TouchableOpacity>
       </View>
     );
@@ -172,21 +191,21 @@ export const PlayerScreen: React.FC = () => {
           playWhenInactive={false}
           paused={!playing}
           style={styles.video}
-          minLoadRetryCount={5}
+          minLoadRetryCount={3}
           maxBitRate={selectedQuality.bitrate || 0}
-          // Reliable buffer settings for CDN streams
+          // FAST buffer — start playing ASAP, don't wait forever
           bufferConfig={{
-            minBufferMs: 15000,
-            maxBufferMs: 60000,
-            bufferForPlaybackMs: 3000,
-            bufferForPlaybackAfterRebufferMs: 8000,
+            minBufferMs: 2000,
+            maxBufferMs: 15000,
+            bufferForPlaybackMs: 1000,
+            bufferForPlaybackAfterRebufferMs: 3000,
           }}
         />
 
         {buffering && (
           <View style={styles.bufferingOverlay}>
             <ActivityIndicator size="large" color={Colors.dark.primary} />
-            <Text style={styles.bufferingText}>Loading...</Text>
+            <Text style={styles.bufferingText}>{t('loading')}</Text>
           </View>
         )}
       </TouchableOpacity>

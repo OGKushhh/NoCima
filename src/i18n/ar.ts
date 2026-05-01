@@ -14,6 +14,7 @@ export const ar = {
   download: 'تحميل',
   pause: 'إيقاف مؤقت',
   resume: 'استئناف',
+  go_back: 'عودة',
   cancel: 'إلغاء',
   delete: 'حذف',
   quality: 'الجودة',

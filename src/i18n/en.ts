@@ -14,6 +14,7 @@ export const en = {
   download: 'Download',
   pause: 'Pause',
   resume: 'Resume',
+  go_back: 'Go Back',
   cancel: 'Cancel',
   delete: 'Delete',
   quality: 'Quality',

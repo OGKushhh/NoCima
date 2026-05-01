@@ -271,6 +271,22 @@ export const HomeScreen: React.FC = () => {
         </TouchableOpacity>
       </View>
 
+      {/* Category filter tabs */}
+      <View style={styles.filterRow}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterScroll}>
+          {ALL_CATEGORIES.map(cat => (
+            <TouchableOpacity
+              key={cat}
+              style={styles.filterChip}
+              onPress={() => goToCategory(cat)}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.filterChipText}>{t(cat)}</Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      </View>
+
       <FlatList
         data={[]}
         ListHeaderComponent={
@@ -327,7 +343,11 @@ const styles = StyleSheet.create({
   container:   {flex: 1, backgroundColor: Colors.dark.background},
   topBar:      {flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 18, paddingBottom: 8},
   appName:     {color: Colors.dark.primary, fontSize: 26, fontWeight: '900', fontFamily: 'Rubik', letterSpacing: 0.3},
-  searchBtn:   {width: 40, height: 40, borderRadius: 20, backgroundColor: Colors.dark.surface, justifyContent: 'center', alignItems: 'center'},
+  searchBtn:   {width: 40, height: 40, borderRadius: 20, backgroundColor: Colors.dark.surface, justifyContent: 'center', alignItems: 'center},
+  filterRow:   {paddingHorizontal: 14, paddingBottom: 10},
+  filterScroll:{gap: 8, paddingRight: 14},
+  filterChip:  {backgroundColor: Colors.dark.surface, paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20, borderWidth: 1, borderColor: Colors.dark.border},
+  filterChipText: {color: Colors.dark.text, fontSize: 12.5, fontWeight: '600', fontFamily: 'Rubik'},
   searchHeader:{paddingHorizontal: 14, paddingBottom: 6},
   section:     {marginBottom: 6},
   hList:       {paddingLeft: 14, paddingRight: 14},
