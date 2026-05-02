@@ -1,19 +1,14 @@
 /**
  * DetailsScreen — Full metadata + episode indexer + season selector
  *
- * Merge of Claude's episode UI with our bug fixes:
- *   - recordPlay() called WITHOUT .catch() (it's sync)
- *   - Title in visible styled box
- *   - Poster corner badges (category + quality) using Image icons (not emoji)
- *   - Season picker modal (bottom sheet)
- *   - Episode indexer with numbered circles + play buttons
- *   - All metadata fields in info table
- *   - buildFaselUrl for reliable URL construction
- *   - Localized genres via localizeGenres()
+ * Uses on-device WebView extraction (VideoExtractor) instead of
+ * server-side extraction. This is required because the CDN (scdns.io)
+ * signs m3u8 URLs to the requesting IP — server-side extraction
+ * produces URLs that 403 when played from a phone.
  *
  * Play flow:
- *   Movies:   buildFaselUrl(id) → POST /extract → Player
- *   Episodes: episode URL directly → POST /extract → Player
+ *   Movies:   page URL → VideoExtractor (WebView) → intercept m3u8 → Player
+ *   Episodes: episode URL → VideoExtractor (WebView) → intercept m3u8 → Player
  */
 
 import React, {useState, useCallback, useMemo, useEffect, useRef} from 'react';
@@ -27,12 +22,12 @@ import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import FastImage from 'react-native-fast-image';
 import axios from 'axios';
 import {ContentItem} from '../types';
-import {extractVideoUrl} from '../services/api';
 import {recordPlay} from '../services/viewService';
 import {Colors} from '../theme/colors';
 import {useTranslation} from 'react-i18next';
 import {localizeGenres} from '../i18n/genres';
 import {API_BASE} from '../constants/endpoints';
+import {VideoExtractor} from '../components/VideoExtractor';
 
 const FASEL_BASE = 'https://www.fasel-hd.cam';
 
@@ -42,7 +37,7 @@ const POSTER_H = POSTER_W * 1.52;
 
 const STATUS_MSGS = [
   'Connecting to server…',
-  'Fetching page…',
+  'Loading page…',
   'Extracting stream…',
   'Almost there…',
 ];
@@ -125,7 +120,13 @@ export const DetailsScreen: React.FC = () => {
   const [extracting, setExtracting] = useState(false);
   const [statusIdx, setStatusIdx] = useState(0);
   const [extractError, setExtractError] = useState<string | null>(null);
-  const [extractingEp, setExtractingEp] = useState<string | null>(null);
+  const [extractingEpUrl, setExtractingEpUrl] = useState<string | null>(null);
+
+  // WebView extractor state
+  const [extractorUrl, setExtractorUrl] = useState<string | null>(null);
+  const extractorTitleRef = useRef<string>('');
+  // Tracks the last play request so the error-banner retry button works for both movies and episodes
+  const lastPlayRef = useRef<{url: string; title: string} | null>(null);
 
   // Episode state
   const [epData, setEpData] = useState<any>(null);
@@ -264,56 +265,66 @@ export const DetailsScreen: React.FC = () => {
   };
   const stopStatusTimer = () => clearInterval(statusTimer.current);
 
-  // ── Play movie ────────────────────────────────────────────────────
-  const handlePlay = useCallback(async () => {
+  // ── WebView extraction callbacks ──────────────────────────────────
+  const handleExtracted = useCallback((m3u8Url: string) => {
+    stopStatusTimer();
+    setExtractorUrl(null);
+    setExtracting(false);
+    setExtractingEpUrl(null);
+    recordPlay(item.id, category);
+    nav.navigate('Player', {
+      url: m3u8Url,
+      title: extractorTitleRef.current,
+      contentId: item.id,
+      category,
+    });
+  }, [item.id, category, nav]);
+
+  const handleExtractError = useCallback(() => {
+    stopStatusTimer();
+    setExtractorUrl(null);
+    setExtracting(false);
+    setExtractingEpUrl(null);
+    setExtractError(t('video_unavailable'));
+  }, [t]);
+
+  // ── Shared extraction launcher ────────────────────────────────────
+  const startExtraction = useCallback((url: string, title: string, epUrl?: string) => {
     setExtracting(true);
     setExtractError(null);
     startStatusTimer();
-    try {
-      const url = `${FASEL_BASE}/?p=${item.id}`;
-      const result = await extractVideoUrl(url);
-      stopStatusTimer();
-      setExtracting(false);
-      // recordPlay is sync — do NOT .catch()
-      recordPlay(item.id, category);
-      nav.navigate('Player', {
-        url: result.video_url,
-        qualities: result.quality_options,
-        title: item.Title,
-        contentId: item.id,
-        category,
-      });
-    } catch (err: any) {
-      stopStatusTimer();
-      setExtractError(err.message || t('server_error'));
-      setExtracting(false);
-    }
-  }, [item, category, nav, t]);
+    extractorTitleRef.current = title;
+    lastPlayRef.current = {url, title};
+    if (epUrl !== undefined) setExtractingEpUrl(epUrl);
+    setExtractorUrl(url);
+  }, []);
 
-  // ── Play episode ──────────────────────────────────────────────────
-  const handlePlayEpisode = useCallback(async (epUrl: string, epNum: number) => {
-    setExtractingEp(epUrl);
-    setExtractError(null);
-    startStatusTimer();
-    try {
-      const result = await extractVideoUrl(epUrl);
-      stopStatusTimer();
-      setExtractingEp(null);
-      // recordPlay is sync — do NOT .catch()
-      recordPlay(item.id, category);
-      nav.navigate('Player', {
-        url: result.video_url,
-        qualities: result.quality_options,
-        title: `${item.Title} - ${t('season')} ${selSeason} ${t('episode')} ${epNum}`,
-        contentId: item.id,
-        category,
-      });
-    } catch (err: any) {
-      stopStatusTimer();
-      setExtractError(err.message || t('server_error'));
-      setExtractingEp(null);
-    }
-  }, [item, category, selSeason, nav, t]);
+  // ── Play movie (on-device extraction) ────────────────────────────
+  const handlePlay = useCallback(() => {
+    startExtraction(`${FASEL_BASE}/?p=${item.id}`, item.Title);
+  }, [item.id, item.Title, startExtraction]);
+
+  // ── Play first episode of current season ─────────────────────────
+  const handlePlayFirst = useCallback(() => {
+    if (!currentEps.length) return;
+    const epUrl = currentEps[0];
+    const title = `${item.Title} - ${t('season')} ${selSeason} ${t('episode')} 1`;
+    startExtraction(epUrl, title, epUrl);
+  }, [currentEps, item.Title, selSeason, t, startExtraction]);
+
+  // ── Play episode (on-device extraction) ──────────────────────────
+  const handlePlayEpisode = useCallback((epUrl: string, epNum: number) => {
+    const title = `${item.Title} - ${t('season')} ${selSeason} ${t('episode')} ${epNum}`;
+    startExtraction(epUrl, title, epUrl);
+  }, [item.Title, selSeason, t, startExtraction]);
+
+  // ── Retry last extraction ─────────────────────────────────────────
+  const handleRetry = useCallback(() => {
+    if (!lastPlayRef.current) return;
+    const {url, title} = lastPlayRef.current;
+    const isEp = !url.includes('/?p=');
+    startExtraction(url, title, isEp ? url : undefined);
+  }, [startExtraction]);
 
   const handleShare = () =>
     Share.share({message: `${item.Title} - AbdoBest`});
@@ -426,12 +437,12 @@ export const DetailsScreen: React.FC = () => {
         {/* ── Action buttons ── */}
         <View style={S.actions}>
           <TouchableOpacity
-            style={[S.playBtn, (extracting || extractingEp) && S.playBtnBusy]}
-            onPress={isEpisodic ? undefined : handlePlay}
-            disabled={!!extracting || !!extractingEp}
+            style={[S.playBtn, (extracting || (isEpisodic && loadingEps)) && S.playBtnBusy]}
+            onPress={isEpisodic ? handlePlayFirst : handlePlay}
+            disabled={extracting || (isEpisodic && loadingEps)}
             activeOpacity={0.84}
           >
-            {(extracting && !isEpisodic) ? (
+            {extracting && !isEpisodic ? (
               <>
                 <ActivityIndicator color="#fff" size="small" />
                 <Text style={S.playBtnTxt} numberOfLines={1}>{STATUS_MSGS[statusIdx]}</Text>
@@ -456,7 +467,7 @@ export const DetailsScreen: React.FC = () => {
         {extractError ? (
           <View style={S.errBanner}>
             <Text style={S.errTxt} numberOfLines={3}>{extractError}</Text>
-            <TouchableOpacity style={S.retryBtn} onPress={() => handlePlay()}>
+            <TouchableOpacity style={S.retryBtn} onPress={handleRetry}>
               <Image source={require('../../assets/icons/undoreturn.png')} style={{width: 14, height: 14, tintColor: Colors.dark.primary}} />
               <Text style={S.retryTxt}>{t('retry')}</Text>
             </TouchableOpacity>
@@ -538,13 +549,13 @@ export const DetailsScreen: React.FC = () => {
               <ActivityIndicator color={Colors.dark.primary} style={{margin: 20}} />
             ) : currentEps.length > 0 ? (
               currentEps.map((epUrl, idx) => {
-                const isExtractingThis = extractingEp === epUrl;
+                const isExtractingThis = extractingEpUrl === epUrl;
                 return (
                   <TouchableOpacity
                     key={`ep-${selSeason}-${idx}`}
                     style={[S.epRow, isExtractingThis && S.epRowDisabled]}
                     onPress={() => handlePlayEpisode(epUrl, idx + 1)}
-                    disabled={!!extractingEp}
+                    disabled={extracting}
                     activeOpacity={0.75}
                   >
                     {/* Episode number circle */}
@@ -584,8 +595,17 @@ export const DetailsScreen: React.FC = () => {
         )}
       </ScrollView>
 
-      {/* ── Full-screen extracting overlay (movie OR episode) ── */}
-      {(extracting || extractingEp) && (
+      {/* ── On-device WebView extractor (hidden 1×1) ── */}
+      {extractorUrl && (
+        <VideoExtractor
+          pageUrl={extractorUrl}
+          onExtracted={handleExtracted}
+          onError={handleExtractError}
+        />
+      )}
+
+      {/* ── Full-screen extracting overlay ── */}
+      {extracting && (
         <View style={S.extractOverlay}>
           <View style={S.extractCard}>
             <ActivityIndicator size="large" color={Colors.dark.primary} />
@@ -597,7 +617,8 @@ export const DetailsScreen: React.FC = () => {
               onPress={() => {
                 stopStatusTimer();
                 setExtracting(false);
-                setExtractingEp(null);
+                setExtractingEpUrl(null);
+                setExtractorUrl(null);
                 setExtractError(t('video_unavailable'));
               }}
             >
