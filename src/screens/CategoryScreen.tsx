@@ -2,8 +2,8 @@
  * CategoryScreen (Browse)
  *
  * Features:
- *   - Category tabs at top
- *   - Deep search filter popup (genre, quality, country, sort)
+ *   - Search bar with filter button
+ *   - Filter popup: category tabs + genre + sort
  *   - Grid of movie cards
  *   - Search within category (debounced for performance)
  *   - Items capped at 200 for smooth scrolling
@@ -46,13 +46,11 @@ const MovieCardItem = memo<{item: ContentItem; onPress: (item: ContentItem) => v
 );
 MovieCardItem.displayName = 'MovieCardItem';
 
-// Sort options
 const SORT_OPTIONS = [
-  {key: 'default', labelKey: 'all'},
-  {key: 'az', labelKey: 'sort_az'},
-  {key: 'za', labelKey: 'sort_za'},
   {key: 'year_desc', labelKey: 'sort_newest'},
   {key: 'year_asc', labelKey: 'sort_oldest'},
+  {key: 'az', labelKey: 'sort_az'},
+  {key: 'za', labelKey: 'sort_za'},
   {key: 'rating_desc', labelKey: 'sort_top_rated'},
 ];
 
@@ -79,7 +77,7 @@ export const CategoryScreen: React.FC = () => {
   const [selectedGenre, setSelectedGenre] = useState<string | null>(null);
   const [selectedSort, setSelectedSort] = useState('year_desc');
 
-  // Debounce search input — don't filter 1000+ items on every keystroke
+  // Debounce search input
   useEffect(() => {
     if (searchTimer.current) clearTimeout(searchTimer.current);
     searchTimer.current = setTimeout(() => setDebouncedQuery(searchQuery), 300);
@@ -128,11 +126,18 @@ export const CategoryScreen: React.FC = () => {
     navigation.navigate('Details', {item});
   }, [navigation]);
 
-  // ── Apply all filters (uses debouncedQuery) ──────────────────────
+  const handleCategorySelect = useCallback((cat: string) => {
+    setSelectedCategory(cat);
+    setSelectedGenre(null);
+    setSelectedSort('year_desc');
+    setSearchQuery('');
+    setDebouncedQuery('');
+  }, []);
+
+  // ── Apply all filters ──────────────────────────────────────────────
   const filteredItems = useMemo(() => {
     let result = items;
 
-    // Text search (debounced)
     if (debouncedQuery.trim()) {
       const q = debouncedQuery.toLowerCase();
       result = result.filter(item =>
@@ -143,7 +148,6 @@ export const CategoryScreen: React.FC = () => {
       );
     }
 
-    // Genre filter
     if (selectedGenre) {
       const cleanGenre = selectedGenre.replace(/^[\p{Emoji}\s]+/u, '').trim();
       result = result.filter(item =>
@@ -152,7 +156,6 @@ export const CategoryScreen: React.FC = () => {
       );
     }
 
-    // Sort
     switch (selectedSort) {
       case 'az':
         result = [...result].sort((a, b) => (a.Title || '').localeCompare(b.Title || ''));
@@ -186,7 +189,7 @@ export const CategoryScreen: React.FC = () => {
     return result;
   }, [items, debouncedQuery, selectedGenre, selectedSort]);
 
-  // ── Collect unique genres from loaded items ──────────────────────
+  // ── Collect unique genres ─────────────────────────────────────────
   const availableGenres = useMemo(() => {
     const genreSet = new Set<string>();
     items.forEach(item => {
@@ -201,7 +204,7 @@ export const CategoryScreen: React.FC = () => {
     : t(selectedCategory);
 
   const activeFilterCount = (selectedGenre ? 1 : 0) + (selectedSort !== 'year_desc' ? 1 : 0);
-  const clearFilters = () => { setSelectedGenre(null); setSelectedSort('year_desc'); setSearchQuery(''); setDebouncedQuery(''); };
+  const clearFilters = () => { setSelectedGenre(null); setSelectedSort('year_desc'); };
 
   return (
     <View style={styles.container}>
@@ -215,47 +218,9 @@ export const CategoryScreen: React.FC = () => {
           </TouchableOpacity>
         )}
         <Text style={styles.headerTitle}>{screenTitle}</Text>
-        <TouchableOpacity
-          style={[styles.filterBtn, activeFilterCount > 0 && styles.filterBtnActive]}
-          onPress={() => setShowFilterPopup(true)}
-        >
-          <Image source={require('../../assets/icons/search.png')} style={[styles.headerIcon, {tintColor: activeFilterCount > 0 ? Colors.dark.primary : Colors.dark.textSecondary}]} />
-          {activeFilterCount > 0 && (
-            <View style={styles.filterBadge}>
-              <Text style={styles.filterBadgeText}>{activeFilterCount}</Text>
-            </View>
-          )}
-        </TouchableOpacity>
       </View>
 
-      {/* Category horizontal scroll */}
-      <FlatList
-        data={CATEGORIES}
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        keyExtractor={c => c.key}
-        contentContainerStyle={styles.categoryList}
-        renderItem={({item: cat}) => (
-          <TouchableOpacity
-            style={[styles.categoryChip, selectedCategory === cat.key && styles.categoryChipActive]}
-            onPress={() => {
-              setSelectedCategory(cat.key);
-              setSelectedGenre(null);
-              setSelectedSort('year_desc');
-              setSearchQuery('');
-              setDebouncedQuery('');
-            }}
-          >
-            <Text
-              style={[styles.categoryChipText, selectedCategory === cat.key && styles.categoryChipTextActive]}
-            >
-              {lang === 'ar' ? cat.labelAr : cat.labelEn}
-            </Text>
-          </TouchableOpacity>
-        )}
-      />
-
-      {/* Search */}
+      {/* Search bar + filter button */}
       <View style={styles.searchRow}>
         <Image source={require('../../assets/icons/search.png')} style={[styles.searchIcon, {tintColor: Colors.dark.textMuted}]} />
         <TextInput
@@ -266,13 +231,24 @@ export const CategoryScreen: React.FC = () => {
           onChangeText={setSearchQuery}
         />
         {searchQuery.length > 0 && (
-          <TouchableOpacity onPress={() => { setSearchQuery(''); setDebouncedQuery(''); }}>
+          <TouchableOpacity onPress={() => { setSearchQuery(''); setDebouncedQuery(''); }} style={styles.clearBtn}>
             <Text style={{fontSize: 18, color: Colors.dark.textMuted, fontWeight: '700'}}>&times;</Text>
           </TouchableOpacity>
         )}
+        <TouchableOpacity
+          style={[styles.filterBtn, activeFilterCount > 0 && styles.filterBtnActive]}
+          onPress={() => setShowFilterPopup(true)}
+        >
+          <Image source={require('../../assets/icons/setting.png')} style={[styles.filterBtnIcon, {tintColor: activeFilterCount > 0 ? Colors.dark.primary : Colors.dark.textSecondary}]} />
+          {activeFilterCount > 0 && (
+            <View style={styles.filterBadge}>
+              <Text style={styles.filterBadgeText}>{activeFilterCount}</Text>
+            </View>
+          )}
+        </TouchableOpacity>
       </View>
 
-      {/* Active filters indicator */}
+      {/* Active filters chips */}
       {activeFilterCount > 0 && (
         <View style={styles.activeFiltersRow}>
           {selectedGenre && (
@@ -317,7 +293,7 @@ export const CategoryScreen: React.FC = () => {
         />
       )}
 
-      {/* ── Deep Filter Popup ── */}
+      {/* ── Filter Popup (Categories + Sort + Genre) ── */}
       <Modal
         visible={showFilterPopup}
         transparent
@@ -338,18 +314,21 @@ export const CategoryScreen: React.FC = () => {
               </TouchableOpacity>
             </View>
 
-            {/* Search input in popup */}
-            <View style={styles.popupSearchRow}>
-              <Image source={require('../../assets/icons/search.png')} style={[styles.searchIcon, {tintColor: Colors.dark.textMuted}]} />
-              <TextInput
-                style={styles.searchInput}
-                placeholder={t('search_placeholder')}
-                placeholderTextColor={Colors.dark.textMuted}
-                value={searchQuery}
-                onChangeText={setSearchQuery}
-                autoFocus
-              />
-            </View>
+            {/* Category selection */}
+            <Text style={styles.filterSectionTitle}>{t('browse')}</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterOptionsRow}>
+              {CATEGORIES.map(cat => (
+                <TouchableOpacity
+                  key={cat.key}
+                  style={[styles.filterOptionChip, selectedCategory === cat.key && styles.categoryChipActive]}
+                  onPress={() => { handleCategorySelect(cat.key); }}
+                >
+                  <Text style={[styles.filterOptionText, selectedCategory === cat.key && styles.categoryChipTextActive]}>
+                    {lang === 'ar' ? cat.labelAr : cat.labelEn}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
 
             {/* Sort */}
             <Text style={styles.filterSectionTitle}>{t('sort_by') || 'Sort'}</Text>
@@ -443,10 +422,41 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     fontFamily: 'Rubik',
   },
-  filterBtn: {
-    width: 40, height: 40,
-    borderRadius: 20,
+
+  // Search bar row
+  searchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 16,
+    marginBottom: 8,
     backgroundColor: Colors.dark.surface,
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 2,
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
+    gap: 4,
+  },
+  searchIcon: {
+    width: 18,
+    height: 18,
+  },
+  searchInput: {
+    flex: 1,
+    color: Colors.dark.text,
+    fontSize: 14,
+    paddingVertical: 10,
+    fontFamily: 'Rubik',
+  },
+  clearBtn: {
+    paddingHorizontal: 4,
+  },
+
+  // Filter button inside search bar
+  filterBtn: {
+    width: 36, height: 36,
+    borderRadius: 10,
+    backgroundColor: Colors.dark.background,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
@@ -456,82 +466,25 @@ const styles = StyleSheet.create({
     borderColor: Colors.dark.primary,
     backgroundColor: `${Colors.dark.primary}20`,
   },
+  filterBtnIcon: {
+    width: 18, height: 18,
+  },
   filterBadge: {
     position: 'absolute',
-    top: -2, right: -2,
+    top: -4, right: -4,
     backgroundColor: Colors.dark.primary,
-    width: 18, height: 18,
-    borderRadius: 9,
+    width: 16, height: 16,
+    borderRadius: 8,
     justifyContent: 'center',
     alignItems: 'center',
   },
   filterBadgeText: {
     color: '#fff',
-    fontSize: 10,
+    fontSize: 9,
     fontWeight: '700',
   },
-  categoryList: {
-    paddingHorizontal: 14,
-    paddingBottom: 10,
-    gap: 8,
-  },
-  categoryChip: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: Colors.dark.surface,
-    borderWidth: 1,
-    borderColor: Colors.dark.border,
-    marginRight: 8,
-  },
-  categoryChipActive: {
-    backgroundColor: Colors.dark.primary,
-    borderColor: Colors.dark.primary,
-  },
-  categoryChipText: {
-    color: Colors.dark.textSecondary,
-    fontSize: 13,
-    fontWeight: '600',
-    fontFamily: 'Rubik',
-  },
-  categoryChipTextActive: {
-    color: '#fff',
-  },
-  searchRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginHorizontal: 16,
-    marginBottom: 8,
-    backgroundColor: Colors.dark.surface,
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 2,
-    borderWidth: 1,
-    borderColor: Colors.dark.border,
-  },
-  popupSearchRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.dark.background,
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 2,
-    borderWidth: 1,
-    borderColor: Colors.dark.border,
-    marginBottom: 16,
-  },
-  searchIcon: {
-    width: 18,
-    height: 18,
-    marginRight: 8,
-  },
-  searchInput: {
-    flex: 1,
-    color: Colors.dark.text,
-    fontSize: 14,
-    paddingVertical: 10,
-    fontFamily: 'Rubik',
-  },
+
+  // Active filter chips
   activeFiltersRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -566,6 +519,8 @@ const styles = StyleSheet.create({
     fontFamily: 'Rubik',
     marginLeft: 4,
   },
+
+  // Grid
   grid: {
     paddingHorizontal: 14,
     paddingTop: 4,
@@ -575,7 +530,7 @@ const styles = StyleSheet.create({
     gap: 12,
   },
 
-  // Filter popup styles
+  // ── Filter popup ──
   filterOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.65)',
@@ -586,7 +541,7 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     padding: 20,
-    maxHeight: '75%',
+    maxHeight: '80%',
     borderWidth: 1,
     borderColor: Colors.dark.border,
     borderBottomWidth: 0,
@@ -641,6 +596,13 @@ const styles = StyleSheet.create({
   filterOptionTextActive: {
     color: Colors.dark.primary,
     fontWeight: '600',
+  },
+  categoryChipActive: {
+    backgroundColor: Colors.dark.primary,
+    borderColor: Colors.dark.primary,
+  },
+  categoryChipTextActive: {
+    color: '#fff',
   },
   filterFooter: {
     flexDirection: 'row',
