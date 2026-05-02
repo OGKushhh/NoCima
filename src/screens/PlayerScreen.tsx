@@ -6,10 +6,7 @@ import {
 import Video, {
   VideoRef,
   OnProgressData,
-  ResizeMode,
   OnBufferData,
-  SelectedVideoTrackType,
-  SelectedTrack,
 } from 'react-native-video';
 import {useRoute, useNavigation} from '@react-navigation/native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
@@ -150,14 +147,6 @@ export const PlayerScreen: React.FC = () => {
     }
   };
 
-  const getSelectedVideoTrack = (): SelectedTrack => {
-    if (qualityLevel === 'auto') {
-      return {type: SelectedVideoTrackType.Auto};
-    }
-    const res = parseInt(qualityLevel, 10);
-    return {type: SelectedVideoTrackType.Resolution, value: res};
-  };
-
   const handleQualityChange = (quality: QualityLevel) => {
     setQualityLevel(quality);
     setShowQualityPicker(false);
@@ -207,7 +196,7 @@ export const PlayerScreen: React.FC = () => {
         <Video
           ref={videoRef}
           source={{uri: url, type: 'm3u8'}}
-          resizeMode={ResizeMode.CONTAIN}
+          resizeMode="contain"
           onProgress={handleProgress}
           onLoad={handleLoad}
           onBuffer={handleBuffer}
@@ -217,7 +206,6 @@ export const PlayerScreen: React.FC = () => {
           playWhenInactive={false}
           paused={!playing}
           style={styles.video}
-          selectedVideoTrack={getSelectedVideoTrack()}
           preventsDisplaySleepDuringVideoPlayback={true}
           minLoadRetryCount={3}
           maxBitRate={qualityLevel === 'auto' ? 0 : qualityLevel === '1080' ? 8000000 : qualityLevel === '720' ? 5000000 : qualityLevel === '480' ? 2500000 : 1500000}

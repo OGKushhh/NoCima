@@ -1,5 +1,5 @@
 import React, {useState} from 'react';
-import {View, StyleSheet, Text, TouchableOpacity, Switch, Linking, Alert, ActivityIndicator} from 'react-native';
+import {View, StyleSheet, Text, TouchableOpacity, Switch, Linking, Alert} from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/Ionicons';
 import {Colors} from '../theme/colors';
@@ -118,17 +118,17 @@ export const SettingsScreen: React.FC = () => {
           <SettingRow icon="wifi-outline" label={t('mobile_data_warning')} toggle />
           <SettingRow icon="play-circle-outline" label={t('auto_play')} toggle />
           <TouchableOpacity style={styles.row} onPress={() => {
-            const prefs: (string & {})[] = ['auto', '1080', '720', '480', '360'];
-            const current = prefs.indexOf(settings.playerQuality || 'auto');
+            const prefs = ['auto', 'high', 'medium', 'low'] as const;
+            const current = prefs.indexOf(settings.qualityPreference as any);
             const next = prefs[(current + 1) % prefs.length];
-            updateSetting('playerQuality', next);
+            updateSetting('qualityPreference', next);
           }}>
             <View style={styles.rowIconContainer}>
               <Icon name="options-outline" size={22} color={Colors.dark.primary} />
             </View>
             <Text style={styles.rowLabel}>{t('quality_preference')}</Text>
             <View style={styles.rowRight}>
-              <Text style={styles.rowValue}>{settings.playerQuality === 'auto' ? t('quality_master') : `${settings.playerQuality || 'auto'}p`}</Text>
+              <Text style={styles.rowValue}>{t(`quality_${settings.qualityPreference || 'auto'}`)}</Text>
               <Icon name="chevron-forward" size={20} color={Colors.dark.textMuted} />
             </View>
           </TouchableOpacity>
@@ -191,6 +191,9 @@ export const SettingsScreen: React.FC = () => {
     </View>
   );
 };
+
+// Need ActivityIndicator
+import {ActivityIndicator} from 'react-native';
 
 const styles = StyleSheet.create({
   container: {
