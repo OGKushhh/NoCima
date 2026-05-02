@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   View, StyleSheet, TouchableOpacity, Text,
   ActivityIndicator, StatusBar, Animated, Image,
-  I18nManager, Dimensions, Modal,
+  I18nManager, Dimensions, Modal, GestureResponderEvent, Platform,
 } from 'react-native';
 import Video, { VideoRef, OnProgressData, OnBufferData } from 'react-native-video';
 import { useRoute, useNavigation } from '@react-navigation/native';
@@ -10,7 +10,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import { getSettings, saveSettings } from '../storage';
 import { useWindowDimensions } from 'react-native';
-import { useTheme } from '../hooks/useTheme'; // resolves to useTheme.tsx
+import { useTheme } from '../hooks/useTheme';
+import ImmersiveMode from 'react-native-immersive-mode';
 
 type QualityLevel = 'auto' | '1080' | '720' | '480' | '360';
 
@@ -44,36 +45,57 @@ export const PlayerScreen: React.FC = () => {
     return settings.playerQuality || settings.qualityPreference || 'auto';
   });
   const [seekBarWidth, setSeekBarWidth] = useState(0);
+  const [seekBarX, setSeekBarX] = useState(0);
   const [showQualityPicker, setShowQualityPicker] = useState(false);
   const [seekingBackward, setSeekingBackward] = useState(false);
   const [seekingForward, setSeekingForward] = useState(false);
 
+  const seekBarRef = useRef<View>(null);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const controlsOpacity = useRef(new Animated.Value(1)).current;
+
+  // Hide system navigation bar (Android)
+  const hideSystemUI = useCallback(() => {
+    if (Platform.OS === 'android') {
+      ImmersiveMode.on();
+    }
+  }, []);
+
+  const showSystemUI = useCallback(() => {
+    if (Platform.OS === 'android') {
+      ImmersiveMode.off();
+    }
+  }, []);
 
   useEffect(() => {
     return () => {
       if (hideTimer.current) clearTimeout(hideTimer.current);
+      if (Platform.OS === 'android') ImmersiveMode.off();
     };
   }, []);
 
   const showControlsTemporarily = useCallback(() => {
     setShowControls(true);
     controlsOpacity.setValue(1);
+    showSystemUI(); // show nav bar when controls appear
     if (hideTimer.current) clearTimeout(hideTimer.current);
     hideTimer.current = setTimeout(() => {
       Animated.timing(controlsOpacity, {
         toValue: 0,
         duration: 300,
         useNativeDriver: true,
-      }).start(() => setShowControls(false));
+      }).start(() => {
+        setShowControls(false);
+        if (playing) hideSystemUI(); // re‑hide nav bar when controls disappear and video is playing
+      });
     }, 5000);
-  }, [controlsOpacity]);
+  }, [controlsOpacity, playing, hideSystemUI, showSystemUI]);
 
   const handleVideoTap = () => {
     if (showControls) {
       setShowControls(false);
       if (hideTimer.current) clearTimeout(hideTimer.current);
+      if (playing) hideSystemUI();
     } else {
       showControlsTemporarily();
     }
@@ -84,16 +106,19 @@ export const PlayerScreen: React.FC = () => {
     setDuration(meta.duration);
     setBuffering(false);
     showControlsTemporarily();
+    if (playing) hideSystemUI();
   };
   const handleBuffer = (data: OnBufferData) => setBuffering(data.isBuffering);
   const handleEnd = () => {
     setPlaying(false);
     setShowControls(true);
+    showSystemUI();
   };
   const handleError = (err: any) => {
     console.error('[Player] Video error:', err?.error?.errorString || err?.error || err);
     setError(t('video_unavailable'));
     setBuffering(false);
+    showSystemUI();
   };
 
   const formatTime = (seconds: number) => {
@@ -106,15 +131,23 @@ export const PlayerScreen: React.FC = () => {
 
   const progress = duration > 0 ? currentTime / duration : 0;
 
-  const handleSeekBarPress = (e: any) => {
-    const { locationX } = e.nativeEvent;
-    const barW = seekBarWidth || windowWidth - 32;
-    const seekTime = Math.max(0, Math.min((locationX / barW) * duration, duration));
-    videoRef.current?.seek(seekTime);
+  const handleSeekBarPress = (e: GestureResponderEvent) => {
+    const { pageX } = e.nativeEvent;
+    if (seekBarWidth === 0) return;
+    const relativeX = Math.max(0, Math.min(pageX - seekBarX, seekBarWidth));
+    const seekTime = (relativeX / seekBarWidth) * duration;
+    videoRef.current?.seek(Math.min(Math.max(seekTime, 0), duration));
     setCurrentTime(seekTime);
   };
 
-  const handleSeekBarLayout = (e: any) => setSeekBarWidth(e.nativeEvent.layout.width);
+  const handleSeekBarLayout = () => {
+    if (seekBarRef.current) {
+      seekBarRef.current.measure((x, y, width, height, pageX, pageY) => {
+        setSeekBarWidth(width);
+        setSeekBarX(pageX);
+      });
+    }
+  };
 
   const seekBy = (seconds: number) => {
     const newTime = Math.max(0, Math.min(currentTime + seconds, duration));
@@ -136,7 +169,7 @@ export const PlayerScreen: React.FC = () => {
     const settings = getSettings();
     settings.playerQuality = quality;
     saveSettings(settings);
-    // Actual quality change will be handled by the Video component's maxBitRate prop
+    // Actual quality change will be handled by maxBitRate prop (or via new URL if needed)
   };
 
   const getCurrentQualityLabel = (): string => {
@@ -199,6 +232,7 @@ export const PlayerScreen: React.FC = () => {
               e.stopPropagation();
               setPlaying(true);
               showControlsTemporarily();
+              hideSystemUI();
             }}
           >
             <Image source={require('../../assets/icons/play.png')} style={{ width: 48, height: 48, tintColor: '#fff' }} />
@@ -222,11 +256,16 @@ export const PlayerScreen: React.FC = () => {
       {/* Controls overlay */}
       {showControls && (
         <Animated.View style={[styles.controlsOverlay, { opacity: controlsOpacity }]} pointerEvents="box-none">
-          {/* Top bar */}
+          {/* Top bar with menu icon for quality */}
           <View style={[styles.topControls, { paddingTop: insets.top + 8 }]}>
-            <TouchableOpacity style={styles.topButton} onPress={() => navigation.goBack()}>
-              <Image source={require('../../assets/icons/arrow.png')} style={{ width: 28, height: 28, tintColor: '#fff' }} />
-            </TouchableOpacity>
+            <View style={styles.leftIcons}>
+              <TouchableOpacity style={styles.topButton} onPress={() => navigation.goBack()}>
+                <Image source={require('../../assets/icons/arrow.png')} style={{ width: 28, height: 28, tintColor: '#fff' }} />
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.topButton} onPress={() => setShowQualityPicker(true)}>
+                <Image source={require('../../assets/icons/menu.png')} style={{ width: 28, height: 28, tintColor: '#fff' }} />
+              </TouchableOpacity>
+            </View>
             <Text style={styles.titleText} numberOfLines={1}>{title}</Text>
             <View style={{ width: 40 }} />
           </View>
@@ -235,14 +274,13 @@ export const PlayerScreen: React.FC = () => {
 
           {/* Bottom controls */}
           <View style={[styles.bottomControls, { paddingBottom: insets.bottom + 12 }]}>
-            {/* Seek bar - forced LTR */}
-            <View style={[styles.seekBarContainer, { direction: 'ltr' }]}>
-              <TouchableOpacity
-                style={styles.seekBarTouchable}
-                onPress={handleSeekBarPress}
-                activeOpacity={0.8}
-                onLayout={handleSeekBarLayout}
-              >
+            {/* Seek bar - forced LTR with absolute coordinate measurement */}
+            <View
+              ref={seekBarRef}
+              style={[styles.seekBarContainer, { direction: 'ltr' }]}
+              onLayout={handleSeekBarLayout}
+            >
+              <TouchableOpacity style={styles.seekBarTouchable} onPress={handleSeekBarPress} activeOpacity={0.8}>
                 <View style={[styles.seekBarTrack, { direction: 'ltr', backgroundColor: 'rgba(255,255,255,0.2)' }]}>
                   <View style={[styles.seekBarBuffered, { left: 0, width: '30%' }]} />
                   <View style={[styles.seekBarProgress, { width: `${progress * 100}%`, backgroundColor: colors.primary }]}>
@@ -252,18 +290,15 @@ export const PlayerScreen: React.FC = () => {
               </TouchableOpacity>
             </View>
 
-            {/* Time row */}
-            <View style={styles.timeRow}>
+            {/* Time row (no quality badge anymore) */}
+            <View style={[styles.timeRow, { direction: 'ltr' }]}>
               <Text style={styles.timeText}>{formatTime(currentTime)}</Text>
-              <TouchableOpacity style={[styles.qualityBadge, { backgroundColor: `${colors.primary}30` }]} onPress={() => setShowQualityPicker(true)}>
-                <Text style={[styles.qualityBadgeText, { color: colors.primary }]}>{getCurrentQualityLabel()}</Text>
-              </TouchableOpacity>
               <Text style={styles.timeText}>{formatTime(duration)}</Text>
             </View>
 
-            {/* Playback row with RTL-aware skip icons */}
+            {/* Playback row with RTL icon swap */}
             <View style={styles.playbackRow}>
-              <TouchableOpacity style={styles.seekButton} onPress={() => seekBy(isRTL ? 10 : -10)}>
+              <TouchableOpacity style={styles.seekButton} onPress={() => seekBy(-10)}>
                 <Image
                   source={isRTL ? require('../../assets/icons/skip-forward.png') : require('../../assets/icons/skip-back.png')}
                   style={{ width: 30, height: 30, tintColor: '#fff' }}
@@ -275,6 +310,7 @@ export const PlayerScreen: React.FC = () => {
                 onPress={() => {
                   setPlaying(!playing);
                   showControlsTemporarily();
+                  if (!playing) hideSystemUI(); else showSystemUI();
                 }}
               >
                 <Image
@@ -283,15 +319,11 @@ export const PlayerScreen: React.FC = () => {
                 />
               </TouchableOpacity>
 
-              <TouchableOpacity style={styles.seekButton} onPress={() => seekBy(isRTL ? -10 : 10)}>
+              <TouchableOpacity style={styles.seekButton} onPress={() => seekBy(10)}>
                 <Image
                   source={isRTL ? require('../../assets/icons/skip-back.png') : require('../../assets/icons/skip-forward.png')}
                   style={{ width: 30, height: 30, tintColor: '#fff' }}
                 />
-              </TouchableOpacity>
-
-              <TouchableOpacity style={styles.qualityButton} onPress={() => setShowQualityPicker(true)}>
-                <Image source={require('../../assets/icons/settings.png')} style={{ width: 22, height: 22, tintColor: '#fff' }} />
               </TouchableOpacity>
             </View>
           </View>
@@ -333,9 +365,10 @@ const styles = StyleSheet.create({
   seekFeedback: { position: 'absolute', top: '50%', left: '50%', marginLeft: -60, marginTop: -30, width: 120, alignItems: 'center' },
   seekFeedbackBox: { borderRadius: 24, paddingVertical: 8, paddingHorizontal: 20, flexDirection: 'row', alignItems: 'center', gap: 6 },
   seekFeedbackText: { color: '#fff', fontSize: 16, fontWeight: '600' },
-  topControls: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingBottom: 8, backgroundColor: 'rgba(0,0,0,0.5)' },
-  topButton: { width: 40, height: 40, justifyContent: 'center' },
-  titleText: { flex: 1, color: '#fff', fontSize: 18, fontWeight: '500', marginHorizontal: 8 },
+  topControls: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12, paddingBottom: 8, backgroundColor: 'rgba(0,0,0,0.5)' },
+  leftIcons: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  topButton: { width: 40, height: 40, justifyContent: 'center', alignItems: 'center' },
+  titleText: { flex: 1, color: '#fff', fontSize: 18, fontWeight: '500', marginHorizontal: 8, textAlign: 'center' },
   bottomControls: { paddingHorizontal: 16, paddingTop: 12, backgroundColor: 'rgba(0,0,0,0.5)' },
   seekBarContainer: { width: '100%', marginBottom: 2 },
   seekBarTouchable: { height: 28, justifyContent: 'center' },
@@ -345,12 +378,9 @@ const styles = StyleSheet.create({
   seekBarThumb: { width: 14, height: 14, borderRadius: 7, marginLeft: -7 },
   timeRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
   timeText: { color: 'rgba(255,255,255,0.7)', fontSize: 12, fontVariant: ['tabular-nums'] },
-  qualityBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 },
-  qualityBadgeText: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
   playbackRow: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center' },
   seekButton: { width: 50, height: 50, justifyContent: 'center', alignItems: 'center' },
   playPauseButton: { width: 60, height: 60, borderRadius: 30, justifyContent: 'center', alignItems: 'center', marginHorizontal: 12 },
-  qualityButton: { width: 44, height: 44, justifyContent: 'center', alignItems: 'center', marginLeft: 8 },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
   modalContent: { borderRadius: 16, padding: 20, width: '80%', maxWidth: 300, borderWidth: 1 },
   modalTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 16 },
