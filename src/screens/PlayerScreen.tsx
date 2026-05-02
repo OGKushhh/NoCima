@@ -1,9 +1,9 @@
 import React, {useState, useRef, useEffect, useCallback, useMemo} from 'react';
 import {
   View, StyleSheet, Dimensions, TouchableOpacity, Text,
-  ActivityIndicator, StatusBar, Modal, FlatList, Image,
+  ActivityIndicator, StatusBar, Modal, Image,
 } from 'react-native';
-import Video, {VideoRef, OnProgressData, ResizeMode, OnBufferData} from 'react-native-video';
+import Video, {VideoRef, OnProgressData, OnBufferData} from 'react-native-video';
 import {useRoute, useNavigation} from '@react-navigation/native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {Colors} from '../theme/colors';
@@ -170,7 +170,7 @@ export const PlayerScreen: React.FC = () => {
               'User-Agent': 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Mobile Safari/537.36',
             },
           }}
-          resizeMode={ResizeMode.CONTAIN}
+          resizeMode="contain"
           onProgress={handleProgress}
           onLoad={handleLoad}
           onBuffer={handleBuffer}
