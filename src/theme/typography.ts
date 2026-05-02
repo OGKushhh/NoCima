@@ -16,10 +16,10 @@ export const Typography = {
     bold: '700' as const,
     black: '900' as const,
   },
-  // Font families
+  // Font families – Rubik supports both English and Arabic (and Hebrew)
   fonts: {
     english: 'Rubik',
-    arabic: 'Rubik', // Will be updated when Arabic font is chosen
+    arabic: 'Rubik',      // Rubik includes Arabic glyphs
     mono: 'monospace',
   },
 };
