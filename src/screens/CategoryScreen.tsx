@@ -5,10 +5,11 @@
  *   - Category tabs at top
  *   - Deep search filter popup (genre, quality, country, sort)
  *   - Grid of movie cards
- *   - Search within category
+ *   - Search within category (debounced for performance)
+ *   - Items capped at 200 for smooth scrolling
  */
 
-import React, {useState, useEffect, useMemo, useCallback, memo} from 'react';
+import React, {useState, useEffect, useMemo, useCallback, memo, useRef} from 'react';
 import {
   View, StyleSheet, FlatList, Text, TouchableOpacity,
   TextInput, StatusBar, Modal, ScrollView,
@@ -55,6 +56,8 @@ const SORT_OPTIONS = [
   {key: 'rating_desc', labelKey: 'sort_top_rated'},
 ];
 
+const MAX_ITEMS = 200;
+
 export const CategoryScreen: React.FC = () => {
   const route = useRoute<any>();
   const navigation = useNavigation<any>();
@@ -68,11 +71,20 @@ export const CategoryScreen: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [selectedCategory, setSelectedCategory] = useState(category);
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedQuery, setDebouncedQuery] = useState('');
   const [showFilterPopup, setShowFilterPopup] = useState(false);
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Filter state
   const [selectedGenre, setSelectedGenre] = useState<string | null>(null);
   const [selectedSort, setSelectedSort] = useState('year_desc');
+
+  // Debounce search input — don't filter 1000+ items on every keystroke
+  useEffect(() => {
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    searchTimer.current = setTimeout(() => setDebouncedQuery(searchQuery), 300);
+    return () => { if (searchTimer.current) clearTimeout(searchTimer.current); };
+  }, [searchQuery]);
 
   useEffect(() => { loadCategoryData(selectedCategory); }, [selectedCategory]);
 
@@ -99,11 +111,11 @@ export const CategoryScreen: React.FC = () => {
           Rating: m.imdb_rating || '', Views: m.views || '',
         })));
       } else if (Array.isArray(data)) {
-        setItems(data);
+        setItems(data.slice(0, MAX_ITEMS));
       } else if (typeof data === 'object') {
         const dict = data as Record<string, ContentItem>;
         Object.keys(dict).forEach(id => { if (dict[id]) dict[id].id = id; });
-        setItems(Object.values(dict));
+        setItems(Object.values(dict).slice(0, MAX_ITEMS));
       }
     } catch (e: any) {
       setError(e.message || t('error_loading'));
@@ -116,13 +128,13 @@ export const CategoryScreen: React.FC = () => {
     navigation.navigate('Details', {item});
   }, [navigation]);
 
-  // ── Apply all filters ────────────────────────────────────────────
+  // ── Apply all filters (uses debouncedQuery) ──────────────────────
   const filteredItems = useMemo(() => {
     let result = items;
 
-    // Text search
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
+    // Text search (debounced)
+    if (debouncedQuery.trim()) {
+      const q = debouncedQuery.toLowerCase();
       result = result.filter(item =>
         item.Title?.toLowerCase().includes(q) ||
         item.Genres?.some(g => g.toLowerCase().includes(q)) ||
@@ -172,7 +184,7 @@ export const CategoryScreen: React.FC = () => {
     }
 
     return result;
-  }, [items, searchQuery, selectedGenre, selectedSort]);
+  }, [items, debouncedQuery, selectedGenre, selectedSort]);
 
   // ── Collect unique genres from loaded items ──────────────────────
   const availableGenres = useMemo(() => {
@@ -188,8 +200,8 @@ export const CategoryScreen: React.FC = () => {
     ? (lang === 'ar' ? catConfig.labelAr : catConfig.labelEn)
     : t(selectedCategory);
 
-  const activeFilterCount = (selectedGenre ? 1 : 0) + (selectedSort !== 'default' ? 1 : 0);
-  const clearFilters = () => { setSelectedGenre(null); setSelectedSort('year_desc'); };
+  const activeFilterCount = (selectedGenre ? 1 : 0) + (selectedSort !== 'year_desc' ? 1 : 0);
+  const clearFilters = () => { setSelectedGenre(null); setSelectedSort('year_desc'); setSearchQuery(''); setDebouncedQuery(''); };
 
   return (
     <View style={styles.container}>
@@ -231,6 +243,7 @@ export const CategoryScreen: React.FC = () => {
               setSelectedGenre(null);
               setSelectedSort('year_desc');
               setSearchQuery('');
+              setDebouncedQuery('');
             }}
           >
             <Text
@@ -253,8 +266,8 @@ export const CategoryScreen: React.FC = () => {
           onChangeText={setSearchQuery}
         />
         {searchQuery.length > 0 && (
-          <TouchableOpacity onPress={() => setSearchQuery('')}>
-            <Image source={require('../../assets/icons/arrow.png')} style={[styles.headerIcon, {tintColor: Colors.dark.textMuted}]} />
+          <TouchableOpacity onPress={() => { setSearchQuery(''); setDebouncedQuery(''); }}>
+            <Text style={{fontSize: 18, color: Colors.dark.textMuted, fontWeight: '700'}}>&times;</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -268,8 +281,8 @@ export const CategoryScreen: React.FC = () => {
               <Text style={styles.activeChipX}>x</Text>
             </TouchableOpacity>
           )}
-          {selectedSort !== 'default' && (
-            <TouchableOpacity style={styles.activeChip} onPress={() => setSelectedSort('default')}>
+          {selectedSort !== 'year_desc' && (
+            <TouchableOpacity style={styles.activeChip} onPress={() => setSelectedSort('year_desc')}>
               <Text style={styles.activeChipText}>{t(selectedSort)}</Text>
               <Text style={styles.activeChipX}>x</Text>
             </TouchableOpacity>
