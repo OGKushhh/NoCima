@@ -24,7 +24,7 @@
  *   Server extraction -> URL only works from server IP -> phone gets 403.
  */
 
-import React, {useRef, useEffect} from 'react';
+import React, {useRef, useEffect, useCallback} from 'react';
 import {View, Dimensions} from 'react-native';
 import {WebView} from 'react-native-webview';
 
@@ -381,17 +381,22 @@ export const VideoExtractor: React.FC<VideoExtractorProps> = ({
   const captured = useRef(false);
   const timer = useRef<ReturnType<typeof setTimeout>>();
 
+  const dbg = useCallback((msg: string) => {
+    console.log('[VE]', msg);
+    onDebug?.(msg);
+  }, [onDebug]);
+
   useEffect(() => {
-    onDebug?.('START: loading ' + pageUrl);
+    dbg('START: loading ' + pageUrl);
     timer.current = setTimeout(() => {
       if (!captured.current) {
         captured.current = true;
-        onDebug?.('TIMEOUT: ' + timeoutMs + 'ms with no m3u8');
+        dbg('TIMEOUT: ' + timeoutMs + 'ms with no m3u8');
         onError();
       }
     }, timeoutMs);
     return () => clearTimeout(timer.current);
-  }, []);
+  }, [dbg, timeoutMs, onError]);
 
   const handleMessage = (event: any) => {
     try {
@@ -400,13 +405,13 @@ export const VideoExtractor: React.FC<VideoExtractorProps> = ({
       if (data.type === 'm3u8' && data.url && !captured.current) {
         captured.current = true;
         clearTimeout(timer.current);
-        onDebug?.('CAPTURED: ' + data.url);
+        dbg('CAPTURED: ' + data.url);
         onExtracted(data.url);
         return;
       }
 
       if (data.type === 'debug') {
-        onDebug?.(data.msg);
+        dbg(data.msg);
       }
     } catch (e) {}
   };
@@ -418,7 +423,7 @@ export const VideoExtractor: React.FC<VideoExtractorProps> = ({
     if (url.includes('.m3u8') && !captured.current) {
       captured.current = true;
       clearTimeout(timer.current);
-      onDebug?.('CAPTURED (nav): ' + url);
+      dbg('CAPTURED (nav): ' + url);
       onExtracted(url);
       return false;
     }
@@ -430,34 +435,34 @@ export const VideoExtractor: React.FC<VideoExtractorProps> = ({
 
     // Block intent:// URLs (Android Chrome deep links from ads)
     if (url.startsWith('intent://')) {
-      onDebug?.('BLOCKED intent:// URL');
+      dbg('BLOCKED intent:// URL');
       return false;
     }
 
     // Block known ad/analytics domains
     if (BLOCKED_DOMAINS.some(d => url.includes(d))) {
-      onDebug?.('BLOCKED ad: ' + url.substring(0, 70));
+      dbg('BLOCKED ad: ' + url.substring(0, 70));
       return false;
     }
 
     // Only allow whitelisted domains
     if (ALLOWED_DOMAINS.some(d => url.includes(d))) {
-      onDebug?.('ALLOW: ' + url.substring(0, 70));
+      dbg('ALLOW: ' + url.substring(0, 70));
       return true;
     }
 
     // Block everything else
-    onDebug?.('BLOCKED unknown: ' + url.substring(0, 70));
+    dbg('BLOCKED unknown: ' + url.substring(0, 70));
     return false;
   };
 
-  const handleLoad = () => onDebug?.('LOADED: ' + pageUrl);
+  const handleLoad = () => dbg('LOADED: ' + pageUrl);
 
   const handleLoadError = () => {
     if (!captured.current) {
       captured.current = true;
       clearTimeout(timer.current);
-      onDebug?.('ERROR: WebView failed to load');
+      dbg('ERROR: WebView failed to load');
       onError();
     }
   };
@@ -466,7 +471,7 @@ export const VideoExtractor: React.FC<VideoExtractorProps> = ({
     if (!captured.current) {
       captured.current = true;
       clearTimeout(timer.current);
-      onDebug?.('HTTP_ERROR: bad status code');
+      dbg('HTTP_ERROR: bad status code');
       onError();
     }
   };
