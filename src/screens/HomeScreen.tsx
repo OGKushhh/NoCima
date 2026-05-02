@@ -78,7 +78,13 @@ export const HomeScreen: React.FC = () => {
         loadCategory('trending', forceRefresh),
         loadFeatured(forceRefresh),
       ]);
-      setMovies(getMoviesArray(moviesDict as Record<string, any>));
+      const moviesArr = getMoviesArray(moviesDict as Record<string, any>);
+      moviesArr.sort((a, b) => {
+        const ya = (a as any).ReleaseDate || (a as any).Year || '';
+        const yb = (b as any).ReleaseDate || (b as any).Year || '';
+        return yb.localeCompare(ya);
+      });
+      setMovies(moviesArr);
       setTrending(trendingData as TrendingContent);
       setFeatured(featuredData as TrendingContent);
     } catch (err: any) {

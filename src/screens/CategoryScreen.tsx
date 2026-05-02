@@ -72,7 +72,7 @@ export const CategoryScreen: React.FC = () => {
 
   // Filter state
   const [selectedGenre, setSelectedGenre] = useState<string | null>(null);
-  const [selectedSort, setSelectedSort] = useState('default');
+  const [selectedSort, setSelectedSort] = useState('year_desc');
 
   useEffect(() => { loadCategoryData(selectedCategory); }, [selectedCategory]);
 
@@ -189,7 +189,7 @@ export const CategoryScreen: React.FC = () => {
     : t(selectedCategory);
 
   const activeFilterCount = (selectedGenre ? 1 : 0) + (selectedSort !== 'default' ? 1 : 0);
-  const clearFilters = () => { setSelectedGenre(null); setSelectedSort('default'); };
+  const clearFilters = () => { setSelectedGenre(null); setSelectedSort('year_desc'); };
 
   return (
     <View style={styles.container}>
@@ -229,7 +229,7 @@ export const CategoryScreen: React.FC = () => {
             onPress={() => {
               setSelectedCategory(cat.key);
               setSelectedGenre(null);
-              setSelectedSort('default');
+              setSelectedSort('year_desc');
               setSearchQuery('');
             }}
           >
@@ -508,6 +508,8 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   searchIcon: {
+    width: 18,
+    height: 18,
     marginRight: 8,
   },
   searchInput: {
