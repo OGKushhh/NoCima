@@ -1,6 +1,5 @@
 import React from 'react';
-import {View, Text, TouchableOpacity, StyleSheet} from 'react-native';
-import Icon from 'react-native-vector-icons/Ionicons';
+import {View, Text, TouchableOpacity, StyleSheet, Image} from 'react-native';
 import {Colors} from '../theme/colors';
 import {Typography} from '../theme/typography';
 import {useTranslation} from 'react-i18next';
@@ -14,7 +13,7 @@ export const ErrorView: React.FC<ErrorViewProps> = ({message, onRetry}) => {
   const {t} = useTranslation();
   return (
     <View style={styles.container}>
-      <Icon name="cloud-offline-outline" size={64} color={Colors.dark.textMuted} />
+      <Image source={require('../../assets/icons/alert.png')} style={{width: 64, height: 64, tintColor: Colors.dark.textMuted}} />
       <Text style={styles.message}>{message || t('error_loading')}</Text>
       {onRetry && (
         <TouchableOpacity style={styles.retryButton} onPress={onRetry}>

@@ -1,8 +1,7 @@
-import React, {useState, useCallback, useEffect, useMemo, memo} from 'react';
-import {View, StyleSheet, FlatList, Text, TextInput, TouchableOpacity} from 'react-native';
+import React, {useState, useCallback, useEffect, memo} from 'react';
+import {View, StyleSheet, FlatList, Text, TextInput, TouchableOpacity, Image} from 'react-native';
 import {useNavigation} from '@react-navigation/native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
-import Icon from 'react-native-vector-icons/Ionicons';
 import {searchContent} from '../services/metadataService';
 import {ContentItem} from '../types';
 import {MovieCard} from '../components/MovieCard';
@@ -75,10 +74,10 @@ export const SearchScreen: React.FC = () => {
     <View style={styles.container}>
       <View style={[styles.searchRow, {paddingTop: insets.top + 8}]}>
         <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
-          <Icon name="arrow-back" size={24} color={Colors.dark.text} />
+          <Image source={require('../../assets/icons/arrow.png')} style={{width: 24, height: 24, tintColor: Colors.dark.text}} />
         </TouchableOpacity>
         <View style={styles.searchInputContainer}>
-          <Icon name="search" size={20} color={Colors.dark.textSecondary} />
+          <Image source={require('../../assets/icons/search.png')} style={{width: 20, height: 20, tintColor: Colors.dark.textSecondary}} />
           <TextInput
             style={styles.searchInput}
             value={query}
@@ -90,7 +89,7 @@ export const SearchScreen: React.FC = () => {
           />
           {query.length > 0 && (
             <TouchableOpacity onPress={() => setQuery('')}>
-              <Icon name="close-circle" size={20} color={Colors.dark.textMuted} />
+              <Text style={{fontSize: 20, color: Colors.dark.textMuted, fontWeight: '700'}}>&times;</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -113,12 +112,12 @@ export const SearchScreen: React.FC = () => {
           ListEmptyComponent={
             hasSearched ? (
               <View style={styles.emptyContainer}>
-                <Icon name="search-outline" size={48} color={Colors.dark.textMuted} />
+                <Image source={require('../../assets/icons/search.png')} style={{width: 48, height: 48, tintColor: Colors.dark.textMuted}} />
                 <Text style={styles.emptyText}>{t('no_results')}</Text>
               </View>
             ) : (
               <View style={styles.emptyContainer}>
-                <Icon name="film-outline" size={48} color={Colors.dark.textMuted} />
+                <Image source={require('../../assets/icons/search.png')} style={{width: 48, height: 48, tintColor: Colors.dark.textMuted}} />
                 <Text style={styles.emptyText}>{t('search_placeholder')}</Text>
               </View>
             )

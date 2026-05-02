@@ -1,9 +1,8 @@
 import React from 'react';
 import {
   View, Modal, TouchableOpacity, Text, StyleSheet,
-  ScrollView, Linking, Dimensions,
+  ScrollView, Linking, Dimensions, Image,
 } from 'react-native';
-import Icon from 'react-native-vector-icons/Ionicons';
 import {Colors} from '../theme/colors';
 import {Typography} from '../theme/typography';
 import {useTranslation} from 'react-i18next';
@@ -42,7 +41,7 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
           {/* Header */}
           <View style={styles.header}>
             <View style={styles.iconContainer}>
-              <Icon name="rocket-outline" size={32} color={Colors.dark.primary} />
+              <Image source={require('../../assets/icons/sync.png')} style={{width: 32, height: 32, tintColor: Colors.dark.primary}} />
             </View>
             <Text style={styles.title}>{t('update_available')}</Text>
             <Text style={styles.subtitle}>{t('update_description')}</Text>
@@ -54,7 +53,7 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
               <Text style={styles.versionLabel}>{t('current_version')}</Text>
               <Text style={styles.versionValue}>v{currentVersion}</Text>
             </View>
-            <Icon name="arrow-forward" size={20} color={Colors.dark.textMuted} />
+            <Image source={require('../../assets/icons/arrow.png')} style={{width: 20, height: 20, tintColor: Colors.dark.textMuted}} />
             <View style={[styles.versionBox, styles.versionBoxNew]}>
               <Text style={styles.versionLabel}>{t('latest_version')}</Text>
               <Text style={[styles.versionValue, {color: Colors.dark.primary}]}>v{release.version}</Text>
@@ -73,7 +72,7 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
 
           {/* Date */}
           <Text style={styles.dateText}>
-            📅 {formatDate(release.publishedAt)}
+            {formatDate(release.publishedAt)}
           </Text>
 
           {/* Actions */}
@@ -81,7 +80,7 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
             style={styles.downloadButton}
             onPress={() => onDownload(release.downloadUrl)}
           >
-            <Icon name="download" size={22} color="#fff" />
+            <Image source={require('../../assets/icons/download-to-storage-drive.png')} style={{width: 22, height: 22, tintColor: '#fff'}} />
             <Text style={styles.downloadButtonText}>{t('download_update')}</Text>
           </TouchableOpacity>
 
