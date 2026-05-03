@@ -48,10 +48,8 @@ export const PlayerScreen: React.FC = () => {
   const [showQualityPicker, setShowQualityPicker] = useState(false);
   const [seekingBackward, setSeekingBackward] = useState(false);
   const [seekingForward, setSeekingForward] = useState(false);
-  const [volume, setVolume] = useState(1.0); // 0.0 – 2.0 (>1.0 = boosted)
-  const [volumeBarHeight, setVolumeBarHeight] = useState(0);
-  const [volumeBarY, setVolumeBarY] = useState(0);
-  const volumeBarRef = useRef<View>(null);
+  const [volume, setVolume] = useState(1.0);
+  const [showVolumePicker, setShowVolumePicker] = useState(false);
 
   const seekBarRef = useRef<View>(null);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -143,23 +141,7 @@ export const PlayerScreen: React.FC = () => {
     }
   };
 
-  const handleVolumeBarLayout = () => {
-    if (volumeBarRef.current) {
-      volumeBarRef.current.measure((x, y, width, height, pageX, pageY) => {
-        setVolumeBarHeight(height);
-        setVolumeBarY(pageY);
-      });
-    }
-  };
 
-  const handleVolumePress = (e: GestureResponderEvent) => {
-    const { pageY } = e.nativeEvent;
-    if (volumeBarHeight === 0) return;
-    // Top = 200%, bottom = 0%
-    const relativeY = Math.max(0, Math.min(pageY - volumeBarY, volumeBarHeight));
-    const newVolume = parseFloat((2 - (relativeY / volumeBarHeight) * 2).toFixed(2));
-    setVolume(newVolume);
-  };
 
   const handleQualityChange = (quality: QualityLevel) => {
     setQualityLevel(quality);
@@ -254,18 +236,28 @@ export const PlayerScreen: React.FC = () => {
       {/* Controls overlay */}
       {showControls && (
         <Animated.View style={[styles.controlsOverlay, { opacity: controlsOpacity }]} pointerEvents="box-none">
-          {/* Top bar with menu icon for quality */}
+          {/* Top bar */}
           <View style={[styles.topControls, { paddingTop: insets.top + 8 }]}>
-            <View style={styles.leftIcons}>
-              <TouchableOpacity style={styles.topButton} onPress={() => navigation.goBack()}>
-                <Image source={require('../../assets/icons/arrow.png')} style={{ width: 28, height: 28, tintColor: '#fff' }} />
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.topButton} onPress={() => setShowQualityPicker(true)}>
-                <Image source={require('../../assets/icons/menu.png')} style={{ width: 28, height: 28, tintColor: '#fff' }} />
-              </TouchableOpacity>
-            </View>
+            <TouchableOpacity style={styles.topButton} onPress={() => navigation.goBack()}>
+              <Image source={require('../../assets/icons/arrow.png')} style={{ width: 26, height: 26, tintColor: '#fff' }} />
+            </TouchableOpacity>
             <Text style={styles.titleText} numberOfLines={1}>{title}</Text>
-            <View style={{ width: 40 }} />
+            {/* Volume button */}
+            <TouchableOpacity
+              style={styles.topBadgeBtn}
+              onPress={() => { setShowVolumePicker(true); showControlsTemporarily(); }}>
+              <Image
+                source={require('../../assets/icons/medium-volume.png')}
+                style={{ width: 18, height: 18, tintColor: '#fff' }}
+              />
+              <Text style={styles.topBadgeTxt}>{Math.round(volume * 100)}%</Text>
+            </TouchableOpacity>
+            {/* Quality button */}
+            <TouchableOpacity
+              style={styles.topBadgeBtn}
+              onPress={() => { setShowQualityPicker(true); showControlsTemporarily(); }}>
+              <Text style={styles.topBadgeTxt}>{getCurrentQualityLabel()}</Text>
+            </TouchableOpacity>
           </View>
 
           <View style={{ flex: 1 }} />
@@ -324,37 +316,7 @@ export const PlayerScreen: React.FC = () => {
               </TouchableOpacity>
             </View>
           </View>
-          {/* Vertical volume slider – right edge */}
-          <View style={styles.volumeSliderWrapper} pointerEvents="box-none">
-            <View style={styles.volumeSliderInner}>
-              <Text style={styles.volumeSliderLabel}>{Math.round(volume * 100)}%</Text>
-              <View
-                ref={volumeBarRef}
-                style={styles.volumeTrackContainer}
-                onLayout={handleVolumeBarLayout}
-              >
-                <TouchableOpacity style={StyleSheet.absoluteFillObject} onPress={handleVolumePress} activeOpacity={0.8} />
-                {/* Track background */}
-                <View style={[styles.volumeTrack, { backgroundColor: 'rgba(255,255,255,0.15)' }]} />
-                {/* 100% marker line */}
-                <View style={styles.volumeMidMarker} />
-                {/* Filled portion — grows from bottom */}
-                <View style={[styles.volumeFill, {
-                  height: `${Math.min(volume / 2, 1) * 100}%`,
-                  backgroundColor: volume > 1.0 ? colors.primary : 'rgba(255,255,255,0.9)',
-                }]} />
-                {/* Thumb */}
-                <View style={[styles.volumeThumb, {
-                  bottom: `${Math.min(volume / 2, 1) * 100}%`,
-                  backgroundColor: volume > 1.0 ? colors.primary : '#fff',
-                }]} />
-              </View>
-              <Image
-                source={require('../../assets/icons/medium-volume.png')}
-                style={{ width: 20, height: 20, tintColor: volume === 0 ? 'rgba(255,255,255,0.3)' : '#fff' }}
-              />
-            </View>
-          </View>
+
         </Animated.View>
       )}
 
@@ -379,6 +341,35 @@ export const PlayerScreen: React.FC = () => {
         </TouchableOpacity>
       </Modal>
     </View>
+
+      {/* Volume picker modal */}
+      <Modal transparent visible={showVolumePicker} animationType="fade" onRequestClose={() => setShowVolumePicker(false)}>
+        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowVolumePicker(false)}>
+          <View style={[styles.modalContent, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <Text style={[styles.modalTitle, { color: colors.text }]}>Volume</Text>
+            {[
+              { label: '🔇  Mute',    value: 0.0 },
+              { label: '🔉  25%',     value: 0.25 },
+              { label: '🔉  50%',     value: 0.5 },
+              { label: '🔊  75%',     value: 0.75 },
+              { label: '🔊  100%',    value: 1.0 },
+              { label: '🔊  150%',    value: 1.5 },
+              { label: '📢  200%',    value: 2.0 },
+            ].map(opt => (
+              <TouchableOpacity
+                key={opt.value}
+                style={[styles.modalOption, { borderBottomColor: colors.border }]}
+                onPress={() => { setVolume(opt.value); setShowVolumePicker(false); showControlsTemporarily(); }}>
+                <Text style={[styles.modalOptionText, { color: colors.text }]}>{opt.label}</Text>
+                {Math.abs(volume - opt.value) < 0.01 && (
+                  <Image source={require('../../assets/icons/checkmark.png')} style={{ width: 18, height: 18, tintColor: colors.primary }} />
+                )}
+              </TouchableOpacity>
+            ))}
+          </View>
+        </TouchableOpacity>
+      </Modal>
+    </View>
   );
 };
 
@@ -393,8 +384,9 @@ const styles = StyleSheet.create({
   seekFeedback: { position: 'absolute', top: '50%', left: '50%', marginLeft: -60, marginTop: -30, width: 120, alignItems: 'center' },
   seekFeedbackBox: { borderRadius: 24, paddingVertical: 8, paddingHorizontal: 20, flexDirection: 'row', alignItems: 'center', gap: 6 },
   seekFeedbackText: { color: '#fff', fontSize: 16, fontWeight: '600' },
-  topControls: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12, paddingBottom: 8, backgroundColor: 'rgba(0,0,0,0.5)' },
-  leftIcons: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  topControls: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingBottom: 8, backgroundColor: 'rgba(0,0,0,0.5)', gap: 8 },
+  topBadgeBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(255,255,255,0.15)', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 },
+  topBadgeTxt: { color: '#fff', fontSize: 12, fontWeight: '700' },
   topButton: { width: 40, height: 40, justifyContent: 'center', alignItems: 'center' },
   titleText: { flex: 1, color: '#fff', fontSize: 18, fontWeight: '500', marginHorizontal: 8, textAlign: 'center' },
   bottomControls: { paddingHorizontal: 16, paddingTop: 12, backgroundColor: 'rgba(0,0,0,0.5)' },
@@ -407,14 +399,7 @@ const styles = StyleSheet.create({
   timeRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
   timeText: { color: 'rgba(255,255,255,0.7)', fontSize: 12, fontVariant: ['tabular-nums'] },
   playbackRow: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center' },
-  volumeSliderWrapper: { position: 'absolute', right: 0, top: 0, bottom: 0, justifyContent: 'center', pointerEvents: 'box-none' },
-  volumeSliderInner: { alignItems: 'center', gap: 8, paddingVertical: 12, paddingHorizontal: 10, backgroundColor: 'rgba(0,0,0,0.5)', borderTopLeftRadius: 16, borderBottomLeftRadius: 16 },
-  volumeSliderLabel: { color: 'rgba(255,255,255,0.8)', fontSize: 10, fontVariant: ['tabular-nums'], fontWeight: '600' },
-  volumeTrackContainer: { width: 4, height: 160, borderRadius: 2, position: 'relative', overflow: 'visible' },
-  volumeTrack: { position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, borderRadius: 2 },
-  volumeMidMarker: { position: 'absolute', left: -3, right: -3, top: '50%', height: 1, backgroundColor: 'rgba(255,255,255,0.5)', zIndex: 1 },
-  volumeFill: { position: 'absolute', bottom: 0, left: 0, right: 0, borderRadius: 2 },
-  volumeThumb: { position: 'absolute', left: -5, width: 14, height: 14, borderRadius: 7, marginBottom: -7 },
+
   seekButton: { width: 50, height: 50, justifyContent: 'center', alignItems: 'center' },
   playPauseButton: { width: 60, height: 60, borderRadius: 30, justifyContent: 'center', alignItems: 'center', marginHorizontal: 12 },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },

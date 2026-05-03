@@ -314,7 +314,7 @@ const ALLOWED_DOMAINS = [
 interface VideoExtractorProps {
   pageUrl: string;
   onExtracted: (m3u8Url: string) => void;
-  onError: () => void;
+  onError: (reason?: 'timeout' | 'load' | 'http') => void;
   onDebug?: (msg: string) => void;
   timeoutMs?: number;
 }
@@ -325,7 +325,7 @@ export const VideoExtractor: React.FC<VideoExtractorProps> = ({
   onExtracted,
   onError,
   onDebug,
-  timeoutMs = 25000,
+  timeoutMs = 40000,
 }) => {
   const captured = useRef(false);
   const timer = useRef<ReturnType<typeof setTimeout>>();
@@ -341,7 +341,7 @@ export const VideoExtractor: React.FC<VideoExtractorProps> = ({
       if (!captured.current) {
         captured.current = true;
         dbg('TIMEOUT: ' + timeoutMs + 'ms with no m3u8');
-        onError();
+        onError('timeout');
       }
     }, timeoutMs);
     return () => clearTimeout(timer.current);
@@ -412,16 +412,23 @@ export const VideoExtractor: React.FC<VideoExtractorProps> = ({
       captured.current = true;
       clearTimeout(timer.current);
       dbg('ERROR: WebView failed to load');
-      onError();
+      onError('load');
     }
   };
 
-  const handleHttpError = () => {
-    if (!captured.current) {
-      captured.current = true;
-      clearTimeout(timer.current);
-      dbg('HTTP_ERROR: bad status code');
-      onError();
+  const handleHttpError = (syntheticEvent: any) => {
+    const statusCode = syntheticEvent?.nativeEvent?.statusCode || 0;
+    // Ignore redirects (3xx) — FaselHD uses them heavily for domain resolution
+    // Only hard-fail on server errors (5xx) or explicit 404
+    if (statusCode >= 500 || statusCode === 404) {
+      if (!captured.current) {
+        captured.current = true;
+        clearTimeout(timer.current);
+        dbg('HTTP_ERROR: status ' + statusCode);
+        onError();
+      }
+    } else {
+      dbg('HTTP_WARN (ignored): status ' + statusCode);
     }
   };
 

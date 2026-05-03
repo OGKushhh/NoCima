@@ -37,9 +37,29 @@ const POSTER_H = POSTER_W * 1.52;
 const STATUS_MSGS = [
   'Connecting to server…',
   'Loading page…',
-  'Extracting stream…',
+  'Searching for stream…',
+  'Extracting video…',
   'Almost there…',
 ];
+
+const ERROR_MSGS: Record<string, {title: string; body: string}> = {
+  timeout: {
+    title: 'Extraction timed out',
+    body:  'The page took too long to respond. This can happen on slow connections or busy servers. Please try again.',
+  },
+  load: {
+    title: 'Page failed to load',
+    body:  'Could not reach the video page. The link may be broken or temporarily unavailable.',
+  },
+  http: {
+    title: 'Server error',
+    body:  'The video server returned an error. The content may be temporarily unavailable.',
+  },
+  default: {
+    title: 'Could not extract video',
+    body:  'The stream could not be found. Try again — it sometimes works on the second attempt.',
+  },
+};
 
 // Map category key → i18n key for poster badge
 const CAT_I18N: Record<string, string> = {
@@ -311,13 +331,14 @@ export const DetailsScreen: React.FC = () => {
     });
   }, [item.id, category, nav]);
 
-  const handleExtractError = useCallback(() => {
+  const handleExtractError = useCallback((reason?: 'timeout' | 'load' | 'http') => {
     stopStatusTimer();
     setExtractorUrl(null);
     setExtracting(false);
     setExtractingEpUrl(null);
-    setExtractError(t('video_unavailable'));
-  }, [t]);
+    const msg = ERROR_MSGS[reason ?? 'default'] ?? ERROR_MSGS.default;
+    setExtractError(msg.title + '\n\n' + msg.body);
+  }, []);
 
   // ── Shared extraction launcher ────────────────────────────────────
   const startExtraction = useCallback((url: string, title: string, epUrl?: string) => {
@@ -483,15 +504,24 @@ export const DetailsScreen: React.FC = () => {
         </View>
 
         {/* ── Extract error ── */}
-        {extractError ? (
-          <View style={S.errBanner}>
-            <Text style={S.errTxt} numberOfLines={3}>{extractError}</Text>
-            <TouchableOpacity style={S.retryBtn} onPress={handleRetry}>
-              <Image source={require('../../assets/icons/undoreturn.png')} style={{width: 14, height: 14, tintColor: Colors.dark.primary}} />
-              <Text style={S.retryTxt}>{t('retry')}</Text>
-            </TouchableOpacity>
-          </View>
-        ) : null}
+        {extractError ? (() => {
+          const parts = extractError.split('\n\n');
+          const errTitle = parts[0] || '';
+          const errBody  = parts[1] || '';
+          return (
+            <View style={S.errBanner}>
+              <View style={S.errTop}>
+                <Text style={S.errTitle}>⚠️  {errTitle}</Text>
+                <TouchableOpacity style={S.retryBtn} onPress={handleRetry}>
+                  <Image source={require('../../assets/icons/undoreturn.png')}
+                    style={{width: 13, height: 13, tintColor: Colors.dark.primary}} />
+                  <Text style={S.retryTxt}>{t('retry')}</Text>
+                </TouchableOpacity>
+              </View>
+              {errBody ? <Text style={S.errBody}>{errBody}</Text> : null}
+            </View>
+          );
+        })() : null}
 
         {/* ── Description ── */}
         {description ? (
@@ -645,6 +675,7 @@ export const DetailsScreen: React.FC = () => {
           pageUrl={extractorUrl}
           onExtracted={handleExtracted}
           onError={handleExtractError}
+          timeoutMs={40000}
         />
       )}
 
@@ -774,7 +805,10 @@ const S = StyleSheet.create({
   dlBtn:         {flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', height: 54, borderRadius: 16, backgroundColor: Colors.dark.surface, gap: 8, borderWidth: 1.5, borderColor: Colors.dark.accentLight},
   dlBtnTxt:      {color: Colors.dark.accentLight, fontSize: 15, fontWeight: '700', fontFamily: 'Rubik'},
 
-  errBanner: {marginHorizontal: 18, marginBottom: 12, backgroundColor: `${Colors.dark.error}16`, borderRadius: 12, padding: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderWidth: 1, borderColor: `${Colors.dark.error}30`, gap: 10},
+  errBanner: {marginHorizontal: 18, marginBottom: 12, backgroundColor: `${Colors.dark.error}14`, borderRadius: 14, padding: 16, borderWidth: 1, borderColor: `${Colors.dark.error}40`},
+  errTop:    {flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 6, gap: 8},
+  errTitle:  {flex: 1, color: Colors.dark.error, fontSize: 14, fontWeight: '700', fontFamily: 'Rubik'},
+  errBody:   {color: Colors.dark.textSecondary, fontSize: 12, fontFamily: 'Rubik', lineHeight: 18},
   errTxt:    {flex: 1, color: Colors.dark.error, fontSize: 13, fontFamily: 'Rubik'},
   retryBtn:  {flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 7, borderRadius: 9, backgroundColor: `${Colors.dark.primary}22`},
   retryTxt:  {color: Colors.dark.primary, fontSize: 13, fontWeight: '700', fontFamily: 'Rubik'},
