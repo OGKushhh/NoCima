@@ -136,7 +136,7 @@ export const DetailsScreen: React.FC = () => {
   // Rating fetch state
   const [rating, setRating] = useState<string>('');
   const [ratingLoading, setRatingLoading] = useState(false);
-  const [showLightbox, setShowLightbox] = useState(false); // optional, if you have lightbox
+  const [showLightbox, setShowLightbox] = useState(false);
 
   const statusTimer = useRef<ReturnType<typeof setInterval>>();
 
@@ -304,7 +304,7 @@ export const DetailsScreen: React.FC = () => {
 
   // ── Shared extraction launcher ────────────────────────────────────
   const startExtraction = useCallback((url: string, title: string, epUrl?: string) => {
-    setShowLightbox(false);  // if you have a lightbox, close it
+    setShowLightbox(false);
     setExtracting(true);
     setExtractError(null);
     startStatusTimer();
@@ -593,7 +593,7 @@ export const DetailsScreen: React.FC = () => {
         )}
       </ScrollView>
 
-      {/* ── On-device WebView extractor (hidden 1×1) ── */}
+      {/* ── On-device WebView extractor (hidden) ── */}
       {extractorUrl && (
         <VideoExtractor
           pageUrl={extractorUrl}
@@ -626,34 +626,38 @@ export const DetailsScreen: React.FC = () => {
         </View>
       )}
 
-      {/* ── Season picker modal (bottom sheet) ── */}
+      {/* ── Season picker modal (centered popup) ── */}
       <Modal
         visible={showSeasonDlg}
         transparent
-        animationType="slide"
+        animationType="fade"
         onRequestClose={() => setShowSeasonDlg(false)}
       >
         <TouchableOpacity
-          style={S.modalBg}
+          style={S.seasonModalOverlay}
           activeOpacity={1}
           onPress={() => setShowSeasonDlg(false)}
         >
-          <View style={S.modalSheet}>
-            <View style={S.modalHandle} />
-            <Text style={S.modalTitle}>{t('select_season')}</Text>
+          <View style={S.seasonModalContent}>
+            <View style={S.seasonModalHeader}>
+              <Text style={S.seasonModalTitle}>{t('select_season')}</Text>
+              <TouchableOpacity onPress={() => setShowSeasonDlg(false)}>
+                <Text style={{color: Colors.dark.textMuted, fontSize: 20}}>✕</Text>
+              </TouchableOpacity>
+            </View>
             <FlatList
               data={seasonKeys}
               keyExtractor={s => s}
               renderItem={({item: sk}) => (
                 <TouchableOpacity
-                  style={[S.modalOpt, selSeason === sk && S.modalOptActive]}
+                  style={[S.seasonModalOption, selSeason === sk && S.seasonModalOptionActive]}
                   onPress={() => { setSelSeason(sk); setShowSeasonDlg(false); }}
                 >
-                  <Text style={[S.modalOptTxt, selSeason === sk && S.modalOptTxtActive]}>
+                  <Text style={[S.seasonModalOptionText, selSeason === sk && S.seasonModalOptionTextActive]}>
                     {t('season')} {sk}
                   </Text>
                   {selSeason === sk && (
-                    <Text style={{color: Colors.dark.primary, fontSize: 16}}>&#10003;</Text>
+                    <Text style={{color: Colors.dark.primary, fontSize: 16}}>✓</Text>
                   )}
                 </TouchableOpacity>
               )}
@@ -713,7 +717,7 @@ const S = StyleSheet.create({
   statusComplete:{backgroundColor: Colors.dark.success, borderColor: Colors.dark.success},
   statusTxt:     {fontSize: 12, fontWeight: '600', fontFamily: 'Rubik'},
 
-  countRow:      {flexDirection: 'row', justifyContent: 'center', gap: 8, marginBottom: 14, paddingHorizontal: 16, flexWrap: 'wrap'},
+  countRow:      {flexDirection: 'row', justifyContent: 'center', gap: 8, marginBottom: 14, paddingHorizontal: 16},
   countBadge:    {flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.dark.surface, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, borderWidth: 1, borderColor: Colors.dark.border, gap: 6},
   countBadgeText:{color: Colors.dark.textSecondary, fontSize: 12, fontWeight: '600', fontFamily: 'Rubik'},
 
@@ -797,12 +801,60 @@ const S = StyleSheet.create({
     fontFamily: 'Rubik',
   },
 
-  modalBg:         {flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end'},
-  modalSheet:      {backgroundColor: Colors.dark.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingBottom: 40, maxHeight: '60%'},
-  modalHandle:     {width: 40, height: 4, borderRadius: 2, backgroundColor: Colors.dark.border, alignSelf: 'center', marginTop: 12, marginBottom: 4},
-  modalTitle:      {color: Colors.dark.text, fontSize: 17, fontWeight: '700', fontFamily: 'Rubik', textAlign: 'center', paddingVertical: 14},
-  modalOpt:        {flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 24, paddingVertical: 16, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: Colors.dark.border},
-  modalOptActive:  {backgroundColor: `${Colors.dark.primary}15`},
-  modalOptTxt:     {color: Colors.dark.textSecondary, fontSize: 15, fontFamily: 'Rubik'},
-  modalOptTxtActive:{color: Colors.dark.primary, fontWeight: '700'},
+  // Season selector – centered popup
+  seasonModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.75)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  seasonModalContent: {
+    backgroundColor: Colors.dark.surface,
+    borderRadius: 24,
+    padding: 20,
+    width: '80%',
+    maxWidth: 320,
+    maxHeight: '70%',
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
+  },
+  seasonModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+    paddingBottom: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: Colors.dark.border,
+  },
+  seasonModalTitle: {
+    color: Colors.dark.text,
+    fontSize: 18,
+    fontWeight: '700',
+    fontFamily: 'Rubik',
+  },
+  seasonModalOption: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: Colors.dark.border,
+  },
+  seasonModalOptionActive: {
+    backgroundColor: `${Colors.dark.primary}15`,
+    borderRadius: 8,
+  },
+  seasonModalOptionText: {
+    color: Colors.dark.textSecondary,
+    fontSize: 16,
+    fontFamily: 'Rubik',
+  },
+  seasonModalOptionTextActive: {
+    color: Colors.dark.primary,
+    fontWeight: '700',
+  },
 });
+
+export default DetailsScreen;

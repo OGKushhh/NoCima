@@ -18,7 +18,7 @@ export type ContentCategory = 'movies' | 'dubbed-movies' | 'hindi' | 'asian-movi
 type ContentDict = Record<string, ContentItem>;
 
 // ─── NEW: Lightweight index (all-content.json) ─────────────────────
-const ALL_CONTENT_URL = `${API_BASE}/api/all-content.json`;
+const ALL_CONTENT_URL = `${API_BASE}/api/all-content`;
 
 // In‑memory cache for the index (re‑used across screens)
 let allContentCache: any[] | null = null;
