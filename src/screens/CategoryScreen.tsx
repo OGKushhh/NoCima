@@ -47,10 +47,10 @@ const MovieCardItem = memo<{ item: any; onPress: (item: any) => void }>(
     // Convert index item (with Title, Genres, Year, Category, Image Source) to ContentItem
     const cardItem: ContentItem = {
       id: item.id,
-      Title: item.Title,
-      Category: item.Category,
-      'Image Source': item['Image Source'],
-      Genres: item.Genres || [],
+      Title: item.title,
+      Category: item.category,
+      'Image Source': item.image,
+      Genres: item.genres || [],
       GenresAr: [],
       Format: '',
       Runtime: null,
@@ -58,7 +58,7 @@ const MovieCardItem = memo<{ item: any; onPress: (item: any) => void }>(
       Rating: '',
       Views: '',
       Source: '',
-      Year: item.Year,
+      Year: item.year,
     };
     return <MovieCard item={cardItem} onPress={onPress} />;
   },
@@ -138,7 +138,7 @@ export const CategoryScreen: React.FC = () => {
       const index = await getAllContentIndex();
 
       // Items have a 'Category' field (capital C) – filter directly
-      const filteredByCat = index.filter(item => item.Category === selectedCategory);
+      const filteredByCat = index.filter(item => item.category === selectedCategory);
 
       setAllItems(filteredByCat);
       // Reset pagination and filters
@@ -163,17 +163,17 @@ export const CategoryScreen: React.FC = () => {
 
     if (debouncedQuery.trim()) {
       const q = debouncedQuery.toLowerCase();
-      result = result.filter(item => item.Title?.toLowerCase().includes(q));
+      result = result.filter(item => item.title?.toLowerCase().includes(q));
     }
 
     if (selectedGenre) {
       result = result.filter(item =>
-        (item.Genres || []).some((g: string) => g === selectedGenre)
+        (item.genres || []).some((g: string) => g === selectedGenre)
       );
     }
 
     if (selectedYear) {
-      result = result.filter(item => item.Year === selectedYear);
+      result = result.filter(item => item.year === selectedYear);
     }
 
     switch (selectedSort) {
@@ -221,7 +221,7 @@ export const CategoryScreen: React.FC = () => {
   const availableGenres = useMemo(() => {
     const genreSet = new Set<string>();
     allItems.forEach(item => {
-      (item.Genres || []).forEach((g: string) => genreSet.add(g));
+      (item.genres || []).forEach((g: string) => genreSet.add(g));
     });
     return Array.from(genreSet).sort();
   }, [allItems]);
@@ -229,7 +229,7 @@ export const CategoryScreen: React.FC = () => {
   const availableYears = useMemo(() => {
     const yearSet = new Set<string>();
     allItems.forEach(item => {
-      if (item.Year) yearSet.add(item.Year);
+      if (item.year) yearSet.add(item.year);
     });
     return Array.from(yearSet).sort((a, b) => b.localeCompare(a));
   }, [allItems]);

@@ -33,19 +33,12 @@ export const getAllContentIndex = async (forceRefresh = false): Promise<any[]> =
     const response = await axios.get(ALL_CONTENT_URL, {timeout: 30000});
     const data = response.data;
 
-    let arr: any[];
-    if (Array.isArray(data)) {
-      // Already an array
-      arr = data;
-    } else if (data && typeof data === 'object' && !data.error) {
-      // Dict format {"id": {...}} — same as every other JSON in the project
-      arr = Object.entries(data).map(([id, item]: [string, any]) => ({...item, id}));
-    } else {
+    if (!Array.isArray(data)) {
       throw new Error(data?.error || 'Unexpected response from /api/all-content');
     }
 
-    allContentCache = arr;
-    console.log(`[Metadata] all-content: ${arr.length} items`);
+    allContentCache = data;
+    console.log(`[Metadata] all-content: ${data.length} items`);
     return allContentCache!;
   } catch (error: any) {
     console.error('[Metadata] getAllContentIndex failed:', error.message);
