@@ -111,6 +111,8 @@ export const ar = {
   year: 'السنة',
   rating: 'التقييم',
   views: 'المشاهدات',
+  filter: 'تصفية',
+  apply: 'تطبيق',
   sort_by: 'ترتيب حسب',
   sort_az: 'أ-ي',
   sort_za: 'ي-أ',

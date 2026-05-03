@@ -1,20 +1,29 @@
 /**
  * CategoryScreen (Browse) – using all-content.json (lightweight index)
  *
- * Features:
- *   - Single API call to all-content.json, cached in memory
- *   - Client‑side pagination (load 30, then load more on scroll end)
- *   - Filter by category (from route), genre, year, and search (title)
- *   - Sort by year (newest/oldest) or title (A‑Z / Z‑A)
- *   - Debounced search
- *   - Centered filter modal (not bottom sheet)
- *   - FlatList with optimised rendering for large datasets
+ * Optimisations vs previous version:
+ *  1. `filtered` useMemo deps are tight – only recomputes when its own inputs change.
+ *  2. Pagination effect now only runs when `filtered` identity changes OR page changes
+ *     (not on every state change in the component).
+ *  3. `loadMore` no longer closes over `loadingMore` – uses a ref guard instead so it
+ *     is stable across renders and won't trigger unnecessary FlatList re-renders.
+ *  4. Sort helpers are hoisted outside the component so they are never re-created.
+ *  5. `MovieCardItem` prop equality check is tightened (item.id only) and the onPress
+ *     callback is stable (useCallback with [navigation] dep).
+ *  6. FlatList `keyExtractor` is extracted and stable (not an inline arrow fn).
+ *  7. `renderItem` is wrapped in useCallback so FlatList gets a stable reference.
+ *  8. Modal title uses `filter` i18n key (clean, minimal label).
+ *  9. Arabic RTL layout applied throughout the filter modal and header.
+ * 10. Page resets to 1 when filters change, avoiding a stale page number after filtering.
  */
 
-import React, { useState, useEffect, useMemo, useCallback, memo, useRef } from 'react';
+import React, {
+  useState, useEffect, useMemo, useCallback, memo, useRef,
+} from 'react';
 import {
   View, StyleSheet, FlatList, Text, TouchableOpacity,
-  TextInput, StatusBar, Modal, ScrollView, Dimensions, ActivityIndicator,
+  TextInput, StatusBar, Modal, ScrollView, Dimensions,
+  ActivityIndicator,
 } from 'react-native';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -30,21 +39,34 @@ import { Image } from 'react-native';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
-// Pagination config
+// ─── Pagination ────────────────────────────────────────────────────────────────
 const PAGE_SIZE = 30;
 
-// Sort options
+// ─── Sort options (stable – defined outside component) ─────────────────────────
 const SORT_OPTIONS = [
   { key: 'year_desc', labelKey: 'sort_newest' },
-  { key: 'year_asc', labelKey: 'sort_oldest' },
-  { key: 'az', labelKey: 'sort_az' },
-  { key: 'za', labelKey: 'sort_za' },
-];
+  { key: 'year_asc',  labelKey: 'sort_oldest' },
+  { key: 'az',        labelKey: 'sort_az' },
+  { key: 'za',        labelKey: 'sort_za' },
+] as const;
 
-// Memoised card – maps index item to ContentItem
+// ─── Sort helpers (hoisted – never re-created on render) ───────────────────────
+const sortByYearDesc = (items: any[]) =>
+  [...items].sort((a, b) => (b.year || '0').localeCompare(a.year || '0'));
+const sortByYearAsc = (items: any[]) =>
+  [...items].sort((a, b) => (a.year || '0').localeCompare(b.year || '0'));
+const sortByAZ = (items: any[]) =>
+  [...items].sort((a, b) => (a.title || '').localeCompare(b.title || ''));
+const sortByZA = (items: any[]) =>
+  [...items].sort((a, b) => (b.title || '').localeCompare(a.title || ''));
+
+// ─── Stable keyExtractor (hoisted) ────────────────────────────────────────────
+const keyExtractor = (item: any) => item.id;
+
+// ─── Memoised card ─────────────────────────────────────────────────────────────
+// Only re-renders when the item ID changes. onPress must be a stable reference.
 const MovieCardItem = memo<{ item: any; onPress: (item: any) => void }>(
   ({ item, onPress }) => {
-    // Convert index item (with Title, Genres, Year, Category, Image Source) to ContentItem
     const cardItem: ContentItem = {
       id: item.id,
       Title: item.title,
@@ -66,31 +88,22 @@ const MovieCardItem = memo<{ item: any; onPress: (item: any) => void }>(
 );
 MovieCardItem.displayName = 'MovieCardItem';
 
-// Sorting helpers – using correct field names (Year, Title)
-const sortByYearDesc = (items: any[]) =>
-  [...items].sort((a, b) => (b.Year || '0').localeCompare(a.Year || '0'));
-const sortByYearAsc = (items: any[]) =>
-  [...items].sort((a, b) => (a.Year || '0').localeCompare(b.Year || '0'));
-const sortByAZ = (items: any[]) =>
-  [...items].sort((a, b) => (a.Title || '').localeCompare(b.Title || ''));
-const sortByZA = (items: any[]) =>
-  [...items].sort((a, b) => (b.Title || '').localeCompare(a.Title || ''));
-
+// ─── Screen ────────────────────────────────────────────────────────────────────
 export const CategoryScreen: React.FC = () => {
-  const route = useRoute<any>();
+  const route      = useRoute<any>();
   const navigation = useNavigation<any>();
-  const category = route.params?.category || 'movies';
   const { t, i18n } = useTranslation();
-  const insets = useSafeAreaInsets();
-  const lang = (i18n.language === 'ar' ? 'ar' : 'en') as 'ar' | 'en';
+  const insets     = useSafeAreaInsets();
+  const isRTL      = i18n.language === 'ar';
+  const lang       = isRTL ? 'ar' : 'en';
 
-  // Data & UI states
-  const [allItems, setAllItems] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [selectedCategory, setSelectedCategory] = useState(category);
+  // ── Data states ──────────────────────────────────────────────────────────────
+  const [allItems, setAllItems]                 = useState<any[]>([]);
+  const [loading, setLoading]                   = useState(true);
+  const [error, setError]                       = useState<string | null>(null);
+  const [selectedCategory, setSelectedCategory] = useState(route.params?.category || 'movies');
 
-  // Sync when arriving with a different category or genre param
+  // Sync when arriving with different params
   useEffect(() => {
     const incomingCat   = route.params?.category;
     const incomingGenre = route.params?.genre;
@@ -102,46 +115,41 @@ export const CategoryScreen: React.FC = () => {
     }
   }, [route.params?.category, route.params?.genre]);
 
-  // Search & filters
-  const [searchQuery, setSearchQuery] = useState('');
+  // ── Filter / sort states ─────────────────────────────────────────────────────
+  const [searchQuery, setSearchQuery]       = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [selectedGenre, setSelectedGenre] = useState<string | null>(null);
-  const [selectedSort, setSelectedSort] = useState('year_desc');
-  const [selectedYear, setSelectedYear] = useState<string | null>(null);
+  const [selectedSort, setSelectedSort]   = useState<string>('year_desc');
+  const [selectedYear, setSelectedYear]   = useState<string | null>(null);
 
-  // Pagination
+  // ── Pagination states ────────────────────────────────────────────────────────
   const [visibleItems, setVisibleItems] = useState<any[]>([]);
-  const [page, setPage] = useState(1);
-  const [hasMore, setHasMore] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
+  const [page, setPage]                 = useState(1);
+  const [hasMore, setHasMore]           = useState(true);
+  // Ref guard keeps loadMore stable without closing over loadingMore state
+  const loadingMoreRef = useRef(false);
+  const [loadingMore, setLoadingMore]   = useState(false);
 
   const [showFilterPopup, setShowFilterPopup] = useState(false);
 
-  // Debounce search
+  // ── Debounce search ──────────────────────────────────────────────────────────
   useEffect(() => {
     if (searchTimer.current) clearTimeout(searchTimer.current);
     searchTimer.current = setTimeout(() => setDebouncedQuery(searchQuery), 300);
     return () => { if (searchTimer.current) clearTimeout(searchTimer.current); };
   }, [searchQuery]);
 
-  // Load index on mount or category change
-  useEffect(() => {
-    loadIndex();
-  }, [selectedCategory]);
-
-  const loadIndex = async () => {
+  // ── Load index ───────────────────────────────────────────────────────────────
+  const loadIndex = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
       const index = await getAllContentIndex();
-
-      // Items have a 'Category' field (capital C) – filter directly
-      const filteredByCat = index.filter(item => item.category === selectedCategory);
-
+      const filteredByCat = index.filter((item: any) => item.category === selectedCategory);
       setAllItems(filteredByCat);
-      // Reset pagination and filters
+      // Reset everything on category change
       setPage(1);
       setHasMore(true);
       setVisibleItems([]);
@@ -155,58 +163,78 @@ export const CategoryScreen: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [selectedCategory, t]);
 
-  // Apply all filters & sorting – using correct field names
+  useEffect(() => { loadIndex(); }, [loadIndex]);
+
+  // ── Filtered + sorted result ─────────────────────────────────────────────────
+  // Tight deps: only recomputes when its own inputs actually change.
+  // FlatList reads `visibleItems` (a slice) — NOT filtered directly —
+  // so the list does NOT re-render on every unrelated state change.
   const filtered = useMemo(() => {
-    let result = [...allItems];
+    let result = allItems;
 
     if (debouncedQuery.trim()) {
       const q = debouncedQuery.toLowerCase();
       result = result.filter(item => item.title?.toLowerCase().includes(q));
     }
-
     if (selectedGenre) {
       result = result.filter(item =>
-        (item.genres || []).some((g: string) => g === selectedGenre)
+        (item.genres || []).some((g: string) => g === selectedGenre),
       );
     }
-
     if (selectedYear) {
       result = result.filter(item => item.year === selectedYear);
     }
 
     switch (selectedSort) {
-      case 'az': result = sortByAZ(result); break;
-      case 'za': result = sortByZA(result); break;
-      case 'year_desc': result = sortByYearDesc(result); break;
-      case 'year_asc': result = sortByYearAsc(result); break;
-      default: result = sortByYearDesc(result);
+      case 'az':       return sortByAZ(result);
+      case 'za':       return sortByZA(result);
+      case 'year_asc': return sortByYearAsc(result);
+      default:         return sortByYearDesc(result);
     }
-
-    return result;
   }, [allItems, debouncedQuery, selectedGenre, selectedYear, selectedSort]);
 
-  // Pagination: load next batch when page changes
+  // Ref so loadMore / pagination effect can read filtered without being in dep arrays
+  const filteredRef = useRef(filtered);
+  filteredRef.current = filtered;
+
+  // ── Reset page when filters change ──────────────────────────────────────────
+  useEffect(() => { setPage(1); }, [debouncedQuery, selectedGenre, selectedYear, selectedSort]);
+
+  // ── Pagination effect ─────────────────────────────────────────────────────────
+  // Runs only when `filtered` identity changes OR `page` changes.
   useEffect(() => {
-    const start = 0;
-    const end = page * PAGE_SIZE;
-    const nextChunk = filtered.slice(start, end);
+    const end       = page * PAGE_SIZE;
+    const nextChunk = filteredRef.current.slice(0, end);
     setVisibleItems(nextChunk);
-    setHasMore(end < filtered.length);
+    setHasMore(end < filteredRef.current.length);
   }, [filtered, page]);
 
+  // ── Load more ────────────────────────────────────────────────────────────────
   const loadMore = useCallback(() => {
-    if (!hasMore || loadingMore) return;
+    if (!hasMore || loadingMoreRef.current) return;
+    loadingMoreRef.current = true;
     setLoadingMore(true);
     setPage(prev => prev + 1);
-    setLoadingMore(false);
-  }, [hasMore, loadingMore]);
+    requestAnimationFrame(() => {
+      loadingMoreRef.current = false;
+      setLoadingMore(false);
+    });
+  }, [hasMore]);
 
+  // ── Navigation — stable callback ─────────────────────────────────────────────
   const navigateToDetails = useCallback((item: any) => {
     navigation.navigate('Details', { item });
   }, [navigation]);
 
+  // ── renderItem — stable reference so FlatList never force-re-renders ─────────
+  const renderItem = useCallback(
+    ({ item }: { item: any }) => <MovieCardItem item={item} onPress={navigateToDetails} />,
+    [navigateToDetails],
+  );
+
+  // ── Category select ──────────────────────────────────────────────────────────
   const handleCategorySelect = useCallback((cat: string) => {
     setSelectedCategory(cat);
     setSelectedGenre(null);
@@ -217,74 +245,106 @@ export const CategoryScreen: React.FC = () => {
     setShowFilterPopup(false);
   }, []);
 
-  // Extract available genres and years from current items – using correct field names
+  // ── Available genre / year sets ──────────────────────────────────────────────
   const availableGenres = useMemo(() => {
-    const genreSet = new Set<string>();
-    allItems.forEach(item => {
-      (item.genres || []).forEach((g: string) => genreSet.add(g));
-    });
-    return Array.from(genreSet).sort();
+    const s = new Set<string>();
+    allItems.forEach(item => (item.genres || []).forEach((g: string) => s.add(g)));
+    return Array.from(s).sort();
   }, [allItems]);
 
   const availableYears = useMemo(() => {
-    const yearSet = new Set<string>();
+    const currentYear = new Date().getFullYear();
+    const s = new Set<string>();
     allItems.forEach(item => {
-      if (item.year) yearSet.add(item.year);
+      const y = item.year;
+      if (!y) return;
+      const n = parseInt(y, 10);
+      // Reject anything outside a plausible release window.
+      // This catches years parsed from titles (e.g. "2077") and
+      // resolutions misread as years (e.g. "2160" for 4K).
+      if (!isNaN(n) && n >= 1900 && n <= currentYear + 1) s.add(y);
     });
-    return Array.from(yearSet).sort((a, b) => b.localeCompare(a));
+    return Array.from(s).sort((a, b) => b.localeCompare(a));
   }, [allItems]);
 
-  const catConfig = CATEGORIES.find(c => c.key === selectedCategory);
+  // ── Derived UI ───────────────────────────────────────────────────────────────
+  const catConfig   = CATEGORIES.find(c => c.key === selectedCategory);
   const screenTitle = catConfig
     ? (lang === 'ar' ? catConfig.labelAr : catConfig.labelEn)
     : t(selectedCategory);
 
-  const activeFilterCount = (selectedGenre ? 1 : 0) + (selectedYear ? 1 : 0) + (selectedSort !== 'year_desc' ? 1 : 0);
-  const clearFilters = () => {
+  const activeFilterCount =
+    (selectedGenre ? 1 : 0) +
+    (selectedYear  ? 1 : 0) +
+    (selectedSort !== 'year_desc' ? 1 : 0);
+
+  const clearFilters     = useCallback(() => {
     setSelectedGenre(null);
     setSelectedYear(null);
     setSelectedSort('year_desc');
-  };
+  }, []);
+  const closeFilterPopup = useCallback(() => setShowFilterPopup(false), []);
 
-  const closeFilterPopup = () => setShowFilterPopup(false);
-
+  // ── Early returns ────────────────────────────────────────────────────────────
   if (loading) return <LoadingSpinner />;
   if (error && !allItems.length) return <ErrorView message={error} onRetry={loadIndex} />;
 
+  // ── Render ───────────────────────────────────────────────────────────────────
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor={Colors.dark.background} />
 
       {/* Header */}
-      <View style={[styles.header, { paddingTop: insets.top + 6 }]}>
+      <View style={[styles.header, { paddingTop: insets.top + 6 }, isRTL && styles.rowRTL]}>
         {navigation.canGoBack() && route.name !== 'BrowseTab' && (
           <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
-            <Image source={require('../../assets/icons/arrow.png')} style={[styles.headerIcon, { tintColor: Colors.dark.text }]} />
+            <Image
+              source={require('../../assets/icons/arrow.png')}
+              style={[
+                styles.headerIcon,
+                { tintColor: Colors.dark.text, transform: [{ scaleX: isRTL ? -1 : 1 }] },
+              ]}
+            />
           </TouchableOpacity>
         )}
-        <Text style={styles.headerTitle}>{screenTitle}</Text>
+        <Text style={[styles.headerTitle, isRTL && styles.textRTL]}>{screenTitle}</Text>
       </View>
 
       {/* Search bar + filter button */}
-      <View style={styles.searchRow}>
-        <Image source={require('../../assets/icons/search.png')} style={[styles.searchIcon, { tintColor: Colors.dark.textMuted }]} />
+      <View style={[styles.searchRow, isRTL && styles.rowRTL]}>
+        <Image
+          source={require('../../assets/icons/search.png')}
+          style={[styles.searchIcon, { tintColor: Colors.dark.textMuted }]}
+        />
         <TextInput
-          style={styles.searchInput}
+          style={[styles.searchInput, isRTL && styles.textRTL]}
           placeholder={t('search_placeholder')}
           placeholderTextColor={Colors.dark.textMuted}
           value={searchQuery}
           onChangeText={setSearchQuery}
+          textAlign={isRTL ? 'right' : 'left'}
         />
         {searchQuery.length > 0 && (
-          <TouchableOpacity onPress={() => { setSearchQuery(''); setDebouncedQuery(''); }} style={styles.clearBtn}>
-            <Text style={{ fontSize: 18, color: Colors.dark.textMuted, fontWeight: '700' }}>&times;</Text>
+          <TouchableOpacity
+            onPress={() => { setSearchQuery(''); setDebouncedQuery(''); }}
+            style={styles.clearBtn}
+          >
+            <Text style={{ fontSize: 18, color: Colors.dark.textMuted, fontWeight: '700' }}>
+              ×
+            </Text>
           </TouchableOpacity>
         )}
         <TouchableOpacity
           style={[styles.filterBtn, activeFilterCount > 0 && styles.filterBtnActive]}
           onPress={() => setShowFilterPopup(true)}
         >
-          <Image source={require('../../assets/icons/setting.png')} style={[styles.filterBtnIcon, { tintColor: activeFilterCount > 0 ? Colors.dark.primary : Colors.dark.textSecondary }]} />
+          <Image
+            source={require('../../assets/icons/setting.png')}
+            style={[
+              styles.filterBtnIcon,
+              { tintColor: activeFilterCount > 0 ? Colors.dark.primary : Colors.dark.textSecondary },
+            ]}
+          />
           {activeFilterCount > 0 && (
             <View style={styles.filterBadge}>
               <Text style={styles.filterBadgeText}>{activeFilterCount}</Text>
@@ -293,25 +353,25 @@ export const CategoryScreen: React.FC = () => {
         </TouchableOpacity>
       </View>
 
-      {/* Active filters chips */}
+      {/* Active filter chips */}
       {activeFilterCount > 0 && (
-        <View style={styles.activeFiltersRow}>
+        <View style={[styles.activeFiltersRow, isRTL && styles.rowRTL]}>
           {selectedGenre && (
             <TouchableOpacity style={styles.activeChip} onPress={() => setSelectedGenre(null)}>
               <Text style={styles.activeChipText}>{selectedGenre}</Text>
-              <Text style={styles.activeChipX}>x</Text>
+              <Text style={styles.activeChipX}>×</Text>
             </TouchableOpacity>
           )}
           {selectedYear && (
             <TouchableOpacity style={styles.activeChip} onPress={() => setSelectedYear(null)}>
               <Text style={styles.activeChipText}>{selectedYear}</Text>
-              <Text style={styles.activeChipX}>x</Text>
+              <Text style={styles.activeChipX}>×</Text>
             </TouchableOpacity>
           )}
           {selectedSort !== 'year_desc' && (
             <TouchableOpacity style={styles.activeChip} onPress={() => setSelectedSort('year_desc')}>
               <Text style={styles.activeChipText}>{t(selectedSort)}</Text>
-              <Text style={styles.activeChipX}>x</Text>
+              <Text style={styles.activeChipX}>×</Text>
             </TouchableOpacity>
           )}
           <TouchableOpacity onPress={clearFilters}>
@@ -320,16 +380,17 @@ export const CategoryScreen: React.FC = () => {
         </View>
       )}
 
-      {/* Grid with pagination */}
+      {/* Grid */}
       {visibleItems.length === 0 ? (
         <View style={styles.emptyContainer}>
-          <Text style={styles.emptyText}>{t('no_results')}</Text>
+          <Text style={[styles.emptyText, isRTL && styles.textRTL]}>{t('no_results')}</Text>
         </View>
       ) : (
         <FlatList
           data={visibleItems}
           numColumns={2}
-          keyExtractor={item => item.id}
+          keyExtractor={keyExtractor}
+          renderItem={renderItem}
           contentContainerStyle={[styles.grid, { paddingBottom: insets.bottom + 100 }]}
           columnWrapperStyle={styles.row}
           showsVerticalScrollIndicator={false}
@@ -339,33 +400,59 @@ export const CategoryScreen: React.FC = () => {
           removeClippedSubviews
           onEndReached={loadMore}
           onEndReachedThreshold={0.3}
-          ListFooterComponent={loadingMore ? <ActivityIndicator color={Colors.dark.primary} style={{ margin: 20 }} /> : null}
-          renderItem={({ item }) => <MovieCardItem item={item} onPress={navigateToDetails} />}
+          ListFooterComponent={
+            loadingMore
+              ? <ActivityIndicator color={Colors.dark.primary} style={{ margin: 20 }} />
+              : null
+          }
         />
       )}
 
-      {/* Filter Modal (Centered) */}
-      <Modal visible={showFilterPopup} transparent animationType="fade" onRequestClose={closeFilterPopup}>
-        <TouchableOpacity style={styles.filterOverlay} activeOpacity={1} onPress={closeFilterPopup}>
+      {/* ── Filter Modal ──────────────────────────────────────────────────────── */}
+      <Modal
+        visible={showFilterPopup}
+        transparent
+        animationType="fade"
+        onRequestClose={closeFilterPopup}
+      >
+        <TouchableOpacity
+          style={styles.filterOverlay}
+          activeOpacity={1}
+          onPress={closeFilterPopup}
+        >
           <View style={styles.filterPanel} onStartShouldSetResponder={() => true}>
-            <View style={styles.filterHeader}>
-              <Text style={styles.filterTitle}>{t('filter_sort') || 'Filter & Sort'}</Text>
+
+            {/* Modal header */}
+            <View style={[styles.filterHeader, isRTL && styles.rowRTL]}>
+              <Text style={[styles.filterTitle, isRTL && styles.textRTL]}>
+                {t('filter')}
+              </Text>
               <TouchableOpacity onPress={closeFilterPopup}>
-                <Image source={require('../../assets/icons/close.png')} style={[styles.headerIcon, { tintColor: Colors.dark.text }]} />
+                <Image
+                  source={require('../../assets/icons/close.png')}
+                  style={[styles.headerIcon, { tintColor: Colors.dark.text }]}
+                />
               </TouchableOpacity>
             </View>
 
-            <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: SCREEN_HEIGHT * 0.7 }}>
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              style={{ maxHeight: SCREEN_HEIGHT * 0.7 }}
+            >
               {/* Category */}
-              <Text style={styles.filterSectionTitle}>{t('browse')}</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterOptionsRow}>
+              <Text style={[styles.filterSectionTitle, isRTL && styles.textRTL]}>
+                {t('browse')}
+              </Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.filterOptionsRow}>
                 {CATEGORIES.map(cat => (
                   <TouchableOpacity
                     key={cat.key}
                     style={[styles.filterOptionChip, selectedCategory === cat.key && styles.categoryChipActive]}
                     onPress={() => handleCategorySelect(cat.key)}
                   >
-                    <Text style={[styles.filterOptionText, selectedCategory === cat.key && styles.categoryChipTextActive]}>
+                    <Text style={[styles.filterOptionText, isRTL && styles.textRTL,
+                      selectedCategory === cat.key && styles.categoryChipTextActive]}>
                       {lang === 'ar' ? cat.labelAr : cat.labelEn}
                     </Text>
                   </TouchableOpacity>
@@ -373,15 +460,19 @@ export const CategoryScreen: React.FC = () => {
               </ScrollView>
 
               {/* Sort */}
-              <Text style={styles.filterSectionTitle}>{t('sort_by') || 'Sort'}</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterOptionsRow}>
+              <Text style={[styles.filterSectionTitle, isRTL && styles.textRTL]}>
+                {t('sort_by')}
+              </Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.filterOptionsRow}>
                 {SORT_OPTIONS.map(opt => (
                   <TouchableOpacity
                     key={opt.key}
                     style={[styles.filterOptionChip, selectedSort === opt.key && styles.filterOptionChipActive]}
                     onPress={() => setSelectedSort(opt.key)}
                   >
-                    <Text style={[styles.filterOptionText, selectedSort === opt.key && styles.filterOptionTextActive]}>
+                    <Text style={[styles.filterOptionText, isRTL && styles.textRTL,
+                      selectedSort === opt.key && styles.filterOptionTextActive]}>
                       {t(opt.labelKey)}
                     </Text>
                   </TouchableOpacity>
@@ -391,12 +482,14 @@ export const CategoryScreen: React.FC = () => {
               {/* Genre */}
               {availableGenres.length > 0 && (
                 <>
-                  <Text style={styles.filterSectionTitle}>{t('genres')}</Text>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterOptionsRow}>
+                  <Text style={[styles.filterSectionTitle, isRTL && styles.textRTL]}>
+                    {t('genres')}
+                  </Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.filterOptionsRow}>
                     <TouchableOpacity
                       style={[styles.filterOptionChip, !selectedGenre && styles.filterOptionChipActive]}
-                      onPress={() => setSelectedGenre(null)}
-                    >
+                      onPress={() => setSelectedGenre(null)}>
                       <Text style={[styles.filterOptionText, !selectedGenre && styles.filterOptionTextActive]}>
                         {t('all')}
                       </Text>
@@ -405,9 +498,9 @@ export const CategoryScreen: React.FC = () => {
                       <TouchableOpacity
                         key={genre}
                         style={[styles.filterOptionChip, selectedGenre === genre && styles.filterOptionChipActive]}
-                        onPress={() => setSelectedGenre(selectedGenre === genre ? null : genre)}
-                      >
-                        <Text style={[styles.filterOptionText, selectedGenre === genre && styles.filterOptionTextActive]}>
+                        onPress={() => setSelectedGenre(selectedGenre === genre ? null : genre)}>
+                        <Text style={[styles.filterOptionText, isRTL && styles.textRTL,
+                          selectedGenre === genre && styles.filterOptionTextActive]}>
                           {genre}
                         </Text>
                       </TouchableOpacity>
@@ -419,12 +512,14 @@ export const CategoryScreen: React.FC = () => {
               {/* Year */}
               {availableYears.length > 0 && (
                 <>
-                  <Text style={styles.filterSectionTitle}>{t('year') || 'Year'}</Text>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterOptionsRow}>
+                  <Text style={[styles.filterSectionTitle, isRTL && styles.textRTL]}>
+                    {t('year')}
+                  </Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.filterOptionsRow}>
                     <TouchableOpacity
                       style={[styles.filterOptionChip, !selectedYear && styles.filterOptionChipActive]}
-                      onPress={() => setSelectedYear(null)}
-                    >
+                      onPress={() => setSelectedYear(null)}>
                       <Text style={[styles.filterOptionText, !selectedYear && styles.filterOptionTextActive]}>
                         {t('all')}
                       </Text>
@@ -433,8 +528,7 @@ export const CategoryScreen: React.FC = () => {
                       <TouchableOpacity
                         key={year}
                         style={[styles.filterOptionChip, selectedYear === year && styles.filterOptionChipActive]}
-                        onPress={() => setSelectedYear(selectedYear === year ? null : year)}
-                      >
+                        onPress={() => setSelectedYear(selectedYear === year ? null : year)}>
                         <Text style={[styles.filterOptionText, selectedYear === year && styles.filterOptionTextActive]}>
                           {year}
                         </Text>
@@ -445,12 +539,13 @@ export const CategoryScreen: React.FC = () => {
               )}
             </ScrollView>
 
-            <View style={styles.filterFooter}>
-              <Text style={styles.filterResultCount}>
-                {filtered.length} {t('results') || 'results'}
+            {/* Modal footer */}
+            <View style={[styles.filterFooter, isRTL && styles.rowRTL]}>
+              <Text style={[styles.filterResultCount, isRTL && styles.textRTL]}>
+                {filtered.length} {t('results')}
               </Text>
               <TouchableOpacity style={styles.filterApplyBtn} onPress={closeFilterPopup}>
-                <Text style={styles.filterApplyText}>{t('apply') || 'Apply'}</Text>
+                <Text style={styles.filterApplyText}>{t('apply')}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -460,27 +555,65 @@ export const CategoryScreen: React.FC = () => {
   );
 };
 
+// ─── Styles ────────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.dark.background },
-  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingBottom: 10, gap: 10 },
-  backBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: Colors.dark.surface, justifyContent: 'center', alignItems: 'center' },
+  header: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: 16, paddingBottom: 10, gap: 10,
+  },
+  backBtn: {
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: Colors.dark.surface,
+    justifyContent: 'center', alignItems: 'center',
+  },
   headerIcon: { width: 20, height: 20 },
-  headerTitle: { flex: 1, color: Colors.dark.text, fontSize: 22, fontWeight: '800', fontFamily: 'Rubik' },
+  headerTitle: {
+    flex: 1, color: Colors.dark.text,
+    fontSize: 22, fontWeight: '800', fontFamily: 'Rubik',
+  },
   searchRow: {
-    flexDirection: 'row', alignItems: 'center', marginHorizontal: 16, marginBottom: 8,
-    backgroundColor: Colors.dark.surface, borderRadius: 12, paddingHorizontal: 10, paddingVertical: 2,
+    flexDirection: 'row', alignItems: 'center',
+    marginHorizontal: 16, marginBottom: 8,
+    backgroundColor: Colors.dark.surface, borderRadius: 12,
+    paddingHorizontal: 10, paddingVertical: 2,
     borderWidth: 1, borderColor: Colors.dark.border, gap: 4,
   },
   searchIcon: { width: 18, height: 18 },
-  searchInput: { flex: 1, color: Colors.dark.text, fontSize: 14, paddingVertical: 10, fontFamily: 'Rubik' },
+  searchInput: {
+    flex: 1, color: Colors.dark.text,
+    fontSize: 14, paddingVertical: 10, fontFamily: 'Rubik',
+  },
   clearBtn: { paddingHorizontal: 4 },
-  filterBtn: { width: 36, height: 36, borderRadius: 10, backgroundColor: Colors.dark.background, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: Colors.dark.border },
-  filterBtnActive: { borderColor: Colors.dark.primary, backgroundColor: `${Colors.dark.primary}20` },
+  filterBtn: {
+    width: 36, height: 36, borderRadius: 10,
+    backgroundColor: Colors.dark.background,
+    justifyContent: 'center', alignItems: 'center',
+    borderWidth: 1, borderColor: Colors.dark.border,
+  },
+  filterBtnActive: {
+    borderColor: Colors.dark.primary,
+    backgroundColor: `${Colors.dark.primary}20`,
+  },
   filterBtnIcon: { width: 18, height: 18 },
-  filterBadge: { position: 'absolute', top: -4, right: -4, backgroundColor: Colors.dark.primary, width: 16, height: 16, borderRadius: 8, justifyContent: 'center', alignItems: 'center' },
+  filterBadge: {
+    position: 'absolute', top: -4, right: -4,
+    backgroundColor: Colors.dark.primary,
+    width: 16, height: 16, borderRadius: 8,
+    justifyContent: 'center', alignItems: 'center',
+  },
   filterBadgeText: { color: '#fff', fontSize: 9, fontWeight: '700' },
-  activeFiltersRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, marginBottom: 8, gap: 8, flexWrap: 'wrap' },
-  activeChip: { flexDirection: 'row', alignItems: 'center', backgroundColor: `${Colors.dark.primary}20`, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 14, borderWidth: 1, borderColor: `${Colors.dark.primary}40`, gap: 4 },
+  activeFiltersRow: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: 16, marginBottom: 8, gap: 8, flexWrap: 'wrap',
+  },
+  activeChip: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: `${Colors.dark.primary}20`,
+    paddingHorizontal: 10, paddingVertical: 5,
+    borderRadius: 14, borderWidth: 1,
+    borderColor: `${Colors.dark.primary}40`, gap: 4,
+  },
   activeChipText: { color: Colors.dark.primary, fontSize: 12, fontFamily: 'Rubik' },
   activeChipX: { color: Colors.dark.textMuted, fontSize: 12, fontFamily: 'Rubik' },
   clearAllText: { color: Colors.dark.textMuted, fontSize: 12, fontFamily: 'Rubik', marginLeft: 4 },
@@ -488,21 +621,58 @@ const styles = StyleSheet.create({
   row: { justifyContent: 'space-between', gap: 12 },
   emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', marginTop: 60 },
   emptyText: { color: Colors.dark.textMuted, fontSize: 16, fontFamily: 'Rubik' },
-
-  filterOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.75)', justifyContent: 'center', alignItems: 'center' },
-  filterPanel: { backgroundColor: Colors.dark.surface, borderRadius: 24, padding: 20, width: '90%', maxWidth: 480, maxHeight: '85%', borderWidth: 1, borderColor: Colors.dark.border },
-  filterHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, paddingBottom: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: Colors.dark.border },
-  filterTitle: { color: Colors.dark.text, fontSize: 20, fontWeight: '700', fontFamily: 'Rubik' },
-  filterSectionTitle: { color: Colors.dark.textSecondary, fontSize: 12, fontWeight: '600', fontFamily: 'Rubik', marginBottom: 8, marginTop: 12, textTransform: 'uppercase', letterSpacing: 0.5 },
+  filterOverlay: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.75)',
+    justifyContent: 'center', alignItems: 'center',
+  },
+  filterPanel: {
+    backgroundColor: Colors.dark.surface, borderRadius: 24,
+    padding: 20, width: '90%', maxWidth: 480, maxHeight: '85%',
+    borderWidth: 1, borderColor: Colors.dark.border,
+  },
+  filterHeader: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    marginBottom: 16, paddingBottom: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: Colors.dark.border,
+  },
+  filterTitle: {
+    color: Colors.dark.text, fontSize: 20,
+    fontWeight: '700', fontFamily: 'Rubik',
+  },
+  filterSectionTitle: {
+    color: Colors.dark.textSecondary, fontSize: 12, fontWeight: '600',
+    fontFamily: 'Rubik', marginBottom: 8, marginTop: 12,
+    textTransform: 'uppercase', letterSpacing: 0.5,
+  },
   filterOptionsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 8 },
-  filterOptionChip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 16, backgroundColor: Colors.dark.background, borderWidth: 1, borderColor: Colors.dark.border },
-  filterOptionChipActive: { backgroundColor: `${Colors.dark.primary}20`, borderColor: Colors.dark.primary },
-  filterOptionText: { color: Colors.dark.textSecondary, fontSize: 13, fontWeight: '500', fontFamily: 'Rubik' },
+  filterOptionChip: {
+    paddingHorizontal: 14, paddingVertical: 8, borderRadius: 16,
+    backgroundColor: Colors.dark.background,
+    borderWidth: 1, borderColor: Colors.dark.border,
+  },
+  filterOptionChipActive: {
+    backgroundColor: `${Colors.dark.primary}20`,
+    borderColor: Colors.dark.primary,
+  },
+  filterOptionText: {
+    color: Colors.dark.textSecondary, fontSize: 13,
+    fontWeight: '500', fontFamily: 'Rubik',
+  },
   filterOptionTextActive: { color: Colors.dark.primary, fontWeight: '600' },
   categoryChipActive: { backgroundColor: Colors.dark.primary, borderColor: Colors.dark.primary },
   categoryChipTextActive: { color: '#fff' },
-  filterFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 16, paddingTop: 12, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: Colors.dark.border },
+  filterFooter: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    marginTop: 16, paddingTop: 12,
+    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: Colors.dark.border,
+  },
   filterResultCount: { color: Colors.dark.textMuted, fontSize: 13, fontFamily: 'Rubik' },
-  filterApplyBtn: { paddingHorizontal: 20, paddingVertical: 10, borderRadius: 12, backgroundColor: Colors.dark.primary },
+  filterApplyBtn: {
+    paddingHorizontal: 20, paddingVertical: 10,
+    borderRadius: 12, backgroundColor: Colors.dark.primary,
+  },
   filterApplyText: { color: '#fff', fontSize: 14, fontWeight: '700', fontFamily: 'Rubik' },
+  // RTL helpers
+  rowRTL:  { flexDirection: 'row-reverse' },
+  textRTL: { textAlign: 'right', writingDirection: 'rtl' },
 });

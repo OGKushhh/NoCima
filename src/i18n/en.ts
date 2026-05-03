@@ -111,6 +111,8 @@ export const en = {
   year: 'Year',
   rating: 'Rating',
   views: 'Views',
+  filter: 'Filter',
+  apply: 'Apply',
   sort_by: 'Sort by',
   sort_az: 'A-Z',
   sort_za: 'Z-A',
