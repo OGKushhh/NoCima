@@ -48,6 +48,10 @@ export const PlayerScreen: React.FC = () => {
   const [showQualityPicker, setShowQualityPicker] = useState(false);
   const [seekingBackward, setSeekingBackward] = useState(false);
   const [seekingForward, setSeekingForward] = useState(false);
+  const [volume, setVolume] = useState(1.0); // 0.0 – 2.0 (>1.0 = boosted)
+  const [volumeBarHeight, setVolumeBarHeight] = useState(0);
+  const [volumeBarY, setVolumeBarY] = useState(0);
+  const volumeBarRef = useRef<View>(null);
 
   const seekBarRef = useRef<View>(null);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -139,7 +143,25 @@ export const PlayerScreen: React.FC = () => {
     }
   };
 
-  const handleQualityChange = (quality: QualityLevel) => {
+  const handleVolumeBarLayout = () => {
+    if (volumeBarRef.current) {
+      volumeBarRef.current.measure((x, y, width, height, pageX, pageY) => {
+        setVolumeBarHeight(height);
+        setVolumeBarY(pageY);
+      });
+    }
+  };
+
+  const handleVolumePress = (e: GestureResponderEvent) => {
+    const { pageY } = e.nativeEvent;
+    if (volumeBarHeight === 0) return;
+    // Top = 200%, bottom = 0%
+    const relativeY = Math.max(0, Math.min(pageY - volumeBarY, volumeBarHeight));
+    const newVolume = parseFloat((2 - (relativeY / volumeBarHeight) * 2).toFixed(2));
+    setVolume(newVolume);
+  };
+
+ = (quality: QualityLevel) => {
     setQualityLevel(quality);
     setShowQualityPicker(false);
     showControlsTemporarily();
@@ -182,6 +204,7 @@ export const PlayerScreen: React.FC = () => {
           playInBackground={false}
           playWhenInactive={false}
           paused={!playing}
+          volume={Math.min(volume, 2.0)}
           style={styles.video}
           preventsDisplaySleepDuringVideoPlayback
           minLoadRetryCount={3}
@@ -301,6 +324,37 @@ export const PlayerScreen: React.FC = () => {
               </TouchableOpacity>
             </View>
           </View>
+          {/* Vertical volume slider – right edge */}
+          <View style={styles.volumeSliderWrapper} pointerEvents="box-none">
+            <View style={styles.volumeSliderInner}>
+              <Text style={styles.volumeSliderLabel}>{Math.round(volume * 100)}%</Text>
+              <View
+                ref={volumeBarRef}
+                style={styles.volumeTrackContainer}
+                onLayout={handleVolumeBarLayout}
+              >
+                <TouchableOpacity style={StyleSheet.absoluteFillObject} onPress={handleVolumePress} activeOpacity={0.8} />
+                {/* Track background */}
+                <View style={[styles.volumeTrack, { backgroundColor: 'rgba(255,255,255,0.15)' }]} />
+                {/* 100% marker line */}
+                <View style={styles.volumeMidMarker} />
+                {/* Filled portion — grows from bottom */}
+                <View style={[styles.volumeFill, {
+                  height: `${Math.min(volume / 2, 1) * 100}%`,
+                  backgroundColor: volume > 1.0 ? colors.primary : 'rgba(255,255,255,0.9)',
+                }]} />
+                {/* Thumb */}
+                <View style={[styles.volumeThumb, {
+                  bottom: `${Math.min(volume / 2, 1) * 100}%`,
+                  backgroundColor: volume > 1.0 ? colors.primary : '#fff',
+                }]} />
+              </View>
+              <Image
+                source={require('../../assets/icons/medium-volume.png')}
+                style={{ width: 20, height: 20, tintColor: volume === 0 ? 'rgba(255,255,255,0.3)' : '#fff' }}
+              />
+            </View>
+          </View>
         </Animated.View>
       )}
 
@@ -353,6 +407,14 @@ const styles = StyleSheet.create({
   timeRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
   timeText: { color: 'rgba(255,255,255,0.7)', fontSize: 12, fontVariant: ['tabular-nums'] },
   playbackRow: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center' },
+  volumeSliderWrapper: { position: 'absolute', right: 0, top: 0, bottom: 0, justifyContent: 'center', pointerEvents: 'box-none' },
+  volumeSliderInner: { alignItems: 'center', gap: 8, paddingVertical: 12, paddingHorizontal: 10, backgroundColor: 'rgba(0,0,0,0.5)', borderTopLeftRadius: 16, borderBottomLeftRadius: 16 },
+  volumeSliderLabel: { color: 'rgba(255,255,255,0.8)', fontSize: 10, fontVariant: ['tabular-nums'], fontWeight: '600' },
+  volumeTrackContainer: { width: 4, height: 160, borderRadius: 2, position: 'relative', overflow: 'visible' },
+  volumeTrack: { position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, borderRadius: 2 },
+  volumeMidMarker: { position: 'absolute', left: -3, right: -3, top: '50%', height: 1, backgroundColor: 'rgba(255,255,255,0.5)', zIndex: 1 },
+  volumeFill: { position: 'absolute', bottom: 0, left: 0, right: 0, borderRadius: 2 },
+  volumeThumb: { position: 'absolute', left: -5, width: 14, height: 14, borderRadius: 7, marginBottom: -7 },
   seekButton: { width: 50, height: 50, justifyContent: 'center', alignItems: 'center' },
   playPauseButton: { width: 60, height: 60, borderRadius: 30, justifyContent: 'center', alignItems: 'center', marginHorizontal: 12 },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
