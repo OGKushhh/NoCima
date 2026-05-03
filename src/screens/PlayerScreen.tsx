@@ -161,7 +161,7 @@ export const PlayerScreen: React.FC = () => {
     setVolume(newVolume);
   };
 
- = (quality: QualityLevel) => {
+  const handleQualityChange = (quality: QualityLevel) => {
     setQualityLevel(quality);
     setShowQualityPicker(false);
     showControlsTemporarily();
