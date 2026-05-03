@@ -5,7 +5,6 @@
  *   1. Quality  (full Format string, white text, dark bg)
  *   2. Category label  (Movie / Anime / Series / Dubbed / etc, orange bg)
  *   3. Seasons count   (episodic content only)
- *   4. Episodes count  (anime only)
  *
  * Bottom info:
  *   - Title (center, auto-shrinks to fit, NO extra category/status words)
@@ -33,7 +32,6 @@ const SW = Dimensions.get('window').width;
 export const CARD_WIDTH  = (SW - 42) / 2;   // 14px padding each side, 14px between
 export const CARD_HEIGHT = CARD_WIDTH * 1.52;
 
-// Map category key → i18n translation key
 const CATEGORY_I18N: Record<string, string> = {
   movies:          'movies',
   'dubbed-movies': 'dubbed_movies',
@@ -53,22 +51,19 @@ const MovieCardComponent: React.FC<MovieCardProps> = ({item, onPress, width = CA
   const views    = (item as any).Views    || (item as any).views       || '';
   const year     = (item as any).Year     || '';
 
-  // Full quality string from Format field (e.g. "1080p WEB-DL")
   const quality  = item.Format || '';
 
   const catKey = (item.Category || '').toLowerCase();
   const categoryLabel = CATEGORY_I18N[catKey] ? t(CATEGORY_I18N[catKey]) : (item.Category || '');
 
-  // Seasons / Episodes badges (episodic content)
+  // Seasons badge (episodic content only) – keep it
   const seasons  = (item as any)['Seasons']
     ? Object.keys((item as any)['Seasons']).length
     : null;
-  const episodes = (item as any)['Number Of Episodes'] ?? null;
 
-  // Determine if anime (to show episodes badge)
-  const isAnime  = (item.Category || '').toLowerCase().includes('anime');
+  // Removed episodes badge because it's often inaccurate in the main JSON
 
-  // Clean title — strip trailing status words like "مترجم اون لاين فيلم مسلسل"
+  // Clean title — strip trailing status words
   const cleanTitle = (item.Title || '')
     .replace(/\s*(مترجم|اون لاين|مسلسل|فيلم|online|مدبلج)\s*/gi, '')
     .trim();
@@ -89,7 +84,7 @@ const MovieCardComponent: React.FC<MovieCardProps> = ({item, onPress, width = CA
           fallback
         />
 
-        {/* ── TOP-LEFT: Rating + Views ── */}
+        {/* TOP-LEFT: Rating + Views */}
         {(rating || views) ? (
           <View style={styles.topLeft}>
             {rating ? (
@@ -107,7 +102,7 @@ const MovieCardComponent: React.FC<MovieCardProps> = ({item, onPress, width = CA
           </View>
         ) : null}
 
-        {/* ── TOP-RIGHT: Quality → Category → Seasons → Episodes ── */}
+        {/* TOP-RIGHT: Quality → Category → Seasons */}
         <View style={styles.topRight}>
           {quality ? (
             <View style={styles.qualityBadge}>
@@ -124,17 +119,10 @@ const MovieCardComponent: React.FC<MovieCardProps> = ({item, onPress, width = CA
               <Text style={styles.seasonsText}>{seasons}S</Text>
             </View>
           ) : null}
-          {isAnime && episodes && episodes > 0 ? (
-            <View style={styles.epsBadge}>
-              <Text style={styles.epsText}>{episodes}EP</Text>
-            </View>
-          ) : null}
         </View>
-
-
       </View>
 
-      {/* ── Title + Year ── */}
+      {/* Title + Year */}
       <View style={styles.info}>
         <Text
           style={styles.title}
@@ -161,113 +149,54 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     overflow: 'hidden',
   },
-  imageWrap: {
-    position: 'relative',
-  },
-  // ── Top-left pills
+  imageWrap: { position: 'relative' },
   topLeft: {
-    position: 'absolute',
-    top: 6,
-    left: 6,
+    position: 'absolute', top: 6, left: 6,
     gap: 3,
     alignItems: 'flex-start',
   },
   pill: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: 'row', alignItems: 'center',
     backgroundColor: 'rgba(0,0,0,0.75)',
-    paddingHorizontal: 5,
-    paddingVertical: 2,
-    borderRadius: 5,
-    gap: 2,
+    paddingHorizontal: 5, paddingVertical: 2,
+    borderRadius: 5, gap: 2,
   },
-  badgeIcon:  {width: 10, height: 10, tintColor: '#FFD700'},
-  pillText:  {color: '#FFF', fontSize: 10, fontWeight: '600', fontFamily: 'Rubik'},
-
-  // ── Top-right badges
+  badgeIcon: { width: 10, height: 10, tintColor: '#FFD700' },
+  pillText: { color: '#FFF', fontSize: 10, fontWeight: '600', fontFamily: 'Rubik' },
   topRight: {
-    position: 'absolute',
-    top: 6,
-    right: 6,
-    alignItems: 'flex-end',
-    gap: 3,
+    position: 'absolute', top: 6, right: 6,
+    alignItems: 'flex-end', gap: 3,
   },
   qualityBadge: {
     backgroundColor: 'rgba(0,0,0,0.85)',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
+    paddingHorizontal: 6, paddingVertical: 2,
     borderRadius: 5,
-    maxWidth: 'auto' as any,
-    borderWidth: 0.5,
-    borderColor: 'rgba(255,255,255,0.2)',
+    borderWidth: 0.5, borderColor: 'rgba(255,255,255,0.2)',
   },
-  qualityText: {
-    color: '#FFFFFF',          // white as requested
-    fontSize: 10,
-    fontWeight: '700',
-    fontFamily: 'Rubik',
-  },
+  qualityText: { color: '#FFF', fontSize: 10, fontWeight: '700', fontFamily: 'Rubik' },
   catBadge: {
     backgroundColor: '#FFD700',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
+    paddingHorizontal: 6, paddingVertical: 2,
     borderRadius: 5,
-    maxWidth: 'auto' as any,
   },
-  catText: {
-    color: '#000',
-    fontSize: 10,
-    fontWeight: '700',
-    fontFamily: 'Rubik',
-  },
+  catText: { color: '#000', fontSize: 10, fontWeight: '700', fontFamily: 'Rubik' },
   seasonsBadge: {
     backgroundColor: Colors.dark.accent,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
+    paddingHorizontal: 6, paddingVertical: 2,
     borderRadius: 5,
   },
-  seasonsText: {
-    color: '#FFF',
-    fontSize: 10,
-    fontWeight: '700',
-    fontFamily: 'Rubik',
-  },
-  epsBadge: {
-    backgroundColor: Colors.dark.accentLight,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 5,
-  },
-  epsText: {
-    color: '#000',
-    fontSize: 10,
-    fontWeight: '700',
-    fontFamily: 'Rubik',
-  },
-
-  // ── Info below image
+  seasonsText: { color: '#FFF', fontSize: 10, fontWeight: '700', fontFamily: 'Rubik' },
   info: {
-    paddingHorizontal: 7,
-    paddingTop: 7,
-    paddingBottom: 8,
-    alignItems: 'center',
-    minHeight: 42,
-    justifyContent: 'center',
-    gap: 2,
+    paddingHorizontal: 7, paddingTop: 7, paddingBottom: 8,
+    alignItems: 'center', minHeight: 42, justifyContent: 'center', gap: 2,
   },
   title: {
-    color: Colors.dark.text,
-    fontSize: 12.5,
-    fontWeight: '600',
-    lineHeight: 17,
-    textAlign: 'center',
-    fontFamily: 'Rubik',
+    color: Colors.dark.text, fontSize: 12.5, fontWeight: '600',
+    lineHeight: 17, textAlign: 'center', fontFamily: 'Rubik',
   },
   year: {
-    color: Colors.dark.textMuted,
-    fontSize: 10,
-    fontFamily: 'Rubik',
-    textAlign: 'center',
+    color: Colors.dark.textMuted, fontSize: 10,
+    fontFamily: 'Rubik', textAlign: 'center',
   },
 });
 

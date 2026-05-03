@@ -13,9 +13,32 @@ const metadataApi = axios.create({
 });
 
 // ─── Supported category types ───────────────────────────────────────
-export type ContentCategory = 'movies' | 'anime' | 'series' | 'tvshows' | 'asian-series' | 'trending' | 'featured';
+export type ContentCategory = 'movies' | 'dubbed-movies' | 'hindi' | 'asian-movies' | 'anime' | 'anime-movies' | 'series' | 'tvshows' | 'asian-series' | 'trending' | 'featured';
 
 type ContentDict = Record<string, ContentItem>;
+
+// ─── NEW: Lightweight index (all-content.json) ─────────────────────
+const ALL_CONTENT_URL = `${API_BASE}/api/all-content.json`;
+
+// In‑memory cache for the index (re‑used across screens)
+let allContentCache: any[] | null = null;
+
+/**
+ * Fetch the lightweight content index (all-content.json).
+ * Returns an array of items with fields: id, title, image, category, genres, year, last_scraped.
+ */
+export const getAllContentIndex = async (forceRefresh = false): Promise<any[]> => {
+  if (!forceRefresh && allContentCache) return allContentCache;
+  try {
+    const response = await axios.get(ALL_CONTENT_URL, { timeout: 30000 });
+    allContentCache = response.data;
+    console.log(`[Metadata] Fetched all-content.json (${allContentCache.length} items)`);
+    return allContentCache;
+  } catch (error: any) {
+    console.error('[Metadata] Failed to fetch all-content.json', error);
+    throw new Error(`Failed to load content index: ${error.message}`);
+  }
+};
 
 // ─── Core: Load a single category ───────────────────────────────────
 export const loadCategory = async (

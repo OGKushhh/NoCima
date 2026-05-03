@@ -3,8 +3,7 @@
  *
  * Uses on-device WebView extraction (VideoExtractor) instead of
  * server-side extraction. This is required because the CDN (scdns.io)
- * signs m3u8 URLs to the requesting IP — server-side extraction
- * produces URLs that 403 when played from a phone.
+ * bakes the IP into a signed token – server extraction gives a URL that 403s on phone.
  *
  * Play flow:
  *   Movies:   page URL → VideoExtractor (WebView) → intercept m3u8 → Player
@@ -137,6 +136,7 @@ export const DetailsScreen: React.FC = () => {
   // Rating fetch state
   const [rating, setRating] = useState<string>('');
   const [ratingLoading, setRatingLoading] = useState(false);
+  const [showLightbox, setShowLightbox] = useState(false); // optional, if you have lightbox
 
   const statusTimer = useRef<ReturnType<typeof setInterval>>();
 
@@ -252,9 +252,23 @@ export const DetailsScreen: React.FC = () => {
   const seasonPoster: string = epData?.seasons?.[selSeason]?.poster || '';
 
   const totalSeasons = seasonKeys.length;
-  const totalEps = numEps && numEps > 0 ? numEps
-    : numEpsText && parseInt(String(numEpsText), 10) > 0 ? parseInt(String(numEpsText), 10)
-    : currentEps.length;
+
+  // ─── TOTAL EPISODES (accurate from episode file) ─────────────────
+  const totalEps = useMemo(() => {
+    // 1. If we have the detailed episode data, sum over all seasons
+    if (epData?.seasons) {
+      let sum = 0;
+      Object.values(epData.seasons).forEach((season: any) => {
+        sum += season.episodes?.length || 0;
+      });
+      return sum;
+    }
+    // 2. Fallback to static fields (while still loading)
+    if (numEps && numEps > 0) return numEps;
+    if (numEpsText && parseInt(String(numEpsText), 10) > 0) return parseInt(String(numEpsText), 10);
+    // 3. Last resort – current season's episodes count (in case no episode file at all)
+    return currentEps.length;
+  }, [epData, numEps, numEpsText, currentEps.length]);
 
   // ── Status timer helpers ──────────────────────────────────────────
   const startStatusTimer = () => {
@@ -290,6 +304,7 @@ export const DetailsScreen: React.FC = () => {
 
   // ── Shared extraction launcher ────────────────────────────────────
   const startExtraction = useCallback((url: string, title: string, epUrl?: string) => {
+    setShowLightbox(false);  // if you have a lightbox, close it
     setExtracting(true);
     setExtractError(null);
     startStatusTimer();
@@ -329,9 +344,7 @@ export const DetailsScreen: React.FC = () => {
   const handleShare = () =>
     Share.share({message: `${item.Title} - AbdoBest`});
 
-  // ══════════════════════════════════════════════════════════════════════
   // ── Render ─────────────────────────────────────────────────────────
-  // ══════════════════════════════════════════════════════════════════════
   return (
     <View style={S.container}>
       <StatusBar barStyle="light-content" backgroundColor={Colors.dark.background} />
@@ -355,7 +368,7 @@ export const DetailsScreen: React.FC = () => {
           <Text style={S.title} numberOfLines={4}>{item.Title}{year ? ` (${year})` : ''}</Text>
         </View>
 
-        {/* ── Poster with corner badges ── */}
+        {/* ── Poster (no lightbox by default, but you can add one) ── */}
         <View style={S.posterWrap}>
           {item['Image Source'] ? (
             <FastImage
@@ -369,31 +382,19 @@ export const DetailsScreen: React.FC = () => {
               <Image source={require('../../assets/icons/clapboard.png')} style={{width: 52, height: 52, tintColor: Colors.dark.textMuted}} />
             </View>
           )}
-
-          {/* Category badge — top-left */}
-          {CAT_I18N[category] ? (
-            <View style={S.catChip}>
-              <Text style={S.catChipText}>{t(CAT_I18N[category])}</Text>
-            </View>
-          ) : null}
-
-          {/* Quality badge — bottom-right */}
-          {format ? (
-            <View style={S.fmtChip}>
-              <Text style={S.fmtChipText}>{format}</Text>
-            </View>
-          ) : null}
-
-          {/* Viewing level badge — top-right */}
-          {viewingLvl && viewingLvl !== 'Documentary , History' ? (
-            <View style={S.vlChip}>
-              <Text style={S.vlChipText}>{viewingLvl}</Text>
-            </View>
-          ) : null}
         </View>
 
-        {/* ── Rating + Views + Status pills ── */}
+        {/* ── Badges row (category, quality, viewing level, rating, views, status) ── */}
         <View style={S.pillsRow}>
+          {CAT_I18N[category] ? (
+            <View style={S.catPill}><Text style={S.catPillTxt}>{t(CAT_I18N[category])}</Text></View>
+          ) : null}
+          {format ? (
+            <View style={S.fmtPill}><Text style={S.fmtPillTxt}>{format}</Text></View>
+          ) : null}
+          {viewingLvl && viewingLvl !== 'Documentary , History' ? (
+            <View style={S.vlPill}><Text style={S.vlPillTxt}>{viewingLvl}</Text></View>
+          ) : null}
           {rating ? (
             <View style={S.pill}>
               <Image source={require('../../assets/icons/star.png')} style={[S.pillIcon, {tintColor: '#FFD700'}]} />
@@ -401,9 +402,7 @@ export const DetailsScreen: React.FC = () => {
               <Text style={S.pillSub}>{lang === 'ar' ? '\u0645\u0646 10' : '/ 10'}</Text>
             </View>
           ) : ratingLoading ? (
-            <View style={S.pill}>
-              <ActivityIndicator size="small" color={Colors.dark.textMuted} />
-            </View>
+            <View style={S.pill}><ActivityIndicator size="small" color={Colors.dark.textMuted} /></View>
           ) : null}
           {views ? (
             <View style={S.pill}>
@@ -418,7 +417,7 @@ export const DetailsScreen: React.FC = () => {
           ) : null}
         </View>
 
-        {/* ── Episode/Season count badges (series/anime) ── */}
+        {/* ── Season / Episode count badges (with loading indicator) ── */}
         {isEpisodic && (totalSeasons > 0 || totalEps > 0) && (
           <View style={S.countRow}>
             {totalSeasons >= 1 ? (
@@ -429,6 +428,9 @@ export const DetailsScreen: React.FC = () => {
             {totalEps > 0 ? (
               <View style={S.countBadge}>
                 <Text style={S.countBadgeText}>{totalEps} {t('episodes')}</Text>
+                {loadingEps && !epData && (
+                  <ActivityIndicator size="small" color={Colors.dark.primary} style={{marginLeft: 6}} />
+                )}
               </View>
             ) : null}
           </View>
@@ -495,10 +497,17 @@ export const DetailsScreen: React.FC = () => {
           {viewType ? <InfoRow label={t('type')} value={viewType} /> : null}
           {viewingLvl ? <InfoRow label={t('viewing_level')} value={viewingLvl} /> : null}
           {displayStatus ? <InfoRow label={t('status_label')} value={displayStatus} accent={isOngoing} /> : null}
-          {isEpisodic && totalEps > 0 ? <InfoRow label={t('episodes')} value={String(totalEps)} /> : null}
+          {isEpisodic && totalEps > 0 ? (
+            <View style={rowS.row}>
+              <Text style={rowS.label}>{t('episodes')}</Text>
+              <View style={{flex: 2, flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', gap: 8}}>
+                <Text style={rowS.value}>{String(totalEps)}</Text>
+                {loadingEps && !epData && <ActivityIndicator size="small" color={Colors.dark.primary} />}
+              </View>
+            </View>
+          ) : null}
           {epDuration && epDuration !== 'min\u062F' ? <InfoRow label={t('episode_duration')} value={epDuration} /> : null}
           {!isEpisodic && runtime ? <InfoRow label={t('duration')} value={runtime} /> : null}
-          {/* Rating row with star icon */}
           {rating ? (
             <View style={rowS.row}>
               <Text style={rowS.label}>{t('rating')}</Text>
@@ -518,22 +527,18 @@ export const DetailsScreen: React.FC = () => {
               <Text style={S.epsTitle}>{t('episodes')}</Text>
               {loadingEps && <ActivityIndicator size="small" color={Colors.dark.primary} style={{marginLeft: 8}} />}
 
-              {/* Season picker button — always show when we have seasons */}
               {seasonKeys.length >= 1 && (
                 <TouchableOpacity
                   style={S.seasonBtn}
                   onPress={() => setShowSeasonDlg(true)}
                 >
                   <Image source={require('../../assets/icons/tv.png')} style={[S.seasonBtnIcon, {tintColor: Colors.dark.primary}]} />
-                  <Text style={S.seasonBtnTxt}>
-                    {t('season')} {selSeason}
-                  </Text>
+                  <Text style={S.seasonBtnTxt}>{t('season')} {selSeason}</Text>
                   <Text style={S.seasonBtnArrow}>&#9662;</Text>
                 </TouchableOpacity>
               )}
             </View>
 
-            {/* Season poster */}
             {seasonPoster ? (
               <View style={S.seasonPosterWrap}>
                 <FastImage
@@ -558,22 +563,15 @@ export const DetailsScreen: React.FC = () => {
                     disabled={extracting}
                     activeOpacity={0.75}
                   >
-                    {/* Episode number circle */}
                     <View style={[S.epNumCircle, isExtractingThis && S.epNumActive]}>
                       <Text style={[S.epNum, isExtractingThis && S.epNumActiveTxt]}>{idx + 1}</Text>
                     </View>
-
-                    {/* Episode info */}
                     <View style={S.epInfo}>
-                      <Text style={S.epTitle}>
-                        {t('episode')} {idx + 1}
-                      </Text>
+                      <Text style={S.epTitle}>{t('episode')} {idx + 1}</Text>
                       {epDuration && epDuration !== 'min\u062F' ? (
                         <Text style={S.epDur}>{epDuration}</Text>
                       ) : null}
                     </View>
-
-                    {/* Play indicator */}
                     {isExtractingThis ? (
                       <ActivityIndicator size="small" color={Colors.dark.primary} />
                     ) : (
@@ -667,7 +665,6 @@ export const DetailsScreen: React.FC = () => {
   );
 };
 
-// ── Styles ───────────────────────────────────────────────────────────
 const S = StyleSheet.create({
   container:  {flex: 1, backgroundColor: Colors.dark.background},
   scroll:     {paddingTop: 0},
@@ -678,7 +675,6 @@ const S = StyleSheet.create({
   iconNav:    {width: 20, height: 20, tintColor: Colors.dark.text},
   iconMed:    {width: 20, height: 20},
 
-  // Title box
   titleBox: {
     marginHorizontal: 16,
     marginBottom: 20,
@@ -698,35 +694,29 @@ const S = StyleSheet.create({
     lineHeight: 29,
   },
 
-  // Poster
-  posterWrap:        {alignSelf: 'center', marginBottom: 16, position: 'relative'},
+  posterWrap:        {alignSelf: 'center', marginBottom: 16},
   poster:            {width: POSTER_W, height: POSTER_H, borderRadius: 16, backgroundColor: Colors.dark.surfaceLight, elevation: 14, shadowColor: '#000', shadowOffset: {width: 0, height: 8}, shadowOpacity: 0.55, shadowRadius: 16},
   posterPlaceholder: {justifyContent: 'center', alignItems: 'center'},
 
-  // Poster corner badges
-  catChip:     {position: 'absolute', top: 10, left: 10, backgroundColor: Colors.dark.primaryLight, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 7},
-  catChipText: {color: '#000', fontSize: 11, fontWeight: '700', fontFamily: 'Rubik'},
-  fmtChip:     {position: 'absolute', bottom: 10, right: 10, backgroundColor: 'rgba(0,0,0,0.88)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 7, borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)'},
-  fmtChipText: {color: '#fff', fontSize: 11, fontWeight: '700', fontFamily: 'Rubik'},
-  vlChip:      {position: 'absolute', top: 10, right: 10, backgroundColor: 'rgba(0,0,0,0.88)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 7, borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)'},
-  vlChipText:  {color: '#FFD700', fontSize: 11, fontWeight: '700', fontFamily: 'Rubik'},
-
-  // Pills row
-  pillsRow:      {flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 8, marginBottom: 14, paddingHorizontal: 16},
-  pill:          {flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.dark.surface, paddingHorizontal: 11, paddingVertical: 7, borderRadius: 22, gap: 5, borderWidth: 1, borderColor: Colors.dark.border},
-  pillIcon:      {width: 13, height: 13},
-  pillTxt:       {color: Colors.dark.text, fontSize: 13, fontWeight: '700', fontFamily: 'Rubik'},
-  pillSub:       {color: Colors.dark.textMuted, fontSize: 11, fontFamily: 'Rubik'},
+  catPill:    {backgroundColor: Colors.dark.primaryLight, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 16},
+  catPillTxt: {color: '#000', fontSize: 12, fontWeight: '700', fontFamily: 'Rubik'},
+  fmtPill:    {backgroundColor: Colors.dark.surface, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 16, borderWidth: 1, borderColor: Colors.dark.border},
+  fmtPillTxt: {color: '#fff', fontSize: 12, fontWeight: '700', fontFamily: 'Rubik'},
+  vlPill:     {backgroundColor: `${Colors.dark.warning}22`, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 16, borderWidth: 1, borderColor: `${Colors.dark.warning}44`},
+  vlPillTxt:  {color: Colors.dark.warning, fontSize: 12, fontWeight: '700', fontFamily: 'Rubik'},
+  pillsRow:   {flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 8, marginBottom: 14, paddingHorizontal: 16},
+  pill:       {flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.dark.surface, paddingHorizontal: 11, paddingVertical: 7, borderRadius: 22, gap: 5, borderWidth: 1, borderColor: Colors.dark.border},
+  pillIcon:   {width: 13, height: 13},
+  pillTxt:    {color: Colors.dark.text, fontSize: 13, fontWeight: '700', fontFamily: 'Rubik'},
+  pillSub:    {color: Colors.dark.textMuted, fontSize: 11, fontFamily: 'Rubik'},
   statusOngoing: {backgroundColor: Colors.dark.primary, borderColor: Colors.dark.primary},
   statusComplete:{backgroundColor: Colors.dark.success, borderColor: Colors.dark.success},
   statusTxt:     {fontSize: 12, fontWeight: '600', fontFamily: 'Rubik'},
 
-  // Count badges (seasons/episodes)
   countRow:      {flexDirection: 'row', justifyContent: 'center', gap: 8, marginBottom: 14, paddingHorizontal: 16, flexWrap: 'wrap'},
-  countBadge:    {backgroundColor: Colors.dark.surface, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, borderWidth: 1, borderColor: Colors.dark.border},
+  countBadge:    {flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.dark.surface, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, borderWidth: 1, borderColor: Colors.dark.border, gap: 6},
   countBadgeText:{color: Colors.dark.textSecondary, fontSize: 12, fontWeight: '600', fontFamily: 'Rubik'},
 
-  // Action buttons
   actions:       {flexDirection: 'row', paddingHorizontal: 18, marginBottom: 12, gap: 12},
   playBtn:       {flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', height: 54, borderRadius: 16, backgroundColor: Colors.dark.primary, gap: 8, elevation: 8, shadowColor: Colors.dark.primary, shadowOffset: {width: 0, height: 4}, shadowOpacity: 0.5, shadowRadius: 10},
   playBtnBusy:   {backgroundColor: `${Colors.dark.primary}CC`},
@@ -734,21 +724,17 @@ const S = StyleSheet.create({
   dlBtn:         {flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', height: 54, borderRadius: 16, backgroundColor: Colors.dark.surface, gap: 8, borderWidth: 1.5, borderColor: Colors.dark.accentLight},
   dlBtnTxt:      {color: Colors.dark.accentLight, fontSize: 15, fontWeight: '700', fontFamily: 'Rubik'},
 
-  // Error banner
   errBanner: {marginHorizontal: 18, marginBottom: 12, backgroundColor: `${Colors.dark.error}16`, borderRadius: 12, padding: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderWidth: 1, borderColor: `${Colors.dark.error}30`, gap: 10},
   errTxt:    {flex: 1, color: Colors.dark.error, fontSize: 13, fontFamily: 'Rubik'},
   retryBtn:  {flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 7, borderRadius: 9, backgroundColor: `${Colors.dark.primary}22`},
   retryTxt:  {color: Colors.dark.primary, fontSize: 13, fontWeight: '700', fontFamily: 'Rubik'},
 
-  // Description
   descBox:   {marginHorizontal: 16, marginBottom: 14, backgroundColor: Colors.dark.surface, borderRadius: 14, padding: 16, borderWidth: 1, borderColor: Colors.dark.border},
   descLabel: {color: Colors.dark.text, fontSize: 14, fontWeight: '700', fontFamily: 'Rubik', marginBottom: 8},
   descTxt:   {color: Colors.dark.textSecondary, fontSize: 14, lineHeight: 22, fontFamily: 'Rubik'},
 
-  // Info table
   infoTable: {marginHorizontal: 16, backgroundColor: Colors.dark.surface, borderRadius: 16, overflow: 'hidden', borderWidth: 1, borderColor: Colors.dark.border, marginBottom: 20},
 
-  // Episodes section
   epsSection:      {marginHorizontal: 16, marginBottom: 20, backgroundColor: Colors.dark.surface, borderRadius: 16, overflow: 'hidden', borderWidth: 1, borderColor: Colors.dark.border},
   epsHeader:       {flexDirection: 'row', alignItems: 'center', paddingHorizontal: 18, paddingVertical: 14, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: Colors.dark.border, gap: 8},
   sectionIcon:     {width: 20, height: 20},
@@ -757,12 +743,8 @@ const S = StyleSheet.create({
   seasonBtnIcon:   {width: 14, height: 14},
   seasonBtnTxt:    {color: Colors.dark.primary, fontSize: 13, fontWeight: '700', fontFamily: 'Rubik'},
   seasonBtnArrow:  {color: Colors.dark.primary, fontSize: 10},
-
-  // Season poster
   seasonPosterWrap: {paddingVertical: 10, alignItems: 'center'},
   seasonPoster:     {width: 120, height: 180, borderRadius: 10, backgroundColor: Colors.dark.surfaceLight},
-
-  // Episode row
   epRow:           {flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: Colors.dark.border, gap: 12},
   epRowDisabled:   {opacity: 0.5},
   epNumCircle:     {width: 38, height: 38, borderRadius: 19, backgroundColor: `${Colors.dark.primary}20`, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: `${Colors.dark.primary}40`},
@@ -773,11 +755,9 @@ const S = StyleSheet.create({
   epTitle:         {color: Colors.dark.text, fontSize: 14, fontWeight: '600', fontFamily: 'Rubik'},
   epDur:           {color: Colors.dark.textMuted, fontSize: 12, fontFamily: 'Rubik', marginTop: 2},
   epPlayIcon:      {width: 20, height: 20},
-
   noEpsWrap:       {alignItems: 'center', paddingVertical: 24, gap: 8},
   noEpsTxt:        {color: Colors.dark.textMuted, fontSize: 14, fontFamily: 'Rubik'},
 
-  // Extracting overlay (full-screen)
   extractOverlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(0,0,0,0.75)',
@@ -817,7 +797,6 @@ const S = StyleSheet.create({
     fontFamily: 'Rubik',
   },
 
-  // Season modal
   modalBg:         {flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end'},
   modalSheet:      {backgroundColor: Colors.dark.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingBottom: 40, maxHeight: '60%'},
   modalHandle:     {width: 40, height: 4, borderRadius: 2, backgroundColor: Colors.dark.border, alignSelf: 'center', marginTop: 12, marginBottom: 4},
