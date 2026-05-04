@@ -304,8 +304,14 @@ export const DetailsScreen: React.FC = () => {
     setExtractingEpUrl(null);
 
     if (downloadModeRef.current) {
-      // Download mode — start background download, don't navigate
+      // Download mode — only supported for direct MP4 links.
+      // m3u8 (HLS) downloads require segment stitching — not yet implemented.
       downloadModeRef.current = false;
+      const isMp4 = !m3u8Url.includes('.m3u8') && (m3u8Url.includes('.mp4') || !m3u8Url.includes('.'));
+      if (!isMp4) {
+        setExtractError(t('download_hls_unsupported') || 'Download is not supported for HLS streams yet.');
+        return;
+      }
       setDownloading(true);
       startDownload(item, m3u8Url)
         .catch(e => console.warn('[Details] startDownload error:', e))

@@ -115,12 +115,17 @@ export const PlayerScreen: React.FC = () => {
     return s.playerQuality || s.qualityPreference || 'auto';
   });
 
-  // Parse the master m3u8 to discover real quality variants
+  // Parse the master m3u8 to discover real quality variants.
+  // MP4 links are single-quality — skip parsing and stay on Auto.
   useEffect(() => {
     if (!url) return;
+    if (!url.includes('.m3u8')) {
+      setQualityOptions([{ label: 'Auto', value: 'auto' }]);
+      setQualityLevel('auto');
+      return;
+    }
     parseM3u8Qualities(url).then(opts => {
       setQualityOptions(opts);
-      // If saved preference isn't in the manifest, fall back to auto
       const s = getSettings();
       const saved = s.playerQuality || s.qualityPreference || 'auto';
       const exists = opts.some(o => o.value === saved);
@@ -295,7 +300,7 @@ export const PlayerScreen: React.FC = () => {
       <View style={styles.videoContainer}>
         <Video
           ref={videoRef}
-          source={{ uri: url, type: 'm3u8' }}
+          source={{ uri: url, type: url?.includes('.m3u8') ? 'm3u8' : undefined }}
           resizeMode="contain"
           style={styles.video}
           paused={!playing}
