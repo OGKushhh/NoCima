@@ -519,7 +519,7 @@ export const DetailsScreen: React.FC = () => {
                 </>
               ) : (
                 <>
-                  <Image source={require('../../assets/icons/clapboard.png')} style={{width: 18, height: 18, tintColor: '#fff'}} />
+                  <Image source={require('../../assets/icons/flash.png')} style={{width: 18, height: 18, tintColor: '#fff'}} />
                   <Text style={S.playBtnTxt}>
                     {isEpisodic ? t('play_first_episode') : t('play')}
                   </Text>
