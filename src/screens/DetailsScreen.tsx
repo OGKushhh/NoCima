@@ -520,7 +520,7 @@ export const DetailsScreen: React.FC = () => {
               ) : (
                 <>
                   <Image source={require('../../assets/icons/flash.png')} style={{width: 18, height: 18, tintColor: '#fff'}} />
-                  <Text style={S.playBtnTxt}>
+                  <Text style={S.playBtnTxt} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
                     {isEpisodic ? t('play_first_episode') : t('play')}
                   </Text>
                 </>
@@ -868,7 +868,7 @@ const S = StyleSheet.create({
   playBtnTxt:    {color: '#fff', fontSize: 15, fontWeight: '700', fontFamily: 'Rubik', flexShrink: 1},
   // Split play button
   splitBtn:      {flex: 1, flexDirection: 'row', height: 54, borderRadius: 16, backgroundColor: Colors.dark.primary, overflow: 'hidden', elevation: 8, shadowColor: Colors.dark.primary, shadowOffset: {width: 0, height: 4}, shadowOpacity: 0.5, shadowRadius: 10},
-  splitBtnMain:  {flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingHorizontal: 16},
+  splitBtnMain:  {flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingHorizontal: 10},
   splitBtnSide:  {width: 54, alignItems: 'center', justifyContent: 'center'},
   splitDivider:  {width: 1, marginVertical: 14, backgroundColor: 'rgba(255,255,255,0.25)'},
   dlBtn:         {flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', height: 54, borderRadius: 16, backgroundColor: Colors.dark.surface, gap: 8, borderWidth: 1.5, borderColor: Colors.dark.accentLight},
