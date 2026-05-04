@@ -44,6 +44,12 @@ gen/
 bin/
 out/
 
+# Android keystore (sensitive)
+android/app/*.keystore
+android/app/*.jks
+android/app/debug.keystore
+android/app/release.keystore
+
 # iOS (not used but good to have)
 ios/Pods/
 ios/build/
