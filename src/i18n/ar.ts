@@ -149,8 +149,19 @@ export const ar = {
   update_check_failed: 'فشل التحقق من التحديثات، حاول لاحقاً',
   // optional: quality changed feedback
   quality_changed: 'تم تغيير الجودة إلى {{quality}}',
-  // Download
-  starting_download: 'جارِ بدء التحميل...',
+  // Extract errors
+  extract_err_load_title:    'تعذّر تحميل الصفحة',
+  extract_err_load_body:     'فشل تحميل صفحة الفيديو. تحقق من اتصالك وحاول مجدداً.',
+  extract_err_timeout_title: 'الأمر يستغرق وقتاً طويلاً',
+  extract_err_timeout_body:  'تعذّر العثور على رابط الفيديو في الوقت المحدد. حاول مجدداً أو جرّب مصدراً آخر.',
+  extract_err_http_title:    'الصفحة غير متاحة',
+  extract_err_http_body:     'أرجعت صفحة الفيديو خطأً. ربما تم نقلها أو حذفها.',
+  extract_err_default_title: 'خطأ في التشغيل',
+  extract_err_default_body:  'حدث خطأ أثناء تحميل الفيديو. يرجى المحاولة مجدداً.',
+  // Extract status
+  extract_status_loading:    'جارِ تحميل الصفحة...',
+  extract_status_searching:  'جارِ البحث عن الفيديو...',
+  extract_status_almost:     'اكتمل قريباً...',
   delete_download: 'حذف التحميل',
   delete_download_confirm: 'سيؤدي هذا إلى إزالة الملف من جهازك.',
   // Filter modal

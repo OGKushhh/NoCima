@@ -149,8 +149,19 @@ export const en = {
   update_check_failed: 'Update check failed, try again later',
   // optional
   quality_changed: 'Quality changed to {{quality}}',
-  // Download
-  starting_download: 'Starting download...',
+  // Extract errors
+  extract_err_load_title:    'Could not load page',
+  extract_err_load_body:     'The video page failed to load. Check your connection and try again.',
+  extract_err_timeout_title: 'Taking too long',
+  extract_err_timeout_body:  'The video link could not be found in time. Try again or try a different source.',
+  extract_err_http_title:    'Page unavailable',
+  extract_err_http_body:     'The video page returned an error. It may have moved or been removed.',
+  extract_err_default_title: 'Playback error',
+  extract_err_default_body:  'Something went wrong loading the video. Please try again.',
+  // Extract status
+  extract_status_loading:    'Loading page...',
+  extract_status_searching:  'Finding video...',
+  extract_status_almost:     'Almost there...',
   delete_download: 'Delete download',
   delete_download_confirm: 'This will remove the file from your device.',
   // Filter modal
