@@ -149,4 +149,16 @@ export const ar = {
   update_check_failed: 'فشل التحقق من التحديثات، حاول لاحقاً',
   // optional: quality changed feedback
   quality_changed: 'تم تغيير الجودة إلى {{quality}}',
+  // Download
+  starting_download: 'جارِ بدء التحميل...',
+  delete_download: 'حذف التحميل',
+  delete_download_confirm: 'سيؤدي هذا إلى إزالة الملف من جهازك.',
+  // Filter modal
+  filter: 'تصفية',
+  apply: 'تطبيق',
+  sort_by: 'ترتيب حسب',
+  // Volume
+  volume: 'الصوت',
+  // Player
+  play_offline: 'تشغيل بدون إنترنت',
 };

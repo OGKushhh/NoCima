@@ -149,4 +149,16 @@ export const en = {
   update_check_failed: 'Update check failed, try again later',
   // optional
   quality_changed: 'Quality changed to {{quality}}',
+  // Download
+  starting_download: 'Starting download...',
+  delete_download: 'Delete download',
+  delete_download_confirm: 'This will remove the file from your device.',
+  // Filter modal
+  filter: 'Filter',
+  apply: 'Apply',
+  sort_by: 'Sort by',
+  // Volume
+  volume: 'Volume',
+  // Player
+  play_offline: 'Play offline',
 };

@@ -27,6 +27,7 @@ import {useTranslation} from 'react-i18next';
 import {localizeGenres} from '../i18n/genres';
 import {API_BASE} from '../constants/endpoints';
 import {VideoExtractor} from '../components/VideoExtractor';
+import {startDownload} from '../services/downloadService';
 
 const FASEL_BASE = 'https://www.fasel-hd.cam';
 
@@ -34,32 +35,8 @@ const {width: SW} = Dimensions.get('window');
 const POSTER_W = Math.min(SW * 0.48, 200);
 const POSTER_H = POSTER_W * 1.52;
 
-const STATUS_MSGS = [
-  'Connecting to server…',
-  'Loading page…',
-  'Searching for stream…',
-  'Extracting video…',
-  'Almost there…',
-];
-
-const ERROR_MSGS: Record<string, {title: string; body: string}> = {
-  timeout: {
-    title: 'Extraction timed out',
-    body:  'The page took too long to respond. This can happen on slow connections or busy servers. Please try again.',
-  },
-  load: {
-    title: 'Page failed to load',
-    body:  'Could not reach the video page. The link may be broken or temporarily unavailable.',
-  },
-  http: {
-    title: 'Server error',
-    body:  'The video server returned an error. The content may be temporarily unavailable.',
-  },
-  default: {
-    title: 'Could not extract video',
-    body:  'The stream could not be found. Try again — it sometimes works on the second attempt.',
-  },
-};
+// Status messages and error messages are now fully i18n via t()
+// Keys: extract_status_*, extract_err_*_title, extract_err_*_body
 
 // Map category key → i18n key for poster badge
 const CAT_I18N: Record<string, string> = {
@@ -155,6 +132,9 @@ export const DetailsScreen: React.FC = () => {
   const extractorTitleRef = useRef<string>('');
   // Tracks the last play request so the error-banner retry button works for both movies and episodes
   const lastPlayRef = useRef<{url: string; title: string} | null>(null);
+  // Download mode: when true, handleExtracted starts a download instead of playing
+  const downloadModeRef = useRef(false);
+  const [downloading, setDownloading] = useState(false);
 
   // Episode state
   const [epData, setEpData] = useState<any>(null);
@@ -311,7 +291,7 @@ export const DetailsScreen: React.FC = () => {
   const startStatusTimer = () => {
     setStatusIdx(0);
     statusTimer.current = setInterval(
-      () => setStatusIdx(p => (p + 1) % STATUS_MSGS.length), 4000,
+      () => setStatusIdx(p => (p + 1) % 5), 4000,
     );
   };
   const stopStatusTimer = () => clearInterval(statusTimer.current);
@@ -322,22 +302,35 @@ export const DetailsScreen: React.FC = () => {
     setExtractorUrl(null);
     setExtracting(false);
     setExtractingEpUrl(null);
-    recordPlay(item.id, category);
-    nav.navigate('Player', {
-      url: m3u8Url,
-      title: extractorTitleRef.current,
-      contentId: item.id,
-      category,
-    });
-  }, [item.id, category, nav]);
+
+    if (downloadModeRef.current) {
+      // Download mode — start background download, don't navigate
+      downloadModeRef.current = false;
+      setDownloading(true);
+      startDownload(item, m3u8Url)
+        .catch(e => console.warn('[Details] startDownload error:', e))
+        .finally(() => setDownloading(false));
+    } else {
+      // Play mode — original behaviour
+      recordPlay(item.id, category);
+      nav.navigate('Player', {
+        url: m3u8Url,
+        title: extractorTitleRef.current,
+        contentId: item.id,
+        category,
+      });
+    }
+  }, [item, category, nav]);
 
   const handleExtractError = useCallback((reason?: 'timeout' | 'load' | 'http') => {
     stopStatusTimer();
     setExtractorUrl(null);
     setExtracting(false);
     setExtractingEpUrl(null);
-    const msg = ERROR_MSGS[reason ?? 'default'] ?? ERROR_MSGS.default;
-    setExtractError(msg.title + '\n\n' + msg.body);
+    const k = reason ?? 'default';
+    const title = t(`extract_err_${k}_title` as any) || t('extract_err_default_title');
+    const body  = t(`extract_err_${k}_body`  as any) || t('extract_err_default_body');
+    setExtractError(title + '\n\n' + body);
   }, []);
 
   // ── Shared extraction launcher ────────────────────────────────────
@@ -356,6 +349,18 @@ export const DetailsScreen: React.FC = () => {
   const handlePlay = useCallback(() => {
     startExtraction(`${FASEL_BASE}/?p=${item.id}`, item.Title);
   }, [item.id, item.Title, startExtraction]);
+
+  // ── Download movie or first episode ──────────────────────────────
+  const handleDownload = useCallback(() => {
+    downloadModeRef.current = true;
+    if (isEpisodic && currentEps.length > 0) {
+      const epUrl = currentEps[0];
+      const title = `${item.Title} - ${t('season')} ${selSeason} ${t('episode')} 1`;
+      startExtraction(epUrl, title, epUrl);
+    } else {
+      startExtraction(`${FASEL_BASE}/?p=${item.id}`, item.Title);
+    }
+  }, [item, isEpisodic, currentEps, selSeason, t, startExtraction]);
 
   // ── Play first episode of current season ─────────────────────────
   const handlePlayFirst = useCallback(() => {
@@ -485,7 +490,7 @@ export const DetailsScreen: React.FC = () => {
             {extracting && !isEpisodic ? (
               <>
                 <ActivityIndicator color="#fff" size="small" />
-                <Text style={S.playBtnTxt} numberOfLines={1}>{STATUS_MSGS[statusIdx]}</Text>
+                <Text style={S.playBtnTxt} numberOfLines={1}>{[t('extract_status_connecting'),t('extract_status_loading'),t('extract_status_searching'),t('extract_status_extracting'),t('extract_status_almost')][statusIdx]}</Text>
               </>
             ) : (
               <>
@@ -497,9 +502,23 @@ export const DetailsScreen: React.FC = () => {
             )}
           </TouchableOpacity>
 
-          <TouchableOpacity style={S.dlBtn} activeOpacity={0.84}>
-            <Image source={require('../../assets/icons/files.png')} style={[S.iconMed, {tintColor: Colors.dark.accentLight}]} />
-            <Text style={S.dlBtnTxt}>{t('download')}</Text>
+          <TouchableOpacity
+            style={[S.dlBtn, (extracting || downloading) && {opacity: 0.5}]}
+            activeOpacity={0.84}
+            disabled={extracting || downloading}
+            onPress={handleDownload}
+          >
+            {downloading ? (
+              <>
+                <ActivityIndicator color={Colors.dark.accentLight} size="small" />
+                <Text style={S.dlBtnTxt}>{t('starting_download')}</Text>
+              </>
+            ) : (
+              <>
+                <Image source={require('../../assets/icons/download-to-storage-drive.png')} style={[S.iconMed, {tintColor: Colors.dark.accentLight}]} />
+                <Text style={S.dlBtnTxt}>{t('download')}</Text>
+              </>
+            )}
           </TouchableOpacity>
         </View>
 
@@ -685,7 +704,7 @@ export const DetailsScreen: React.FC = () => {
           <View style={S.extractCard}>
             <ActivityIndicator size="large" color={Colors.dark.primary} />
             <Text style={S.extractStatus} numberOfLines={2}>
-              {STATUS_MSGS[statusIdx]}
+              {[t('extract_status_connecting'),t('extract_status_loading'),t('extract_status_searching'),t('extract_status_extracting'),t('extract_status_almost')][statusIdx]}
             </Text>
             <TouchableOpacity
               style={S.extractCancel}

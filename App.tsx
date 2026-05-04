@@ -4,6 +4,7 @@ import {SafeAreaProvider, initialWindowMetrics} from 'react-native-safe-area-con
 import {AppNavigator} from './src/navigation/AppNavigator';
 import {UpdateModal} from './src/components/UpdateModal';
 import {checkForUpdate, skipVersion, openUpdateUrl, ReleaseInfo} from './src/services/updateService';
+import {restoreDownloads} from './src/services/downloadService';
 import {APP_VERSION} from './src/constants/endpoints';
 import {storage} from './src/storage/Storage';
 import {Colors} from './src/theme/colors';
@@ -24,6 +25,7 @@ const App: React.FC = () => {
   useEffect(() => {
     storage.init().then(() => {
       setReady(true);
+      restoreDownloads().catch(() => {});
       const timer = setTimeout(async () => {
         const update = await checkForUpdate();
         if (update) {
