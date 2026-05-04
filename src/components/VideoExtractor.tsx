@@ -258,10 +258,13 @@ const ALLOWED_DOMAINS = [
 
 interface VideoExtractorProps {
   pageUrl: string;
-  onExtracted: (m3u8Url: string) => void;
+  onExtracted: (m3u8Urls: string[]) => void; // all master playlists found
   onError: (reason?: 'timeout' | 'load' | 'http') => void;
   onDebug?: (msg: string) => void;
   timeoutMs?: number;
+  // How long to keep collecting after the first URL is found (ms).
+  // This window catches Server 2, Server 3 etc. that load shortly after.
+  collectWindowMs?: number;
 }
 
 export const VideoExtractor: React.FC<VideoExtractorProps> = ({
@@ -270,50 +273,92 @@ export const VideoExtractor: React.FC<VideoExtractorProps> = ({
   onError,
   onDebug,
   timeoutMs = 45000,
+  collectWindowMs = 4000,
 }) => {
-  const captured = useRef(false);
-  const timer    = useRef<ReturnType<typeof setTimeout>>();
+  const captured      = useRef(false);   // true once we've committed (fired onExtracted or onError)
+  const collected     = useRef<string[]>([]); // all master m3u8s seen so far
+  const collectTimer  = useRef<ReturnType<typeof setTimeout>>();
+  const globalTimer   = useRef<ReturnType<typeof setTimeout>>();
 
   const dbg = useCallback((msg: string) => {
     console.log('[VE]', msg);
     onDebug?.(msg);
   }, [onDebug]);
 
+  /** Deduplicate by hostname — each unique CDN host = one server entry. */
+  const isMasterPlaylist = (url: string) =>
+    url.includes('master.m3u8') || url.includes('/master') || !url.match(/\/(sd|hd|[0-9]+p?)[/_]/i);
+
+  const commit = useCallback(() => {
+    if (captured.current) return;
+    captured.current = true;
+    clearTimeout(collectTimer.current);
+    clearTimeout(globalTimer.current);
+    const urls = collected.current;
+    if (urls.length === 0) {
+      dbg('COMMIT: no URLs — firing timeout');
+      onError('timeout');
+      return;
+    }
+    dbg('COMMIT: ' + urls.length + ' URL(s): ' + urls.map(u => u.substring(0, 60)).join(' | '));
+    onExtracted(urls);
+  }, [onExtracted, onError, dbg]);
+
+  const addUrl = useCallback((url: string) => {
+    // Filter out child/quality playlists — we only want master playlists here.
+    // Child playlists are fetched later by the quality parser in PlayerScreen.
+    if (!isMasterPlaylist(url)) {
+      dbg('SKIP child playlist: ' + url.substring(0, 80));
+      return;
+    }
+    // Deduplicate by full URL
+    if (collected.current.includes(url)) return;
+    collected.current = [...collected.current, url];
+    dbg('COLLECTED #' + collected.current.length + ': ' + url.substring(0, 80));
+
+    // Start / reset the collection window timer on every new URL found
+    clearTimeout(collectTimer.current);
+    collectTimer.current = setTimeout(commit, collectWindowMs);
+  }, [commit, collectWindowMs, dbg]);
+
   useEffect(() => {
-    captured.current = false;
+    captured.current  = false;
+    collected.current = [];
+    clearTimeout(collectTimer.current);
+    clearTimeout(globalTimer.current);
     dbg('START: ' + pageUrl);
-    timer.current = setTimeout(() => {
-      if (!captured.current) {
+    globalTimer.current = setTimeout(() => {
+      if (collected.current.length > 0) {
+        // We have something — commit what we have
+        commit();
+      } else {
         captured.current = true;
         dbg('TIMEOUT after ' + timeoutMs + 'ms');
         onError('timeout');
       }
     }, timeoutMs);
-    return () => clearTimeout(timer.current);
+    return () => {
+      clearTimeout(collectTimer.current);
+      clearTimeout(globalTimer.current);
+    };
   }, [pageUrl]);
 
   const handleMessage = useCallback((event: any) => {
     try {
       const data = JSON.parse(event.nativeEvent.data);
       if (data.type === 'm3u8' && data.url && !captured.current) {
-        captured.current = true;
-        clearTimeout(timer.current);
-        dbg('CAPTURED: ' + data.url);
-        onExtracted(data.url);
+        addUrl(data.url);
         return;
       }
       if (data.type === 'debug') dbg(data.msg);
     } catch (e) {}
-  }, [onExtracted, dbg]);
+  }, [addUrl, dbg]);
 
   const handleShouldStartLoad = useCallback((request: {url: string}) => {
     const url = request.url;
 
     if (url.includes('.m3u8') && !captured.current) {
-      captured.current = true;
-      clearTimeout(timer.current);
-      dbg('CAPTURED (nav): ' + url);
-      onExtracted(url);
+      addUrl(url);
       return false;
     }
 
@@ -334,30 +379,40 @@ export const VideoExtractor: React.FC<VideoExtractorProps> = ({
 
     dbg('BLOCKED unknown: ' + url.substring(0, 80));
     return false;
-  }, [onExtracted, dbg]);
+  }, [addUrl, dbg]);
 
   const handleLoadError = useCallback(() => {
     if (!captured.current) {
-      captured.current = true;
-      clearTimeout(timer.current);
-      dbg('WebView load error');
-      onError('load');
+      if (collected.current.length > 0) {
+        commit(); // partial success — use what we have
+      } else {
+        captured.current = true;
+        clearTimeout(collectTimer.current);
+        clearTimeout(globalTimer.current);
+        dbg('WebView load error');
+        onError('load');
+      }
     }
-  }, [onError, dbg]);
+  }, [commit, onError, dbg]);
 
   const handleHttpError = useCallback((e: any) => {
     const code = e?.nativeEvent?.statusCode || 0;
     if (code >= 500 || code === 404) {
       if (!captured.current) {
-        captured.current = true;
-        clearTimeout(timer.current);
-        dbg('HTTP error: ' + code);
-        onError('http');
+        if (collected.current.length > 0) {
+          commit();
+        } else {
+          captured.current = true;
+          clearTimeout(collectTimer.current);
+          clearTimeout(globalTimer.current);
+          dbg('HTTP error: ' + code);
+          onError('http');
+        }
       }
     } else {
       dbg('HTTP warn (ignored): ' + code);
     }
-  }, [onError, dbg]);
+  }, [commit, onError, dbg]);
 
   return (
     <View

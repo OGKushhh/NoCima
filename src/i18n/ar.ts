@@ -64,7 +64,7 @@ export const ar = {
   episode: 'حلقة',
   season: 'موسم',
   select_quality: 'اختر الجودة',
-  extracting_video: 'جاري استخراج الفيديو...',
+  extracting_video: 'جارِ استخراج الفيديو...',
   video_unavailable: 'الفيديو غير متاح',
   check_internet: 'تحقق من اتصالك بالإنترنت',
   server_error: 'خطأ في الخادم',
@@ -147,7 +147,6 @@ export const ar = {
   error: 'خطأ',
   ok: 'حسناً',
   update_check_failed: 'فشل التحقق من التحديثات، حاول لاحقاً',
-  // optional: quality changed feedback
   quality_changed: 'تم تغيير الجودة إلى {{quality}}',
   // Extract errors
   extract_err_load_title:    'تعذّر تحميل الصفحة',
@@ -159,17 +158,21 @@ export const ar = {
   extract_err_default_title: 'خطأ في التشغيل',
   extract_err_default_body:  'حدث خطأ أثناء تحميل الفيديو. يرجى المحاولة مجدداً.',
   // Extract status
+  extract_status_connecting: 'جارِ الاتصال...',
   extract_status_loading:    'جارِ تحميل الصفحة...',
   extract_status_searching:  'جارِ البحث عن الفيديو...',
+  extract_status_extracting: 'جارِ الاستخراج...',
   extract_status_almost:     'اكتمل قريباً...',
+  // Downloads
   delete_download: 'حذف التحميل',
   delete_download_confirm: 'سيؤدي هذا إلى إزالة الملف من جهازك.',
-  // Filter modal
-  filter: 'تصفية',
-  apply: 'تطبيق',
-  sort_by: 'ترتيب حسب',
+  download_hls_unsupported: 'تحميل بث HLS غير مدعوم حالياً.',
+  starting_download: 'جارِ بدء التحميل...',
   // Volume
   volume: 'الصوت',
-  // Player
+  // Player — server switching
+  select_server: 'اختر الخادم',
+  server: 'خادم',
+  // Player — offline
   play_offline: 'تشغيل بدون إنترنت',
 };

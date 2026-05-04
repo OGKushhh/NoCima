@@ -297,30 +297,30 @@ export const DetailsScreen: React.FC = () => {
   const stopStatusTimer = () => clearInterval(statusTimer.current);
 
   // ── WebView extraction callbacks ──────────────────────────────────
-  const handleExtracted = useCallback((m3u8Url: string) => {
+  const handleExtracted = useCallback((m3u8Urls: string[]) => {
     stopStatusTimer();
     setExtractorUrl(null);
     setExtracting(false);
     setExtractingEpUrl(null);
 
+    const primaryUrl = m3u8Urls[0];
+
     if (downloadModeRef.current) {
-      // Download mode — only supported for direct MP4 links.
-      // m3u8 (HLS) downloads require segment stitching — not yet implemented.
       downloadModeRef.current = false;
-      const isMp4 = !m3u8Url.includes('.m3u8') && (m3u8Url.includes('.mp4') || !m3u8Url.includes('.'));
+      const isMp4 = !primaryUrl.includes('.m3u8') && (primaryUrl.includes('.mp4') || !primaryUrl.includes('.'));
       if (!isMp4) {
         setExtractError(t('download_hls_unsupported') || 'Download is not supported for HLS streams yet.');
         return;
       }
       setDownloading(true);
-      startDownload(item, m3u8Url)
+      startDownload(item, primaryUrl)
         .catch(e => console.warn('[Details] startDownload error:', e))
         .finally(() => setDownloading(false));
     } else {
-      // Play mode — original behaviour
       recordPlay(item.id, category);
       nav.navigate('Player', {
-        url: m3u8Url,
+        url: primaryUrl,
+        servers: m3u8Urls, // full list for server switching
         title: extractorTitleRef.current,
         contentId: item.id,
         category,

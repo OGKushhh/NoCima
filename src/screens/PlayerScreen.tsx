@@ -110,7 +110,12 @@ export const PlayerScreen: React.FC = () => {
   const { colors } = useTheme();
   const route      = useRoute<any>();
   const navigation = useNavigation<any>();
-  const { url, title } = route.params || {};
+  const { url, title, servers: serversParam } = route.params || {};
+  // servers is the full list of master playlists extracted (one per CDN server).
+  // Falls back to [url] if only a single URL was passed (legacy nav calls).
+  const servers: string[] = serversParam?.length > 0 ? serversParam : (url ? [url] : []);
+  const [activeServerIdx, setActiveServerIdx] = useState(0);
+  const [showServerPicker, setShowServerPicker] = useState(false);
   const { t }      = useTranslation();
   const insets     = useSafeAreaInsets();
   const { width: windowWidth } = useWindowDimensions();
@@ -134,28 +139,32 @@ export const PlayerScreen: React.FC = () => {
     const s = getSettings();
     return s.playerQuality || s.qualityPreference || 'auto';
   });
-  // The URI actually fed to <Video>. Starts as the master URL; switches to a
-  // child playlist URL when the user picks a specific quality tier.
-  const [activeUri, setActiveUri] = useState<string>(url);
+  // The master URL for the currently selected server
+  const activeServerUrl = servers[activeServerIdx] ?? url;
 
-  // Parse the master m3u8 to discover real quality variants.
-  // MP4 links are single-quality — skip parsing and stay on Auto.
+  const [activeUri, setActiveUri] = useState<string>(activeServerUrl);
+
+  // Reset quality and URI when server changes
   useEffect(() => {
-    if (!url) return;
-    setActiveUri(url); // reset on new content
-    if (!url.includes('.m3u8')) {
+    setActiveUri(activeServerUrl);
+    setQualityLevel('auto');
+    setQualityOptions([{ label: 'Auto', value: 'auto' }]);
+  }, [activeServerIdx]);
+  useEffect(() => {
+    if (!activeServerUrl) return;
+    if (!activeServerUrl.includes('.m3u8')) {
       setQualityOptions([{ label: 'Auto', value: 'auto' }]);
       setQualityLevel('auto');
       return;
     }
-    parseM3u8Qualities(url).then(opts => {
+    parseM3u8Qualities(activeServerUrl).then(opts => {
       setQualityOptions(opts);
       const s = getSettings();
       const saved = s.playerQuality || s.qualityPreference || 'auto';
       const exists = opts.some(o => o.value === saved);
       setQualityLevel(exists ? saved : 'auto');
     });
-  }, [url]);
+  }, [activeServerUrl]);
 
   // selectedVideoTrack is only a fallback for manifests without child URIs.
   // When a child URI is available we swap source.uri instead (more reliable).
@@ -296,7 +305,7 @@ export const PlayerScreen: React.FC = () => {
     // source directly — this is guaranteed to work vs selectedVideoTrack.
     const opt = qualityOptions.find(o => o.value === quality);
     if (quality === 'auto') {
-      setActiveUri(url); // back to master playlist
+      setActiveUri(activeServerUrl); // back to master playlist
     } else if (opt?.uri) {
       setActiveUri(opt.uri);
     }
@@ -411,13 +420,26 @@ export const PlayerScreen: React.FC = () => {
               <Text style={styles.topBadgeTxt}>{volumePct}%</Text>
             </TouchableOpacity>
 
+            {/* Server switcher — only shown when multiple servers were extracted */}
+            {servers.length > 1 && (
+              <TouchableOpacity
+                style={styles.topBadgeBtn}
+                onPress={() => { setShowServerPicker(true); showControlsTemporarily(); }}
+              >
+                <Image source={require('../../assets/icons/planet-earth.png')} style={{ width: 15, height: 15, tintColor: '#fff' }} />
+                <Text style={styles.topBadgeTxt}>S{activeServerIdx + 1}</Text>
+              </TouchableOpacity>
+            )}
+
             {/* Quality */}
-            <TouchableOpacity
-              style={styles.topBadgeBtn}
-              onPress={() => { setShowQualityPicker(true); showControlsTemporarily(); }}
-            >
-              <Text style={styles.topBadgeTxt}>{getCurrentQualityLabel()}</Text>
-            </TouchableOpacity>
+            {qualityOptions.length > 1 && (
+              <TouchableOpacity
+                style={styles.topBadgeBtn}
+                onPress={() => { setShowQualityPicker(true); showControlsTemporarily(); }}
+              >
+                <Text style={styles.topBadgeTxt}>{getCurrentQualityLabel()}</Text>
+              </TouchableOpacity>
+            )}
           </View>
 
           <View style={{ flex: 1 }} />
@@ -528,7 +550,40 @@ export const PlayerScreen: React.FC = () => {
         </TouchableOpacity>
       </Modal>
 
-    </View>  // ← root container closes here — both modals are inside it
+      {/* ── Server picker modal ── */}
+      <Modal
+        transparent
+        visible={showServerPicker}
+        animationType="fade"
+        onRequestClose={() => setShowServerPicker(false)}
+      >
+        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowServerPicker(false)}>
+          <View style={[styles.modalContent, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <Text style={[styles.modalTitle, { color: colors.text }]}>{t('select_server') || 'Select Server'}</Text>
+            {servers.map((serverUrl, idx) => (
+              <TouchableOpacity
+                key={idx}
+                style={[styles.modalOption, { borderBottomColor: colors.border }]}
+                onPress={() => {
+                  seekAfterLoadRef.current = currentTime;
+                  setActiveServerIdx(idx);
+                  setShowServerPicker(false);
+                  showControlsTemporarily();
+                }}
+              >
+                <Text style={[styles.modalOptionText, { color: colors.text }]}>
+                  {t('server') || 'Server'} {idx + 1}
+                </Text>
+                {activeServerIdx === idx && (
+                  <Image source={require('../../assets/icons/checkmark.png')} style={{ width: 18, height: 18, tintColor: colors.primary }} />
+                )}
+              </TouchableOpacity>
+            ))}
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+    </View>  // ← root container closes here — all modals are inside it
   );
 };
 

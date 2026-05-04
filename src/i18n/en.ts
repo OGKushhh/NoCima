@@ -147,7 +147,6 @@ export const en = {
   error: 'Error',
   ok: 'OK',
   update_check_failed: 'Update check failed, try again later',
-  // optional
   quality_changed: 'Quality changed to {{quality}}',
   // Extract errors
   extract_err_load_title:    'Could not load page',
@@ -159,17 +158,21 @@ export const en = {
   extract_err_default_title: 'Playback error',
   extract_err_default_body:  'Something went wrong loading the video. Please try again.',
   // Extract status
+  extract_status_connecting: 'Connecting...',
   extract_status_loading:    'Loading page...',
   extract_status_searching:  'Finding video...',
+  extract_status_extracting: 'Extracting...',
   extract_status_almost:     'Almost there...',
+  // Downloads
   delete_download: 'Delete download',
   delete_download_confirm: 'This will remove the file from your device.',
-  // Filter modal
-  filter: 'Filter',
-  apply: 'Apply',
-  sort_by: 'Sort by',
+  download_hls_unsupported: 'HLS stream downloads are not supported yet.',
+  starting_download: 'Starting download...',
   // Volume
   volume: 'Volume',
-  // Player
+  // Player — server switching
+  select_server: 'Select Server',
+  server: 'Server',
+  // Player — offline
   play_offline: 'Play offline',
 };
