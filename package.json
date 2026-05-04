@@ -25,7 +25,7 @@
     "react-native-vector-icons": "9.2.0",
     "react-native-video": "5.2.1",
     "react-native-webview": "13.6.4",
-    "react-native-background-downloader": "^2.7.1"
+    "@kesha-antonov/react-native-background-downloader": "^3.2.6"
   },
   "devDependencies": {
     "@babel/core": "^7.20.0",

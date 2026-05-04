@@ -1,30 +1,33 @@
 /**
  * downloadService.ts
  *
- * HLS download management using react-native-background-downloader.
+ * HLS/MP4 download management using
+ * @kesha-antonov/react-native-background-downloader v3.x
  *
- * Flow:
- *   1. DetailsScreen extracts the M3U8 URL via VideoExtractor (WebView)
- *   2. Calls startDownload(item, m3u8Url)
- *   3. This service creates a DownloadItem, persists it, and starts the task
- *   4. Progress/completion/failure callbacks update state + re-persist
- *   5. DownloadsScreen reads state via getDownloadState() + subscribes to updates
- *
- * react-native-background-downloader handles:
- *   - HLS segment fetching and stitching
- *   - Background execution (survives app minimise)
- *   - Pause / resume via task handles
+ * API reference (v3.x):
+ *   createDownloadTask({ id, url, destination, metadata, headers })
+ *     .begin(({ expectedBytes }) => {})
+ *     .progress(({ bytesDownloaded, bytesTotal }) => {})
+ *     .done(({ bytesDownloaded, bytesTotal }) => {})
+ *     .error(({ error, errorCode }) => {})
+ *   task.start() / task.pause() / task.resume() / task.stop()
+ *   getExistingDownloadTasks() — restore after app kill
+ *   directories.documents — document directory path (no RNFS needed)
+ *   completeHandler(id) — must call after .done() on iOS
  */
 
-import RNBackgroundDownloader, {
+import {
+  createDownloadTask,
+  getExistingDownloadTasks,
+  completeHandler,
+  directories,
   DownloadTask,
-} from 'react-native-background-downloader';
+} from '@kesha-antonov/react-native-background-downloader';
 import ReactNativeBlobUtil from 'react-native-blob-util';
 import {DownloadItem, ContentItem} from '../types';
 import {storage, storageKeys} from '../storage';
 
 // ─── In-memory task registry ───────────────────────────────────────────────
-// Maps downloadId → active DownloadTask so we can pause/resume/cancel
 const activeTasks = new Map<string, DownloadTask>();
 
 // ─── Change listeners ──────────────────────────────────────────────────────
@@ -62,38 +65,10 @@ const updateItem = (id: string, patch: Partial<DownloadItem>) => {
 };
 
 // ─── Destination path ──────────────────────────────────────────────────────
-// Both HLS (stitched segments) and direct MP4 downloads land as .mp4
 const getDestPath = (id: string) =>
-  `${ReactNativeBlobUtil.fs.dirs.DocumentDir}/downloads/${id}.mp4`;
+  `${directories.documents}/downloads/${id}.mp4`;
 
-// ─── Restore interrupted downloads on app start ────────────────────────────
-// Call this once from App.tsx or AppNavigator on mount.
-export const restoreDownloads = async () => {
-  try {
-    const lostTasks = await RNBackgroundDownloader.checkForExistingDownloads();
-    const items = getDownloadState();
-
-    for (const task of lostTasks) {
-      const item = items.find(d => d.id === task.id);
-      if (!item) {
-        task.stop();
-        continue;
-      }
-      if (item.status === 'completed') {
-        task.stop();
-        continue;
-      }
-      // Re-attach progress/done handlers
-      attachHandlers(task, item.id);
-      activeTasks.set(item.id, task);
-      updateItem(item.id, {status: 'downloading'});
-    }
-  } catch (e) {
-    console.warn('[Download] restoreDownloads error:', e);
-  }
-};
-
-// ─── Attach task event handlers ────────────────────────────────────────────
+// ─── Attach handlers to a task ─────────────────────────────────────────────
 const attachHandlers = (task: DownloadTask, id: string) => {
   task
     .begin(({expectedBytes}) => {
@@ -108,24 +83,44 @@ const attachHandlers = (task: DownloadTask, id: string) => {
         status: 'downloading',
       });
     })
-    .done(() => {
+    .done(({bytesDownloaded, bytesTotal}) => {
       const destPath = getDestPath(id);
       updateItem(id, {
         status: 'completed',
         progress: 1,
+        downloadedBytes: bytesDownloaded,
+        totalBytes: bytesTotal,
         localPath: `file://${destPath}`,
         destinationPath: destPath,
       });
       activeTasks.delete(id);
+      completeHandler(id); // required on iOS
     })
-    .error(({error}) => {
-      console.warn('[Download] task error:', error);
-      updateItem(id, {
-        status: 'failed',
-        errorMessage: String(error),
-      });
+    .error(({error, errorCode}) => {
+      console.warn('[Download] task error:', error, errorCode);
+      updateItem(id, {status: 'failed', errorMessage: String(error)});
       activeTasks.delete(id);
     });
+};
+
+// ─── Restore interrupted downloads on app start ────────────────────────────
+export const restoreDownloads = async () => {
+  try {
+    const lostTasks = await getExistingDownloadTasks();
+    const items = getDownloadState();
+    for (const task of lostTasks) {
+      const item = items.find(d => d.id === task.id);
+      if (!item || item.status === 'completed') {
+        task.stop();
+        continue;
+      }
+      attachHandlers(task, item.id);
+      activeTasks.set(item.id, task);
+      updateItem(item.id, {status: 'downloading'});
+    }
+  } catch (e) {
+    console.warn('[Download] restoreDownloads error:', e);
+  }
 };
 
 // ─── Start a new download ──────────────────────────────────────────────────
@@ -134,8 +129,7 @@ export const startDownload = async (
   m3u8Url: string,
   quality = 'auto',
 ): Promise<DownloadItem> => {
-  // Ensure downloads directory exists
-  const dir = `${ReactNativeBlobUtil.fs.dirs.DocumentDir}/downloads`;
+  const dir = `${directories.documents}/downloads`;
   const dirExists = await ReactNativeBlobUtil.fs.isDir(dir);
   if (!dirExists) await ReactNativeBlobUtil.fs.mkdir(dir);
 
@@ -156,26 +150,23 @@ export const startDownload = async (
     destinationPath: destPath,
   };
 
-  // Persist immediately so DownloadsScreen shows it straight away
   const current = getDownloadState();
   saveDownloadState([downloadItem, ...current]);
   notify();
 
-  // Start the background task
   try {
-    const task = RNBackgroundDownloader.download({
+    const task = createDownloadTask({
       id,
       url: m3u8Url,
       destination: destPath,
-      // react-native-background-downloader handles HLS natively on Android
-      // via its built-in segment downloader when the URL ends in .m3u8
+      metadata: {contentId: item.id, title: item.Title},
       headers: {
         'User-Agent':
           'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
       },
     });
-
     attachHandlers(task, id);
+    task.start();
     activeTasks.set(id, task);
     updateItem(id, {status: 'downloading'});
   } catch (e: any) {
@@ -186,33 +177,30 @@ export const startDownload = async (
 };
 
 // ─── Pause ─────────────────────────────────────────────────────────────────
-export const pauseDownload = (id: string) => {
+export const pauseDownload = async (id: string) => {
   const task = activeTasks.get(id);
   if (task) {
-    task.pause();
+    await task.pause();
     updateItem(id, {status: 'paused'});
   }
 };
 
 // ─── Resume ────────────────────────────────────────────────────────────────
-export const resumeDownload = (id: string) => {
+export const resumeDownload = async (id: string) => {
   const task = activeTasks.get(id);
   if (task) {
-    task.resume();
+    await task.resume();
     updateItem(id, {status: 'downloading'});
   }
 };
 
 // ─── Cancel + delete ───────────────────────────────────────────────────────
 export const deleteDownload = async (id: string) => {
-  // Stop the task
   const task = activeTasks.get(id);
   if (task) {
-    task.stop();
+    await task.stop();
     activeTasks.delete(id);
   }
-
-  // Delete the file
   const destPath = getDestPath(id);
   try {
     const exists = await ReactNativeBlobUtil.fs.exists(destPath);
@@ -220,8 +208,6 @@ export const deleteDownload = async (id: string) => {
   } catch (e) {
     console.warn('[Download] delete file error:', e);
   }
-
-  // Remove from state
   const items = getDownloadState().filter(d => d.id !== id);
   saveDownloadState(items);
   notify();
@@ -234,21 +220,21 @@ export const retryDownload = async (id: string) => {
   if (!item || item.status !== 'failed') return;
 
   const destPath = getDestPath(id);
-
   updateItem(id, {status: 'pending', progress: 0, errorMessage: undefined});
 
   try {
-    const task = RNBackgroundDownloader.download({
+    const task = createDownloadTask({
       id,
       url: item.videoUrl,
       destination: destPath,
+      metadata: {contentId: item.contentId, title: item.title},
       headers: {
         'User-Agent':
           'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
       },
     });
-
     attachHandlers(task, id);
+    task.start();
     activeTasks.set(id, task);
     updateItem(id, {status: 'downloading'});
   } catch (e: any) {
