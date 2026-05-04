@@ -13,18 +13,18 @@ import { useWindowDimensions } from 'react-native';
 import { useTheme } from '../hooks/useTheme';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-type QualityLevel = 'auto' | string; // 'auto' or a resolution height string e.g. '1080'
+type QualityLevel = 'auto' | string;
 
 interface QualityOption {
-  label: string;   // display string e.g. 'Auto', '1080p', '720p'
+  label: string;
   value: QualityLevel;
-  resolution?: number; // height in px, undefined for auto
+  resolution?: number;
+  uri?: string; // child playlist URL — if present, swap source.uri instead of using selectedVideoTrack
 }
 
 // ─── M3U8 parser ─────────────────────────────────────────────────────────────
 const QUALITY_TIERS = [2160, 1440, 1080, 720, 480, 360, 240];
 
-/** Snap a raw pixel height to the nearest standard quality tier. */
 const snapToTier = (h: number): number => {
   let closest = QUALITY_TIERS[0];
   let minDiff = Math.abs(h - closest);
@@ -33,6 +33,13 @@ const snapToTier = (h: number): number => {
     if (diff < minDiff) { minDiff = diff; closest = tier; }
   }
   return closest;
+};
+
+/** Resolve a potentially relative child URL against the master playlist URL. */
+const resolveUrl = (base: string, child: string): string => {
+  if (child.startsWith('http')) return child;
+  const baseDir = base.substring(0, base.lastIndexOf('/') + 1);
+  return baseDir + child;
 };
 
 const parseM3u8Qualities = async (m3u8Url: string): Promise<QualityOption[]> => {
@@ -44,34 +51,47 @@ const parseM3u8Qualities = async (m3u8Url: string): Promise<QualityOption[]> => 
       return [{ label: 'Auto', value: 'auto' }];
     }
 
-    const seen = new Set<number>();
+    const seen = new Map<number, QualityOption>(); // keyed by snapped height
     const lines = text.split('\n');
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed.startsWith('#EXT-X-STREAM-INF')) continue;
 
-      const resMatch = trimmed.match(/RESOLUTION=(\d+)x(\d+)/i);
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+      if (!line.startsWith('#EXT-X-STREAM-INF')) continue;
+
+      // The next non-empty line is the child playlist URI
+      let childUri = '';
+      for (let j = i + 1; j < lines.length; j++) {
+        const next = lines[j].trim();
+        if (next && !next.startsWith('#')) { childUri = next; break; }
+      }
+
+      let height = 0;
+      const resMatch = line.match(/RESOLUTION=(\d+)x(\d+)/i);
       if (resMatch) {
-        seen.add(snapToTier(parseInt(resMatch[2], 10))); // resMatch[2] = height
-        continue;
+        height = snapToTier(parseInt(resMatch[2], 10));
+      } else {
+        const bwMatch = line.match(/BANDWIDTH=(\d+)/i);
+        if (bwMatch) {
+          const bw = parseInt(bwMatch[1], 10);
+          if      (bw >= 4_000_000) height = 1080;
+          else if (bw >= 2_000_000) height = 720;
+          else if (bw >= 800_000)   height = 480;
+          else                      height = 360;
+        }
       }
-      // Fallback: estimate tier from bandwidth
-      const bwMatch = trimmed.match(/BANDWIDTH=(\d+)/i);
-      if (bwMatch) {
-        const bw = parseInt(bwMatch[1], 10);
-        if      (bw >= 4_000_000) seen.add(1080);
-        else if (bw >= 2_000_000) seen.add(720);
-        else if (bw >= 800_000)   seen.add(480);
-        else                      seen.add(360);
+
+      if (height && !seen.has(height)) {
+        seen.set(height, {
+          label: `${height}p`,
+          value: String(height),
+          resolution: height,
+          uri: childUri ? resolveUrl(m3u8Url, childUri) : undefined,
+        });
       }
     }
 
-    const heights = Array.from(seen).sort((a, b) => b - a);
-    const options: QualityOption[] = [{ label: 'Auto', value: 'auto' }];
-    for (const h of heights) {
-      options.push({ label: `${h}p`, value: String(h), resolution: h });
-    }
-    return options;
+    const sorted = Array.from(seen.values()).sort((a, b) => (b.resolution ?? 0) - (a.resolution ?? 0));
+    return [{ label: 'Auto', value: 'auto' }, ...sorted];
   } catch {
     return [{ label: 'Auto', value: 'auto' }];
   }
@@ -114,11 +134,15 @@ export const PlayerScreen: React.FC = () => {
     const s = getSettings();
     return s.playerQuality || s.qualityPreference || 'auto';
   });
+  // The URI actually fed to <Video>. Starts as the master URL; switches to a
+  // child playlist URL when the user picks a specific quality tier.
+  const [activeUri, setActiveUri] = useState<string>(url);
 
   // Parse the master m3u8 to discover real quality variants.
   // MP4 links are single-quality — skip parsing and stay on Auto.
   useEffect(() => {
     if (!url) return;
+    setActiveUri(url); // reset on new content
     if (!url.includes('.m3u8')) {
       setQualityOptions([{ label: 'Auto', value: 'auto' }]);
       setQualityLevel('auto');
@@ -133,9 +157,12 @@ export const PlayerScreen: React.FC = () => {
     });
   }, [url]);
 
+  // selectedVideoTrack is only a fallback for manifests without child URIs.
+  // When a child URI is available we swap source.uri instead (more reliable).
   const selectedVideoTrack = (() => {
     if (qualityLevel === 'auto') return { type: 'auto' as const };
     const opt = qualityOptions.find(o => o.value === qualityLevel);
+    if (opt?.uri) return { type: 'auto' as const }; // uri swap handles it
     const res = opt?.resolution ?? parseInt(qualityLevel, 10);
     return { type: 'resolution' as const, value: res };
   })();
@@ -261,12 +288,19 @@ export const PlayerScreen: React.FC = () => {
 
   // ── Quality ───────────────────────────────────────────────────────────────
   const handleQualityChange = (quality: QualityLevel) => {
-    // Snapshot current position — handleLoad will seek back here after the
-    // track switch causes react-native-video to reload.
     seekAfterLoadRef.current = currentTime;
     setQualityLevel(quality);
     setShowQualityPicker(false);
     showControlsTemporarily();
+    // If this quality option has a dedicated child playlist URI, swap the
+    // source directly — this is guaranteed to work vs selectedVideoTrack.
+    const opt = qualityOptions.find(o => o.value === quality);
+    if (quality === 'auto') {
+      setActiveUri(url); // back to master playlist
+    } else if (opt?.uri) {
+      setActiveUri(opt.uri);
+    }
+    // No uri → selectedVideoTrack fallback handles it (already updated above)
     const s = getSettings();
     s.playerQuality = quality;
     saveSettings(s);
@@ -300,7 +334,7 @@ export const PlayerScreen: React.FC = () => {
       <View style={styles.videoContainer}>
         <Video
           ref={videoRef}
-          source={{ uri: url, type: url?.includes('.m3u8') ? 'm3u8' : undefined }}
+          source={{ uri: activeUri, type: activeUri?.includes('.m3u8') ? 'm3u8' : undefined }}
           resizeMode="contain"
           style={styles.video}
           paused={!playing}
