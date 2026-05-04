@@ -4,6 +4,10 @@ export interface ContentItem {
   Category: string;
   'Image Source': string;
   Source: string;
+  // Pre-scraped server page URLs (video_player?player_token=...).
+  // If present, VideoExtractor loads these directly instead of the main page.
+  // Index 0 = default server, 1+ = fallback servers.
+  Sources?: string[];
   Genres: string[];
   GenresAr: string[];
   Format: string;

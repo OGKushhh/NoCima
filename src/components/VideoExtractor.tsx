@@ -111,6 +111,25 @@ const CLICK_JS = `
 (function() {
   try { window.ReactNativeWebView.postMessage(JSON.stringify({type:'debug', msg:'DOC-END: ' + window.location.href.substring(0,100)})); } catch(e) {}
 
+  // ── Report all server token URLs from tabs-ul immediately ─────────────────
+  // fasel-hd embeds all video_player?player_token=... URLs in onclick attrs.
+  // Send them as type:'server_tokens' so the native side can store them in
+  // Sources[] on the item — zero extra network requests needed.
+  try {
+    var serverTabs = document.querySelectorAll('.tabs-ul li');
+    if (serverTabs.length > 0) {
+      var tokens = [];
+      serverTabs.forEach(function(li) {
+        var oc = li.getAttribute('onclick') || '';
+        var m = oc.match(/player_iframe\.location\.href\s*=\s*['"]([^'"]+)['"]/);
+        if (m && m[1]) tokens.push(m[1]);
+      });
+      if (tokens.length > 0) {
+        try { window.ReactNativeWebView.postMessage(JSON.stringify({type:'server_tokens', urls: tokens})); } catch(e) {}
+      }
+    }
+  } catch(e) {}
+
   // STEP 1 — Movie page: navigate to video_player page
   var iframe = document.querySelector('iframe[name="player_iframe"]');
   if (iframe) {
@@ -258,13 +277,15 @@ const ALLOWED_DOMAINS = [
 
 interface VideoExtractorProps {
   pageUrl: string;
-  onExtracted: (m3u8Urls: string[]) => void; // all master playlists found
+  onExtracted: (m3u8Urls: string[]) => void;
   onError: (reason?: 'timeout' | 'load' | 'http') => void;
   onDebug?: (msg: string) => void;
   timeoutMs?: number;
-  // How long to keep collecting after the first URL is found (ms).
-  // This window catches Server 2, Server 3 etc. that load shortly after.
   collectWindowMs?: number;
+  collectAllServers?: boolean;
+  // Called when the page reports all video_player token URLs from tabs-ul.
+  // Use this to pre-populate item.Sources[] in your data layer.
+  onServerTokens?: (urls: string[]) => void;
 }
 
 export const VideoExtractor: React.FC<VideoExtractorProps> = ({
@@ -274,6 +295,8 @@ export const VideoExtractor: React.FC<VideoExtractorProps> = ({
   onDebug,
   timeoutMs = 45000,
   collectWindowMs = 4000,
+  collectAllServers = false,
+  onServerTokens,
 }) => {
   const captured      = useRef(false);   // true once we've committed (fired onExtracted or onError)
   const collected     = useRef<string[]>([]); // all master m3u8s seen so far
@@ -316,7 +339,13 @@ export const VideoExtractor: React.FC<VideoExtractorProps> = ({
     collected.current = [...collected.current, url];
     dbg('COLLECTED #' + collected.current.length + ': ' + url.substring(0, 80));
 
-    // Start / reset the collection window timer on every new URL found
+    if (!collectAllServers) {
+      // Quick Play — first URL is enough, commit immediately
+      commit();
+      return;
+    }
+
+    // All Servers — reset the collection window on every new URL
     clearTimeout(collectTimer.current);
     collectTimer.current = setTimeout(commit, collectWindowMs);
   }, [commit, collectWindowMs, dbg]);
@@ -350,9 +379,14 @@ export const VideoExtractor: React.FC<VideoExtractorProps> = ({
         addUrl(data.url);
         return;
       }
+      if (data.type === 'server_tokens' && data.urls?.length) {
+        dbg('SERVER_TOKENS: ' + data.urls.length + ' token URLs');
+        onServerTokens?.(data.urls);
+        return;
+      }
       if (data.type === 'debug') dbg(data.msg);
     } catch (e) {}
-  }, [addUrl, dbg]);
+  }, [addUrl, dbg, onServerTokens]);
 
   const handleShouldStartLoad = useCallback((request: {url: string}) => {
     const url = request.url;

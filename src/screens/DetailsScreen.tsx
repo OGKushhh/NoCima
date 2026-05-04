@@ -133,7 +133,9 @@ export const DetailsScreen: React.FC = () => {
   // Tracks the last play request so the error-banner retry button works for both movies and episodes
   const lastPlayRef = useRef<{url: string; title: string} | null>(null);
   // Download mode: when true, handleExtracted starts a download instead of playing
-  const downloadModeRef = useRef(false);
+  const downloadModeRef   = useRef(false);
+  // All-servers mode: when true, VideoExtractor collects ALL servers before committing
+  const allServersModeRef = useRef(false);
   const [downloading, setDownloading] = useState(false);
 
   // Episode state
@@ -340,21 +342,25 @@ export const DetailsScreen: React.FC = () => {
   }, []);
 
   // ── Shared extraction launcher ────────────────────────────────────
-  const startExtraction = useCallback((url: string, title: string, epUrl?: string) => {
+  const startExtraction = useCallback((url: string, title: string, epUrl?: string, allServers = false) => {
     setShowLightbox(false);
     setExtracting(true);
     setExtractError(null);
     startStatusTimer();
     extractorTitleRef.current = title;
     lastPlayRef.current = {url, title};
+    allServersModeRef.current = allServers;
     if (epUrl !== undefined) setExtractingEpUrl(epUrl);
     setExtractorUrl(url);
   }, []);
 
   // ── Play movie (on-device extraction) ────────────────────────────
-  const handlePlay = useCallback(() => {
-    startExtraction(`${FASEL_BASE}/?p=${item.id}`, item.Title);
-  }, [item.id, item.Title, startExtraction]);
+  // If Sources[0] exists we go straight to the player token page — faster.
+  const handlePlay = useCallback((allServers = false) => {
+    const src = item.Sources?.[0];
+    const url = src ?? `${FASEL_BASE}/?p=${item.id}`;
+    startExtraction(url, item.Title, undefined, allServers);
+  }, [item.id, item.Title, item.Sources, startExtraction]);
 
   // ── Download movie or first episode ──────────────────────────────
   const handleDownload = useCallback(() => {
@@ -369,18 +375,26 @@ export const DetailsScreen: React.FC = () => {
   }, [item, isEpisodic, currentEps, selSeason, t, startExtraction]);
 
   // ── Play first episode of current season ─────────────────────────
-  const handlePlayFirst = useCallback(() => {
+  const handlePlayFirst = useCallback((allServers = false) => {
     if (!currentEps.length) return;
     const epUrl = currentEps[0];
     const title = `${item.Title} - ${t('season')} ${selSeason} ${t('episode')} 1`;
-    startExtraction(epUrl, title, epUrl);
+    startExtraction(epUrl, title, epUrl, allServers);
   }, [currentEps, item.Title, selSeason, t, startExtraction]);
 
   // ── Play episode (on-device extraction) ──────────────────────────
-  const handlePlayEpisode = useCallback((epUrl: string, epNum: number) => {
+  const handlePlayEpisode = useCallback((epUrl: string, epNum: number, allServers = false) => {
     const title = `${item.Title} - ${t('season')} ${selSeason} ${t('episode')} ${epNum}`;
-    startExtraction(epUrl, title, epUrl);
+    startExtraction(epUrl, title, epUrl, allServers);
   }, [item.Title, selSeason, t, startExtraction]);
+
+  // Cache server token URLs on the item as soon as the WebView reports them.
+  // Next play tap will use Sources[0] directly — skipping the main page load.
+  const handleServerTokens = useCallback((urls: string[]) => {
+    if (!item.Sources?.length) {
+      item.Sources = urls; // mutate in place — item is a ref to the data object
+    }
+  }, [item]);
 
   // ── Retry last extraction ─────────────────────────────────────────
   const handleRetry = useCallback(() => {
@@ -487,26 +501,49 @@ export const DetailsScreen: React.FC = () => {
 
         {/* ── Action buttons ── */}
         <View style={S.actions}>
-          <TouchableOpacity
-            style={[S.playBtn, (extracting || (isEpisodic && loadingEps)) && S.playBtnBusy]}
-            onPress={isEpisodic ? handlePlayFirst : handlePlay}
-            disabled={extracting || (isEpisodic && loadingEps)}
-            activeOpacity={0.84}
-          >
-            {extracting && !isEpisodic ? (
-              <>
+          {/* Split play button: left = Quick Play, right = All Servers */}
+          <View style={[S.splitBtn, (extracting || (isEpisodic && loadingEps)) && {opacity: 0.5}]}>
+            {/* Left: main play action */}
+            <TouchableOpacity
+              style={S.splitBtnMain}
+              onPress={() => isEpisodic ? handlePlayFirst(false) : handlePlay(false)}
+              disabled={extracting || (isEpisodic && loadingEps)}
+              activeOpacity={0.84}
+            >
+              {extracting && !allServersModeRef.current ? (
+                <>
+                  <ActivityIndicator color="#fff" size="small" />
+                  <Text style={S.playBtnTxt} numberOfLines={1}>
+                    {[t('extract_status_connecting'),t('extract_status_loading'),t('extract_status_searching'),t('extract_status_extracting'),t('extract_status_almost')][statusIdx]}
+                  </Text>
+                </>
+              ) : (
+                <>
+                  <Image source={require('../../assets/icons/clapboard.png')} style={{width: 18, height: 18, tintColor: '#fff'}} />
+                  <Text style={S.playBtnTxt}>
+                    {isEpisodic ? t('play_first_episode') : t('play')}
+                  </Text>
+                </>
+              )}
+            </TouchableOpacity>
+
+            {/* Divider */}
+            <View style={S.splitDivider} />
+
+            {/* Right: all servers action */}
+            <TouchableOpacity
+              style={S.splitBtnSide}
+              onPress={() => isEpisodic ? handlePlayFirst(true) : handlePlay(true)}
+              disabled={extracting || (isEpisodic && loadingEps)}
+              activeOpacity={0.84}
+            >
+              {extracting && allServersModeRef.current ? (
                 <ActivityIndicator color="#fff" size="small" />
-                <Text style={S.playBtnTxt} numberOfLines={1}>{[t('extract_status_connecting'),t('extract_status_loading'),t('extract_status_searching'),t('extract_status_extracting'),t('extract_status_almost')][statusIdx]}</Text>
-              </>
-            ) : (
-              <>
-                <Image source={require('../../assets/icons/clapboard.png')} style={{width: 18, height: 18, tintColor: '#fff'}} />
-                <Text style={S.playBtnTxt}>
-                  {isEpisodic ? t('play_first_episode') : t('play')}
-                </Text>
-              </>
-            )}
-          </TouchableOpacity>
+              ) : (
+                <Image source={require('../../assets/icons/planet-earth.png')} style={{width: 18, height: 18, tintColor: '#fff'}} />
+              )}
+            </TouchableOpacity>
+          </View>
 
           <TouchableOpacity
             style={[S.dlBtn, (extracting || downloading) && {opacity: 0.5}]}
@@ -660,7 +697,7 @@ export const DetailsScreen: React.FC = () => {
                   <TouchableOpacity
                     key={`ep-${selSeason}-${idx}`}
                     style={[S.epRow, isExtractingThis && S.epRowDisabled]}
-                    onPress={() => handlePlayEpisode(epUrl, idx + 1)}
+                    onPress={() => handlePlayEpisode(epUrl, idx + 1, false)}
                     disabled={extracting}
                     activeOpacity={0.75}
                   >
@@ -700,7 +737,9 @@ export const DetailsScreen: React.FC = () => {
           pageUrl={extractorUrl}
           onExtracted={handleExtracted}
           onError={handleExtractError}
+          onServerTokens={handleServerTokens}
           timeoutMs={40000}
+          collectAllServers={allServersModeRef.current}
         />
       )}
 
@@ -827,6 +866,11 @@ const S = StyleSheet.create({
   playBtn:       {flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', height: 54, borderRadius: 16, backgroundColor: Colors.dark.primary, gap: 8, elevation: 8, shadowColor: Colors.dark.primary, shadowOffset: {width: 0, height: 4}, shadowOpacity: 0.5, shadowRadius: 10},
   playBtnBusy:   {backgroundColor: `${Colors.dark.primary}CC`},
   playBtnTxt:    {color: '#fff', fontSize: 15, fontWeight: '700', fontFamily: 'Rubik', flexShrink: 1},
+  // Split play button
+  splitBtn:      {flex: 1, flexDirection: 'row', height: 54, borderRadius: 16, backgroundColor: Colors.dark.primary, overflow: 'hidden', elevation: 8, shadowColor: Colors.dark.primary, shadowOffset: {width: 0, height: 4}, shadowOpacity: 0.5, shadowRadius: 10},
+  splitBtnMain:  {flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingHorizontal: 16},
+  splitBtnSide:  {width: 54, alignItems: 'center', justifyContent: 'center'},
+  splitDivider:  {width: 1, marginVertical: 14, backgroundColor: 'rgba(255,255,255,0.25)'},
   dlBtn:         {flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', height: 54, borderRadius: 16, backgroundColor: Colors.dark.surface, gap: 8, borderWidth: 1.5, borderColor: Colors.dark.accentLight},
   dlBtnTxt:      {color: Colors.dark.accentLight, fontSize: 15, fontWeight: '700', fontFamily: 'Rubik'},
 
