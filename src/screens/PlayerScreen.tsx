@@ -22,37 +22,47 @@ interface QualityOption {
 }
 
 // ─── M3U8 parser ─────────────────────────────────────────────────────────────
-// Parses EXT-X-STREAM-INF entries from a master playlist and returns a sorted
-// list of quality options (highest first) plus an 'Auto' entry at the top.
+const QUALITY_TIERS = [2160, 1440, 1080, 720, 480, 360, 240];
+
+/** Snap a raw pixel height to the nearest standard quality tier. */
+const snapToTier = (h: number): number => {
+  let closest = QUALITY_TIERS[0];
+  let minDiff = Math.abs(h - closest);
+  for (const tier of QUALITY_TIERS) {
+    const diff = Math.abs(h - tier);
+    if (diff < minDiff) { minDiff = diff; closest = tier; }
+  }
+  return closest;
+};
+
 const parseM3u8Qualities = async (m3u8Url: string): Promise<QualityOption[]> => {
   try {
     const res = await fetch(m3u8Url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
     const text = await res.text();
 
-    // Not a master playlist (no STREAM-INF) — single quality stream
     if (!text.includes('#EXT-X-STREAM-INF')) {
       return [{ label: 'Auto', value: 'auto' }];
     }
 
     const seen = new Set<number>();
     const lines = text.split('\n');
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i].trim();
-      if (!line.startsWith('#EXT-X-STREAM-INF')) continue;
-      // Try RESOLUTION=WxH first
-      const resMatch = line.match(/RESOLUTION=\d+x(\d+)/i);
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed.startsWith('#EXT-X-STREAM-INF')) continue;
+
+      const resMatch = trimmed.match(/RESOLUTION=(\d+)x(\d+)/i);
       if (resMatch) {
-        seen.add(parseInt(resMatch[1], 10));
+        seen.add(snapToTier(parseInt(resMatch[2], 10))); // resMatch[2] = height
         continue;
       }
-      // Fallback: derive from BANDWIDTH (rough mapping)
-      const bwMatch = line.match(/BANDWIDTH=(\d+)/i);
+      // Fallback: estimate tier from bandwidth
+      const bwMatch = trimmed.match(/BANDWIDTH=(\d+)/i);
       if (bwMatch) {
         const bw = parseInt(bwMatch[1], 10);
-        if (bw >= 4_000_000) seen.add(1080);
+        if      (bw >= 4_000_000) seen.add(1080);
         else if (bw >= 2_000_000) seen.add(720);
-        else if (bw >= 800_000)  seen.add(480);
-        else seen.add(360);
+        else if (bw >= 800_000)   seen.add(480);
+        else                      seen.add(360);
       }
     }
 
@@ -118,9 +128,12 @@ export const PlayerScreen: React.FC = () => {
     });
   }, [url]);
 
-  const selectedVideoTrack = qualityLevel === 'auto'
-    ? { type: 'auto' as const }
-    : { type: 'resolution' as const, value: parseInt(qualityLevel, 10) };
+  const selectedVideoTrack = (() => {
+    if (qualityLevel === 'auto') return { type: 'auto' as const };
+    const opt = qualityOptions.find(o => o.value === qualityLevel);
+    const res = opt?.resolution ?? parseInt(qualityLevel, 10);
+    return { type: 'resolution' as const, value: res };
+  })();
 
   // ── Volume ────────────────────────────────────────────────────────────────
   // volumePct = 0–200 (percentage shown in UI)
