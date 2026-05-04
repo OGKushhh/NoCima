@@ -13,15 +13,59 @@ import { useWindowDimensions } from 'react-native';
 import { useTheme } from '../hooks/useTheme';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-type QualityLevel = 'auto' | '1080' | '720' | '480' | '360';
+type QualityLevel = 'auto' | string; // 'auto' or a resolution height string e.g. '1080'
 
-const QUALITY_OPTIONS: { label: string; value: QualityLevel; resolution?: number }[] = [
-  { label: 'quality_auto', value: 'auto' },
-  { label: 'quality_1080', value: '1080', resolution: 1080 },
-  { label: 'quality_720',  value: '720',  resolution: 720  },
-  { label: 'quality_480',  value: '480',  resolution: 480  },
-  { label: 'quality_360',  value: '360',  resolution: 360  },
-];
+interface QualityOption {
+  label: string;   // display string e.g. 'Auto', '1080p', '720p'
+  value: QualityLevel;
+  resolution?: number; // height in px, undefined for auto
+}
+
+// ─── M3U8 parser ─────────────────────────────────────────────────────────────
+// Parses EXT-X-STREAM-INF entries from a master playlist and returns a sorted
+// list of quality options (highest first) plus an 'Auto' entry at the top.
+const parseM3u8Qualities = async (m3u8Url: string): Promise<QualityOption[]> => {
+  try {
+    const res = await fetch(m3u8Url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+    const text = await res.text();
+
+    // Not a master playlist (no STREAM-INF) — single quality stream
+    if (!text.includes('#EXT-X-STREAM-INF')) {
+      return [{ label: 'Auto', value: 'auto' }];
+    }
+
+    const seen = new Set<number>();
+    const lines = text.split('\n');
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+      if (!line.startsWith('#EXT-X-STREAM-INF')) continue;
+      // Try RESOLUTION=WxH first
+      const resMatch = line.match(/RESOLUTION=\d+x(\d+)/i);
+      if (resMatch) {
+        seen.add(parseInt(resMatch[1], 10));
+        continue;
+      }
+      // Fallback: derive from BANDWIDTH (rough mapping)
+      const bwMatch = line.match(/BANDWIDTH=(\d+)/i);
+      if (bwMatch) {
+        const bw = parseInt(bwMatch[1], 10);
+        if (bw >= 4_000_000) seen.add(1080);
+        else if (bw >= 2_000_000) seen.add(720);
+        else if (bw >= 800_000)  seen.add(480);
+        else seen.add(360);
+      }
+    }
+
+    const heights = Array.from(seen).sort((a, b) => b - a);
+    const options: QualityOption[] = [{ label: 'Auto', value: 'auto' }];
+    for (const h of heights) {
+      options.push({ label: `${h}p`, value: String(h), resolution: h });
+    }
+    return options;
+  } catch {
+    return [{ label: 'Auto', value: 'auto' }];
+  }
+};
 
 const VOLUME_OPTIONS = [
   { label: '🔇  Mute',  value: 0   },
@@ -53,12 +97,26 @@ export const PlayerScreen: React.FC = () => {
   const [error, setError]             = useState<string | null>(null);
 
   // ── Quality ───────────────────────────────────────────────────────────────
-  // selectedVideoTrack is what actually switches HLS tracks in react-native-video.
-  // maxBitRate only caps bandwidth — the player can still pick a lower track.
+  const [qualityOptions, setQualityOptions] = useState<QualityOption[]>([
+    { label: 'Auto', value: 'auto' },
+  ]);
   const [qualityLevel, setQualityLevel] = useState<QualityLevel>(() => {
     const s = getSettings();
     return s.playerQuality || s.qualityPreference || 'auto';
   });
+
+  // Parse the master m3u8 to discover real quality variants
+  useEffect(() => {
+    if (!url) return;
+    parseM3u8Qualities(url).then(opts => {
+      setQualityOptions(opts);
+      // If saved preference isn't in the manifest, fall back to auto
+      const s = getSettings();
+      const saved = s.playerQuality || s.qualityPreference || 'auto';
+      const exists = opts.some(o => o.value === saved);
+      setQualityLevel(exists ? saved : 'auto');
+    });
+  }, [url]);
 
   const selectedVideoTrack = qualityLevel === 'auto'
     ? { type: 'auto' as const }
@@ -197,8 +255,8 @@ export const PlayerScreen: React.FC = () => {
   };
 
   const getCurrentQualityLabel = () => {
-    const found = QUALITY_OPTIONS.find(q => q.value === qualityLevel);
-    return found ? t(found.label) : t('quality_auto');
+    const found = qualityOptions.find(q => q.value === qualityLevel);
+    return found ? found.label : 'Auto';
   };
 
   // ── Error screen ──────────────────────────────────────────────────────────
@@ -376,13 +434,13 @@ export const PlayerScreen: React.FC = () => {
         <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowQualityPicker(false)}>
           <View style={[styles.modalContent, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             <Text style={[styles.modalTitle, { color: colors.text }]}>{t('select_quality')}</Text>
-            {QUALITY_OPTIONS.map(option => (
+            {qualityOptions.map(option => (
               <TouchableOpacity
                 key={option.value}
                 style={[styles.modalOption, { borderBottomColor: colors.border }]}
                 onPress={() => handleQualityChange(option.value)}
               >
-                <Text style={[styles.modalOptionText, { color: colors.text }]}>{t(option.label)}</Text>
+                <Text style={[styles.modalOptionText, { color: colors.text }]}>{option.label}</Text>
                 {qualityLevel === option.value && (
                   <Image source={require('../../assets/icons/checkmark.png')} style={{ width: 18, height: 18, tintColor: colors.primary }} />
                 )}

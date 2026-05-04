@@ -121,18 +121,18 @@ export const CategoryScreen: React.FC = () => {
       setError(null);
       const data = await loadCategory(selectedCategory as any);
       const itemsArray = getMoviesArray(data as any);
-      // Default sort by newest year
       const sorted = sortByYearDesc(itemsArray);
-      setAllItems(sorted);
-      // Reset pagination and filters
-      setPage(1);
-      setHasMore(true);
-      setVisibleItems([]);
+      // Reset all filter/sort state BEFORE setting items so that when
+      // `filtered` recomputes it sees clean state. Never setVisibleItems([])
+      // here — the pagination useEffect owns that once `filtered` updates.
       setSelectedGenre(null);
       setSelectedYear(null);
       setSelectedSort('year_desc');
       setSearchQuery('');
       setDebouncedQuery('');
+      setHasMore(true);
+      setPage(1);
+      setAllItems(sorted); // last — triggers filtered recompute with fresh state
     } catch (err: any) {
       setError(err.message || t('error_loading'));
     } finally {
