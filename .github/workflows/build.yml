@@ -50,12 +50,20 @@ jobs:
       - name: Create local.properties
         run: echo "sdk.dir=$ANDROID_SDK_ROOT" > android/local.properties
 
+      - name: Decode release keystore
+        run: |
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > android/app/release.keystore
+
       - name: Fix gradlew DEFAULT_JVM_OPTS
         working-directory: android
         run: sed -i 's/DEFAULT_JVM_OPTS=.*/DEFAULT_JVM_OPTS=""/' gradlew
 
       - name: Build Release APK
         working-directory: android
+        env:
+          ABDOBEST_RELEASE_STORE_PASSWORD: ${{ secrets.ABDOBEST_RELEASE_STORE_PASSWORD }}
+          ABDOBEST_RELEASE_KEY_ALIAS: ${{ secrets.ABDOBEST_RELEASE_KEY_ALIAS }}
+          ABDOBEST_RELEASE_KEY_PASSWORD: ${{ secrets.ABDOBEST_RELEASE_KEY_PASSWORD }}
         run: |
           chmod +x gradlew
           ./gradlew assembleRelease --no-daemon --stacktrace
