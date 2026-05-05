@@ -287,13 +287,6 @@ export const SettingsScreen: React.FC = () => {
                 <Image source={require('../../assets/icons/chevron-down.png')} style={{ width: 18, height: 18, tintColor: colors.textMuted, transform: [{ rotate: '-90deg' }] }} />
               </View>
             </TouchableOpacity>
-            <SettingRow
-              icon={require('../../assets/icons/menu.png')}
-              label={t('subtitles_enabled')}
-              settingKey="subtitleEnabled"
-              toggle
-              last
-            />
           </View>
 
           {/* ── Data ── */}

@@ -251,6 +251,30 @@ export const CategoryScreen: React.FC = () => {
         <Text style={[styles.headerTitle, isRTL && styles.textRTL]}>{screenTitle}</Text>
       </View>
 
+      {/* Category tabs */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={[styles.catTabsContent, isRTL && { flexDirection: 'row-reverse' }]}
+        style={styles.catTabsRow}
+      >
+        {CATEGORIES.map(cat => {
+          const isActive = selectedCategory === cat.key;
+          return (
+            <TouchableOpacity
+              key={cat.key}
+              style={[styles.catTab, isActive && styles.catTabActive]}
+              onPress={() => handleCategorySelect(cat.key)}
+              activeOpacity={0.75}
+            >
+              <Text style={[styles.catTabText, isActive && styles.catTabTextActive]}>
+                {lang === 'ar' ? cat.labelAr : cat.labelEn}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
+
       {/* Search + filter button */}
       <View style={[styles.searchRow, isRTL && styles.rowRTL]}>
         <Image source={require('../../assets/icons/search.png')} style={[styles.searchIcon, { tintColor: Colors.dark.textMuted }]} />
@@ -303,15 +327,6 @@ export const CategoryScreen: React.FC = () => {
               <TouchableOpacity onPress={closeFilterPopup}><Image source={require('../../assets/icons/close.png')} style={[styles.headerIcon, { tintColor: Colors.dark.text }]} /></TouchableOpacity>
             </View>
             <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: SCREEN_HEIGHT * 0.7 }}>
-              <Text style={[styles.filterSectionTitle, isRTL && styles.textRTL]}>{t('browse')}</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterOptionsRow}>
-                {CATEGORIES.map(cat => (
-                  <TouchableOpacity key={cat.key} style={[styles.filterOptionChip, selectedCategory === cat.key && styles.categoryChipActive]} onPress={() => handleCategorySelect(cat.key)}>
-                    <Text style={[styles.filterOptionText, selectedCategory === cat.key && styles.categoryChipTextActive]}>{lang === 'ar' ? cat.labelAr : cat.labelEn}</Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-
               <Text style={[styles.filterSectionTitle, isRTL && styles.textRTL]}>{t('sort_by')}</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterOptionsRow}>
                 {SORT_OPTIONS.map(opt => (
@@ -398,6 +413,12 @@ const styles = StyleSheet.create({
   filterOptionChipActive: { backgroundColor: `${Colors.dark.primary}20`, borderColor: Colors.dark.primary },
   filterOptionText: { color: Colors.dark.textSecondary, fontSize: 13, fontWeight: '500', fontFamily: 'Rubik' },
   filterOptionTextActive: { color: Colors.dark.primary, fontWeight: '600' },
+  catTabsRow:          { marginBottom: 10 },
+  catTabsContent:      { paddingHorizontal: 14, gap: 8, flexDirection: 'row', alignItems: 'center' },
+  catTab:              { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, backgroundColor: Colors.dark.surface, borderWidth: 1, borderColor: Colors.dark.border },
+  catTabActive:        { backgroundColor: Colors.dark.primary, borderColor: Colors.dark.primary },
+  catTabText:          { color: Colors.dark.textSecondary, fontSize: 13, fontWeight: '600', fontFamily: 'Rubik' },
+  catTabTextActive:    { color: '#fff' },
   categoryChipActive: { backgroundColor: Colors.dark.primary, borderColor: Colors.dark.primary },
   categoryChipTextActive: { color: '#fff' },
   filterFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 16, paddingTop: 12, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: Colors.dark.border },

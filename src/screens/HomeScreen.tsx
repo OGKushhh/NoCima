@@ -496,7 +496,10 @@ export const HomeScreen: React.FC = () => {
           <View>
             {/* Top bar */}
             <View style={[S.topBar, {paddingTop: insets.top + 8}]}>
-              <Text style={S.appName}>AbdoBest</Text>
+              <Text style={S.appName}>
+                <Text style={{color: '#FF4500'}}>Abdo</Text>
+                <Text style={{color: '#1565C0'}}>Best</Text>
+              </Text>
               <TouchableOpacity style={S.searchBtn} onPress={() => setSearchOpen(true)}>
                 <Image
                   source={require('../../assets/icons/search.png')}
@@ -584,7 +587,7 @@ const S = StyleSheet.create({
     paddingHorizontal: 18, paddingBottom: 10,
   },
   appName: {
-    color: Colors.dark.primary, fontSize: 26,
+    fontSize: 26,
     fontWeight: '900', fontFamily: 'Rubik', letterSpacing: 0.3,
   },
   searchBtn: {
