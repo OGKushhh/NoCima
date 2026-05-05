@@ -8,6 +8,7 @@ import {restoreDownloads} from './src/services/downloadService';
 import {APP_VERSION} from './src/constants/endpoints';
 import {storage} from './src/storage/Storage';
 import {Colors} from './src/theme/colors';
+import {ThemeProvider} from './src/hooks/useTheme';
 import './src/i18n';
 
 LogBox.ignoreLogs([
@@ -49,23 +50,24 @@ const App: React.FC = () => {
   }
 
   return (
-    <SafeAreaProvider initialMetrics={initialWindowMetrics}>
-      {/* NOT translucent — prevents clipping with notification bar */}
-      <StatusBar
-        barStyle="light-content"
-        backgroundColor={Colors.dark.background}
-        translucent={false}
-      />
-      <AppNavigator />
-      <UpdateModal
-        visible={showUpdateModal}
-        release={updateInfo}
-        currentVersion={APP_VERSION}
-        onDownload={(url: string) => { setShowUpdateModal(false); openUpdateUrl(url); }}
-        onSkip={(version: string) => { skipVersion(version); setShowUpdateModal(false); }}
-        onDismiss={() => setShowUpdateModal(false)}
-      />
-    </SafeAreaProvider>
+    <ThemeProvider>
+      <SafeAreaProvider initialMetrics={initialWindowMetrics}>
+        <StatusBar
+          barStyle="light-content"
+          backgroundColor={Colors.dark.background}
+          translucent={false}
+        />
+        <AppNavigator />
+        <UpdateModal
+          visible={showUpdateModal}
+          release={updateInfo}
+          currentVersion={APP_VERSION}
+          onDownload={(url: string) => { setShowUpdateModal(false); openUpdateUrl(url); }}
+          onSkip={(version: string) => { skipVersion(version); setShowUpdateModal(false); }}
+          onDismiss={() => setShowUpdateModal(false)}
+        />
+      </SafeAreaProvider>
+    </ThemeProvider>
   );
 };
 

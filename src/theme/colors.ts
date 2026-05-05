@@ -106,3 +106,6 @@ export const getGradientProps = (type: 'abdo' | 'best') => {
 };
 
 export type ThemeMode = 'dark' | 'light';
+
+// Type for theme colors object (used by ThemeContext)
+export type ThemeColors = typeof Colors.dark;
