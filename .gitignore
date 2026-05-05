@@ -33,7 +33,6 @@ android/.gradle/
 android/app/build/
 android/build/
 android/local.properties
-android/gradle.properties
 android/captures/
 android/gradle/gradle-wrapper.jar
 *.apk
