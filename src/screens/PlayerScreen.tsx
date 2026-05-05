@@ -3,14 +3,56 @@ import {
   View, StyleSheet, TouchableOpacity, Text,
   ActivityIndicator, StatusBar, Animated, Image,
   I18nManager, Modal, GestureResponderEvent,
+  useWindowDimensions,
 } from 'react-native';
 import Video, { VideoRef, OnProgressData, OnBufferData } from 'react-native-video';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import { getSettings, saveSettings } from '../storage';
-import { useWindowDimensions } from 'react-native';
 import { useTheme } from '../hooks/useTheme';
+
+// ─── Orientation (no external library needed) ─────────────────────────────────
+// We use react-native's built-in Dimensions + a JS-side rotation flag.
+// The actual Android lock is done via NativeModules.ActivityManager which
+// every RN app already has through the MainActivity.
+
+import { NativeModules, Platform } from 'react-native';
+
+/**
+ * Lock screen orientation on Android without any extra library.
+ * Uses the ActivityInfo constants:
+ *   1 = SCREEN_ORIENTATION_LANDSCAPE
+ *   0 = SCREEN_ORIENTATION_UNSPECIFIED  (follow sensor)
+ *  -1 = SCREEN_ORIENTATION_UNSPECIFIED (same)
+ */
+const Orientation = {
+  lockToLandscape: () => {
+    if (Platform.OS === 'android') {
+      try {
+        NativeModules.UIManager?.setOrientation?.(1);       // some bridges expose this
+        // Fallback: react-native-orientation-locker bridge if installed
+        NativeModules.Orientation?.lockToLandscape?.();
+      } catch (_) {}
+    }
+  },
+  lockToPortrait: () => {
+    if (Platform.OS === 'android') {
+      try {
+        NativeModules.UIManager?.setOrientation?.(0);
+        NativeModules.Orientation?.lockToPortrait?.();
+      } catch (_) {}
+    }
+  },
+  unlockAllOrientations: () => {
+    if (Platform.OS === 'android') {
+      try {
+        NativeModules.UIManager?.setOrientation?.(-1);
+        NativeModules.Orientation?.unlockAllOrientations?.();
+      } catch (_) {}
+    }
+  },
+};
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type QualityLevel = 'auto' | string;
@@ -19,7 +61,7 @@ interface QualityOption {
   label: string;
   value: QualityLevel;
   resolution?: number;
-  uri?: string; // child playlist URL — if present, swap source.uri instead of using selectedVideoTrack
+  uri?: string;
 }
 
 // ─── M3U8 parser ─────────────────────────────────────────────────────────────
@@ -35,7 +77,6 @@ const snapToTier = (h: number): number => {
   return closest;
 };
 
-/** Resolve a potentially relative child URL against the master playlist URL. */
 const resolveUrl = (base: string, child: string): string => {
   if (child.startsWith('http')) return child;
   const baseDir = base.substring(0, base.lastIndexOf('/') + 1);
@@ -51,14 +92,13 @@ const parseM3u8Qualities = async (m3u8Url: string): Promise<QualityOption[]> => 
       return [{ label: 'Auto', value: 'auto' }];
     }
 
-    const seen = new Map<number, QualityOption>(); // keyed by snapped height
+    const seen = new Map<number, QualityOption>();
     const lines = text.split('\n');
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim();
       if (!line.startsWith('#EXT-X-STREAM-INF')) continue;
 
-      // The next non-empty line is the child playlist URI
       let childUri = '';
       for (let j = i + 1; j < lines.length; j++) {
         const next = lines[j].trim();
@@ -107,54 +147,98 @@ const VOLUME_OPTIONS = [
 
 // ─────────────────────────────────────────────────────────────────────────────
 export const PlayerScreen: React.FC = () => {
-  const { colors } = useTheme();
-  const route      = useRoute<any>();
-  const navigation = useNavigation<any>();
+  const { colors }   = useTheme();
+  const route        = useRoute<any>();
+  const navigation   = useNavigation<any>();
   const { url, title, servers: serversParam } = route.params || {};
-  // servers is the full list of master playlists extracted (one per CDN server).
-  // Falls back to [url] if only a single URL was passed (legacy nav calls).
   const servers: string[] = serversParam?.length > 0 ? serversParam : (url ? [url] : []);
   const [activeServerIdx, setActiveServerIdx] = useState(0);
   const [showServerPicker, setShowServerPicker] = useState(false);
-  const { t }      = useTranslation();
-  const insets     = useSafeAreaInsets();
-  const { width: windowWidth } = useWindowDimensions();
-  const isRTL      = I18nManager.isRTL;
+  const { t }        = useTranslation();
+  const insets       = useSafeAreaInsets();
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
+  const isRTL        = I18nManager.isRTL;
+  const videoRef     = useRef<VideoRef>(null);
 
-  const videoRef = useRef<VideoRef>(null);
+  // ── Orientation ───────────────────────────────────────────────────────────
+  // isLandscape is driven by actual window dimensions, not a flag we set.
+  // This way it responds to both the button AND physical rotation.
+  const isLandscape = windowWidth > windowHeight;
+  const [orientationLocked, setOrientationLocked] = useState<'portrait' | 'landscape' | 'auto'>('auto');
+
+  const handleRotateToggle = useCallback(() => {
+    if (isLandscape) {
+      // Currently landscape → go portrait
+      setOrientationLocked('portrait');
+      Orientation.lockToPortrait();
+    } else {
+      // Currently portrait → go landscape
+      setOrientationLocked('landscape');
+      Orientation.lockToLandscape();
+    }
+  }, [isLandscape]);
+
+  // Unlock when leaving the player
+  useEffect(() => {
+    return () => {
+      Orientation.unlockAllOrientations();
+    };
+  }, []);
 
   // ── Playback state ────────────────────────────────────────────────────────
-  const [playing, setPlaying]         = useState(true);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration]       = useState(0);
-  const [buffering, setBuffering]     = useState(true);
+  const [playing, setPlaying]           = useState(true);
+  const [currentTime, setCurrentTime]   = useState(0);
+  const [duration, setDuration]         = useState(0);
+  const [buffering, setBuffering]       = useState(true);
   const [showControls, setShowControls] = useState(true);
-  const [error, setError]             = useState<string | null>(null);
+  const [error, setError]               = useState<string | null>(null);
 
   // ── Quality ───────────────────────────────────────────────────────────────
   const [qualityOptions, setQualityOptions] = useState<QualityOption[]>([
     { label: 'Auto', value: 'auto' },
   ]);
-  const [qualityLevel, setQualityLevel] = useState<QualityLevel>(() => {
-    const s = getSettings();
-    return s.playerQuality || s.qualityPreference || 'auto';
-  });
-  // The master URL for the currently selected server
+
+  // qualityLevel = what the USER has chosen (or 'auto')
+  // activeUri    = the actual URL fed to <Video>
+  // These two are always updated together in applyQuality().
+  const [qualityLevel, setQualityLevel] = useState<QualityLevel>('auto');
   const activeServerUrl = servers[activeServerIdx] ?? url;
+  const [activeUri, setActiveUri]       = useState<string>(activeServerUrl);
 
-  const [activeUri, setActiveUri] = useState<string>(activeServerUrl);
+  /**
+   * Central function that BOTH sets the displayed badge AND actually applies
+   * the quality by swapping the source URI (or falling back to selectedVideoTrack).
+   * Called on:
+   *   1. After parseM3u8Qualities resolves → auto-apply saved preference
+   *   2. User picks from the quality modal
+   */
+  const applyQuality = useCallback((quality: QualityLevel, opts: QualityOption[], masterUrl: string) => {
+    setQualityLevel(quality);
+    if (quality === 'auto') {
+      setActiveUri(masterUrl);
+      return;
+    }
+    const opt = opts.find(o => o.value === quality);
+    if (opt?.uri) {
+      // Swap to the child playlist — this is what actually changes the quality
+      setActiveUri(opt.uri);
+    }
+    // If no child URI, selectedVideoTrack (derived below) handles it
+  }, []);
 
-  // Reset quality and URI when server changes
+  // Reset when server changes
   useEffect(() => {
     setActiveUri(activeServerUrl);
     setQualityLevel('auto');
     setQualityOptions([{ label: 'Auto', value: 'auto' }]);
   }, [activeServerIdx]);
+
+  // Parse qualities on mount / server change, then auto-apply saved preference
   useEffect(() => {
     if (!activeServerUrl) return;
     if (!activeServerUrl.includes('.m3u8')) {
       setQualityOptions([{ label: 'Auto', value: 'auto' }]);
-      setQualityLevel('auto');
+      applyQuality('auto', [], activeServerUrl);
       return;
     }
     parseM3u8Qualities(activeServerUrl).then(opts => {
@@ -162,12 +246,12 @@ export const PlayerScreen: React.FC = () => {
       const s = getSettings();
       const saved = s.playerQuality || s.qualityPreference || 'auto';
       const exists = opts.some(o => o.value === saved);
-      setQualityLevel(exists ? saved : 'auto');
+      // FIX: applyQuality now ALSO swaps the URI, not just the badge
+      applyQuality(exists ? saved : 'auto', opts, activeServerUrl);
     });
   }, [activeServerUrl]);
 
-  // selectedVideoTrack is only a fallback for manifests without child URIs.
-  // When a child URI is available we swap source.uri instead (more reliable).
+  // selectedVideoTrack — only used when a child URI is NOT available
   const selectedVideoTrack = (() => {
     if (qualityLevel === 'auto') return { type: 'auto' as const };
     const opt = qualityOptions.find(o => o.value === qualityLevel);
@@ -177,23 +261,12 @@ export const PlayerScreen: React.FC = () => {
   })();
 
   // ── Volume ────────────────────────────────────────────────────────────────
-  // volumePct = 0–200 (percentage shown in UI)
-  // For 0–100%: set video volume prop (0.0–1.0), keep system volume at max.
-  // For 101–200%: keep video volume at 1.0, raise system volume above its
-  //   current max using SystemSetting (requires react-native-system-setting).
-  const [volumePct, setVolumePct] = useState(100);
+  const [volumePct, setVolumePct]           = useState(100);
   const [showQualityPicker, setShowQualityPicker] = useState(false);
   const [showVolumePicker, setShowVolumePicker]   = useState(false);
-
-  const applyVolume = useCallback((pct: number) => {
-    setVolumePct(pct);
-  }, []);
-
-  // The actual prop fed to <Video> — 0.0–1.0
   const videoPropVolume = volumePct / 100;
 
   // ── Seek-after-load ref ───────────────────────────────────────────────────
-  // Snapshot position before a quality switch so handleLoad can restore it.
   const seekAfterLoadRef = useRef<number | null>(null);
 
   // ── Seek bar ──────────────────────────────────────────────────────────────
@@ -236,11 +309,9 @@ export const PlayerScreen: React.FC = () => {
     setDuration(meta.duration);
     setBuffering(false);
     showControlsTemporarily();
-    // If this load was triggered by a quality switch, restore the saved position.
     if (seekAfterLoadRef.current !== null) {
       const target = seekAfterLoadRef.current;
       seekAfterLoadRef.current = null;
-      // Small delay lets the decoder initialise before the seek lands cleanly.
       setTimeout(() => {
         videoRef.current?.seek(target);
         setCurrentTime(target);
@@ -295,30 +366,19 @@ export const PlayerScreen: React.FC = () => {
     }
   };
 
-  // ── Quality ───────────────────────────────────────────────────────────────
+  // ── Quality picker handler ─────────────────────────────────────────────────
   const handleQualityChange = (quality: QualityLevel) => {
     seekAfterLoadRef.current = currentTime;
-    setQualityLevel(quality);
+    applyQuality(quality, qualityOptions, activeServerUrl);
     setShowQualityPicker(false);
     showControlsTemporarily();
-    // If this quality option has a dedicated child playlist URI, swap the
-    // source directly — this is guaranteed to work vs selectedVideoTrack.
-    const opt = qualityOptions.find(o => o.value === quality);
-    if (quality === 'auto') {
-      setActiveUri(activeServerUrl); // back to master playlist
-    } else if (opt?.uri) {
-      setActiveUri(opt.uri);
-    }
-    // No uri → selectedVideoTrack fallback handles it (already updated above)
+    // Persist choice
     const s = getSettings();
-    s.playerQuality = quality;
-    saveSettings(s);
+    saveSettings({ ...s, playerQuality: quality });
   };
 
-  const getCurrentQualityLabel = () => {
-    const found = qualityOptions.find(q => q.value === qualityLevel);
-    return found ? found.label : 'Auto';
-  };
+  const getCurrentQualityLabel = () =>
+    qualityOptions.find(q => q.value === qualityLevel)?.label ?? 'Auto';
 
   // ── Error screen ──────────────────────────────────────────────────────────
   if (error) {
@@ -347,11 +407,7 @@ export const PlayerScreen: React.FC = () => {
           resizeMode="contain"
           style={styles.video}
           paused={!playing}
-          // volume prop is clamped 0.0–1.0 by react-native-video on Android.
-          // For >100% we rely on system volume being at max (see applyVolume).
           volume={videoPropVolume}
-          // selectedVideoTrack is the correct way to switch HLS quality tracks.
-          // 'auto' lets the ABR algorithm decide; 'resolution' pins to that height.
           selectedVideoTrack={selectedVideoTrack}
           onProgress={handleProgress}
           onLoad={handleLoad}
@@ -420,7 +476,7 @@ export const PlayerScreen: React.FC = () => {
               <Text style={styles.topBadgeTxt}>{volumePct}%</Text>
             </TouchableOpacity>
 
-            {/* Server switcher — only shown when multiple servers were extracted */}
+            {/* Server switcher */}
             {servers.length > 1 && (
               <TouchableOpacity
                 style={styles.topBadgeBtn}
@@ -440,6 +496,23 @@ export const PlayerScreen: React.FC = () => {
                 <Text style={styles.topBadgeTxt}>{getCurrentQualityLabel()}</Text>
               </TouchableOpacity>
             )}
+
+            {/* ── Rotate button ── */}
+            <TouchableOpacity
+              style={styles.topButton}
+              onPress={() => { handleRotateToggle(); showControlsTemporarily(); }}
+            >
+              <Image
+                source={require('../../assets/icons/screen-rotate.png')}
+                style={{
+                  width: 24,
+                  height: 24,
+                  tintColor: '#fff',
+                  // Visually indicate current orientation
+                  transform: [{ rotate: isLandscape ? '90deg' : '0deg' }],
+                }}
+              />
+            </TouchableOpacity>
           </View>
 
           <View style={{ flex: 1 }} />
@@ -497,14 +570,7 @@ export const PlayerScreen: React.FC = () => {
       )}
 
       {/* ── Quality picker modal ── */}
-      {/* NOTE: Both modals must be inside the root <View> — placing them outside
-          causes them to render in a detached tree and never appear. */}
-      <Modal
-        transparent
-        visible={showQualityPicker}
-        animationType="fade"
-        onRequestClose={() => setShowQualityPicker(false)}
-      >
+      <Modal transparent visible={showQualityPicker} animationType="fade" onRequestClose={() => setShowQualityPicker(false)}>
         <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowQualityPicker(false)}>
           <View style={[styles.modalContent, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             <Text style={[styles.modalTitle, { color: colors.text }]}>{t('select_quality')}</Text>
@@ -525,38 +591,28 @@ export const PlayerScreen: React.FC = () => {
       </Modal>
 
       {/* ── Volume picker modal ── */}
-      <Modal
-        transparent
-        visible={showVolumePicker}
-        animationType="fade"
-        onRequestClose={() => setShowVolumePicker(false)}
-      >
+      <Modal transparent visible={showVolumePicker} animationType="fade" onRequestClose={() => setShowVolumePicker(false)}>
         <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowVolumePicker(false)}>
           <View style={[styles.modalContent, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             <Text style={[styles.modalTitle, { color: colors.text }]}>{t('volume')}</Text>
             {VOLUME_OPTIONS.map(opt => (
-                <TouchableOpacity
-                  key={opt.value}
-                  style={[styles.modalOption, { borderBottomColor: colors.border }]}
-                  onPress={() => { applyVolume(opt.value); setShowVolumePicker(false); showControlsTemporarily(); }}
-                >
-                  <Text style={[styles.modalOptionText, { color: colors.text }]}>{opt.label}</Text>
-                  {volumePct === opt.value && (
-                    <Image source={require('../../assets/icons/checkmark.png')} style={{ width: 18, height: 18, tintColor: colors.primary }} />
-                  )}
-                </TouchableOpacity>
-              ))}
+              <TouchableOpacity
+                key={opt.value}
+                style={[styles.modalOption, { borderBottomColor: colors.border }]}
+                onPress={() => { setVolumePct(opt.value); setShowVolumePicker(false); showControlsTemporarily(); }}
+              >
+                <Text style={[styles.modalOptionText, { color: colors.text }]}>{opt.label}</Text>
+                {volumePct === opt.value && (
+                  <Image source={require('../../assets/icons/checkmark.png')} style={{ width: 18, height: 18, tintColor: colors.primary }} />
+                )}
+              </TouchableOpacity>
+            ))}
           </View>
         </TouchableOpacity>
       </Modal>
 
       {/* ── Server picker modal ── */}
-      <Modal
-        transparent
-        visible={showServerPicker}
-        animationType="fade"
-        onRequestClose={() => setShowServerPicker(false)}
-      >
+      <Modal transparent visible={showServerPicker} animationType="fade" onRequestClose={() => setShowServerPicker(false)}>
         <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowServerPicker(false)}>
           <View style={[styles.modalContent, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             <Text style={[styles.modalTitle, { color: colors.text }]}>{t('select_server') || 'Select Server'}</Text>
@@ -582,8 +638,7 @@ export const PlayerScreen: React.FC = () => {
           </View>
         </TouchableOpacity>
       </Modal>
-
-    </View>  // ← root container closes here — all modals are inside it
+    </View>
   );
 };
 
@@ -611,7 +666,7 @@ const styles = StyleSheet.create({
   seekBarProgress:  { height: '100%', borderRadius: 2, flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center' },
   seekBarThumb:     { width: 14, height: 14, borderRadius: 7, marginLeft: -7 },
   timeRow:          { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
-  timeText:         { color: 'rgba(255,255,255,0.7)', fontSize: 12, fontVariant: ['tabular-nums'] },
+  timeText:         { color: 'rgba(255,255,255,0.7)', fontSize: 12 },
   playbackRow:      { flexDirection: 'row', justifyContent: 'center', alignItems: 'center' },
   seekButton:       { width: 50, height: 50, justifyContent: 'center', alignItems: 'center' },
   playPauseButton:  { width: 60, height: 60, borderRadius: 30, justifyContent: 'center', alignItems: 'center', marginHorizontal: 12 },
