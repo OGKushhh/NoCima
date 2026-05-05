@@ -8,7 +8,7 @@
 <br/>
 
 <p align="center">
-  <img src="icon.png" alt="AbdoBest Logo" width="110" height="110" style="border-radius: 28px;">
+  <img src="https://github.com/user-attachments/assets/cbc40f5a-cc1f-4e85-9642-04f81dc2b65e" alt="AbdoBest Logo" width="110" height="110" style="border-radius: 28px;">
 </p>
 
 <p align="center">
