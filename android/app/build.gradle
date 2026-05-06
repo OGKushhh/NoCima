@@ -104,8 +104,8 @@ dependencies {
     // ── InMobi Ad SDK ──────────────────────────────────────────────────────────
     implementation 'com.inmobi.monetization:inmobi-ads-kotlin:10.7.4'
 
-    // ── InMobi CMP SDK (GDPR/consent) – local AAR ─────────────────────────────
-    implementation(name: 'inmobicmp-2.4.2', ext: 'aar')
+    // ── InMobi CMP SDK (GDPR/consent) ─────────────────────────────────────────
+    implementation 'com.inmobi.monetization:inmobicmp:2.4.2'
 
     // Required transitive deps for InMobi
     implementation 'androidx.recyclerview:recyclerview:1.3.2'
