@@ -5,8 +5,9 @@ import android.util.Log
 import com.facebook.react.bridge.*
 import com.facebook.react.modules.core.DeviceEventManagerModule
 import com.inmobi.ads.*
-import com.inmobi.ads.listeners.*
+import com.inmobi.ads.listeners.InterstitialAdEventListener
 import com.inmobi.sdk.InMobiSdk
+import com.inmobi.sdk.SdkInitializationListener
 import org.json.JSONObject
 
 /**
@@ -52,13 +53,15 @@ class InMobiAdsModule(private val reactContext: ReactApplicationContext) :
             val consent = JSONObject()
             consent.put(InMobiSdk.IM_GDPR_CONSENT_AVAILABLE, gdprConsent)
             InMobiSdk.setLogLevel(InMobiSdk.LogLevel.NONE)
-            InMobiSdk.init(activity, accountId, consent) { error ->
-                if (error != null) {
-                    Log.e(TAG, "InMobi init error: ${error.message}")
-                } else {
-                    Log.d(TAG, "InMobi SDK initialised")
+            InMobiSdk.init(activity, accountId, consent, object : SdkInitializationListener {
+                override fun onInitializationComplete(error: InMobiAdRequestStatus?) {
+                    if (error != null) {
+                        Log.e(TAG, "InMobi init error: ${error.message}")
+                    } else {
+                        Log.d(TAG, "InMobi SDK initialised")
+                    }
                 }
-            }
+            })
         } catch (e: Exception) {
             Log.e(TAG, "initialize exception: ${e.message}")
         }
@@ -134,7 +137,6 @@ class InMobiAdsModule(private val reactContext: ReactApplicationContext) :
 
                 override fun onAdLoadFailed(ad: InMobiInterstitial, status: InMobiAdRequestStatus) {
                     Log.w(TAG, "Ad load failed: pid=$pid status=${status.message}")
-                    // Remove so next call recreates
                     map.remove(pid)
                 }
 
@@ -150,7 +152,7 @@ class InMobiAdsModule(private val reactContext: ReactApplicationContext) :
 
                 override fun onUserLeftApplication(ad: InMobiInterstitial) {}
 
-                override fun onRewardsUnlocked(ad: InMobiInterstitial, rewards: Map<Any, Any>?) {
+                override fun onRewardsUnlocked(ad: InMobiInterstitial, rewards: MutableMap<Any?, Any?>?) {
                     if (isRewarded) {
                         Log.d(TAG, "Reward granted: pid=$pid")
                         sendEvent("InMobiRewardedAdRewarded", null)
