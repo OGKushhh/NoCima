@@ -1,44 +1,39 @@
 /**
  * View Tracking Service
  *
- * On play → increment local pending count (MMKV)
- * Every 24 h → batch-POST all pending counts to /api/view/:category/:id
- * On app launch → also try sync if overdue
+ * On play → immediately POST to /api/view/:category/:id
+ *           If the POST fails, store in MMKV pending queue (retry on next launch / foreground)
+ * On app foreground / launch → retry all pending failed counts
  */
 
 import {storage} from '../storage';
 import {postViewCount} from './api';
 
-const PENDING_PREFIX = 'vpend:';       // vpend:category:id → count
-const INDEX_KEY      = 'vpend_index';  // JSON array of "category:id" keys
-const LAST_SYNC_KEY  = 'view_last_sync';
-const SYNC_INTERVAL  = 24 * 60 * 60 * 1000; // 24 h
+const PENDING_PREFIX = 'vpend:';   // vpend:category:id → count
+const INDEX_KEY      = 'vpend_index'; // JSON array of "category:id" keys
 
 // ── Public API ───────────────────────────────────────────────────────
 
-/** Call when user presses Play on any title. */
+/**
+ * Call when user presses Play on any title or episode.
+ * Tries to POST immediately; on failure queues for retry.
+ */
 export const recordPlay = (contentId: string, category: string): void => {
   if (!contentId || !category) return;
-  const compositeKey = `${category}:${contentId}`;
-  const storageKey = `${PENDING_PREFIX}${compositeKey}`;
 
-  // Bump pending counter
-  const current = storage.getNumber(storageKey) ?? 0;
-  storage.set(storageKey, current + 1);
-
-  // Track in index
-  const index = readIndex();
-  if (!index.includes(compositeKey)) {
-    index.push(compositeKey);
-    writeIndex(index);
-  }
-
-  // Non-blocking sync attempt
-  trySyncViews().catch(() => {});
+  // Fire-and-forget: try immediately, fallback to queue
+  postViewCount(category, contentId, 1)
+    .catch(() => {
+      // Network failed — queue it for later retry
+      queuePending(category, contentId, 1);
+    });
 };
 
-/** Force-sync regardless of 24 h timer. Safe to call on startup. */
-export const forceSyncViews = async (): Promise<void> => {
+/**
+ * Retry all previously failed view counts.
+ * Call on app launch and on foreground resume.
+ */
+export const retrySyncViews = async (): Promise<void> => {
   const index = readIndex();
   if (!index.length) return;
 
@@ -47,9 +42,8 @@ export const forceSyncViews = async (): Promise<void> => {
       const [category, ...rest] = compositeKey.split(':');
       const contentId = rest.join(':');
       const count = storage.getNumber(`${PENDING_PREFIX}${compositeKey}`) ?? 0;
-      if (count <= 0) return;
+      if (count <= 0) return compositeKey; // nothing to send, treat as done
       await postViewCount(category, contentId, count);
-      // Clear on success
       storage.delete(`${PENDING_PREFIX}${compositeKey}`);
       return compositeKey;
     })
@@ -57,22 +51,25 @@ export const forceSyncViews = async (): Promise<void> => {
 
   // Prune index — remove keys we successfully sent
   const sent = results
-    .filter((r): r is PromiseFulfilledResult<string | undefined> => r.status === 'fulfilled' && !!r.value)
-    .map(r => r.value as string);
+    .filter((r): r is PromiseFulfilledResult<string> => r.status === 'fulfilled')
+    .map(r => r.value);
   const remaining = index.filter(k => !sent.includes(k));
   writeIndex(remaining);
-
-  storage.set(LAST_SYNC_KEY, Date.now());
-};
-
-/** Sync only if 24 h has elapsed since last sync. */
-export const trySyncViews = async (): Promise<void> => {
-  const lastSync = storage.getNumber(LAST_SYNC_KEY) ?? 0;
-  if (Date.now() - lastSync < SYNC_INTERVAL) return;
-  await forceSyncViews();
 };
 
 // ── Helpers ──────────────────────────────────────────────────────────
+
+const queuePending = (category: string, contentId: string, count: number): void => {
+  const compositeKey = `${category}:${contentId}`;
+  const storageKey = `${PENDING_PREFIX}${compositeKey}`;
+  const current = storage.getNumber(storageKey) ?? 0;
+  storage.set(storageKey, current + count);
+  const index = readIndex();
+  if (!index.includes(compositeKey)) {
+    index.push(compositeKey);
+    writeIndex(index);
+  }
+};
 
 const readIndex = (): string[] => {
   try {
@@ -82,6 +79,6 @@ const readIndex = (): string[] => {
   }
 };
 
-const writeIndex = (index: string[]) => {
+const writeIndex = (index: string[]): void => {
   storage.set(INDEX_KEY, JSON.stringify(index));
 };

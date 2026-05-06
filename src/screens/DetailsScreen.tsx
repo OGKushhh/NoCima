@@ -22,6 +22,7 @@ import FastImage from 'react-native-fast-image';
 import axios from 'axios';
 import {ContentItem} from '../types';
 import {recordPlay} from '../services/viewService';
+import {getViewCount, getSeriesTotalViews} from '../services/api';
 import {useAds} from '../ads/AdContext';
 import {Colors} from '../theme/colors';
 import {useTranslation} from 'react-i18next';
@@ -151,6 +152,11 @@ export const DetailsScreen: React.FC = () => {
   const [ratingLoading, setRatingLoading] = useState(false);
   const [showLightbox, setShowLightbox] = useState(false);
 
+  // Live view count (fetched from API, then bumped locally on play)
+  const [liveViews, setLiveViews] = useState<number | null>(null);
+  // Per-episode view counts: key = epUrl, value = count
+  const [episodeViews, setEpisodeViews] = useState<Record<string, number>>({});
+
   const statusTimer = useRef<ReturnType<typeof setInterval>>();
 
   const lang = i18n.language === 'ar' ? 'ar' : 'en';
@@ -176,6 +182,17 @@ export const DetailsScreen: React.FC = () => {
       .finally(() => setRatingLoading(false));
   }, [item?.id, category]);
 
+  // ── Fetch live view count ─────────────────────────────────────────
+  useEffect(() => {
+    if (!item?.id || !category) return;
+    const fetch = isEpisodic
+      ? getSeriesTotalViews(category, item.id)
+      : getViewCount(category, item.id);
+    fetch
+      .then(v => { if (v > 0) setLiveViews(v); })
+      .catch(() => {});
+  }, [item?.id, category, isEpisodic]);
+
   // ── Fetch episodes ────────────────────────────────────────────────
   useEffect(() => {
     if (!item || !isEpisodic) return;
@@ -184,6 +201,33 @@ export const DetailsScreen: React.FC = () => {
       .then(data => {
         setEpData(data);
         if (data?.seasons) setSelSeason(Object.keys(data.seasons)[0] ?? '1');
+        // Fetch per-episode view counts — collect all episode URLs across all seasons
+        const allEpUrls: string[] = [];
+        if (data?.seasons) {
+          Object.values(data.seasons).forEach((season: any) => {
+            if (Array.isArray(season.episodes)) {
+              allEpUrls.push(...season.episodes);
+            }
+          });
+        } else if (Array.isArray(data?.episodes)) {
+          allEpUrls.push(...data.episodes);
+        }
+        if (allEpUrls.length > 0) {
+          Promise.allSettled(
+            allEpUrls.map(epUrl =>
+              getViewCount(category, epUrl)
+                .then(count => ({epUrl, count}))
+            )
+          ).then(results => {
+            const map: Record<string, number> = {};
+            results.forEach(r => {
+              if (r.status === 'fulfilled' && r.value.count > 0) {
+                map[r.value.epUrl] = r.value.count;
+              }
+            });
+            if (Object.keys(map).length > 0) setEpisodeViews(map);
+          }).catch(() => {});
+        }
       })
       .catch(() => {})
       .finally(() => setLoadingEps(false));
@@ -231,7 +275,18 @@ export const DetailsScreen: React.FC = () => {
     return h > 0 ? (m > 0 ? `${h}h ${m}min` : `${h}h`) : `${m}min`;
   };
 
+  const formatViews = (n: number): string => {
+    if (!n || n <= 0) return '';
+    if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`;
+    if (n >= 1_000) return `${(n / 1_000).toFixed(1).replace(/\.0$/, '')}K`;
+    return String(n);
+  };
+
   const views = raw.Views || '';
+  // Prefer live API count (updated on each play), fall back to static data field
+  const displayViews = liveViews !== null
+    ? formatViews(liveViews)
+    : views ? formatViews(Number(views.toString().replace(/,/g, '')) || 0) || views : '';
   // Format year — handles concatenated series years e.g. "20242025" → "2024-2025"
   const formatYear = (val: string | number | null | undefined): string => {
     if (!val) return '';
@@ -305,6 +360,7 @@ export const DetailsScreen: React.FC = () => {
     stopStatusTimer();
     setExtractorUrl(null);
     setExtracting(false);
+    const currentEpUrl = extractingEpUrl;
     setExtractingEpUrl(null);
 
     const primaryUrl = m3u8Urls[0];
@@ -321,7 +377,17 @@ export const DetailsScreen: React.FC = () => {
         .catch(e => console.warn('[Details] startDownload error:', e))
         .finally(() => setDownloading(false));
     } else {
-      recordPlay(item.id, category);
+      if (currentEpUrl) {
+        // Episode play — record with episode URL as the ID so each episode is tracked separately
+        recordPlay(currentEpUrl, category);
+        // Optimistically bump this episode's view count
+        setEpisodeViews(prev => ({...prev, [currentEpUrl]: (prev[currentEpUrl] ?? 0) + 1}));
+      } else {
+        // Movie / non-episodic play
+        recordPlay(item.id, category);
+      }
+      // Optimistically bump the displayed view count
+      setLiveViews(prev => (prev ?? 0) + 1);
       nav.navigate('Player', {
         url: primaryUrl,
         servers: m3u8Urls,
@@ -330,7 +396,7 @@ export const DetailsScreen: React.FC = () => {
         category,
       });
     }
-  }, [item, category, nav]);
+  }, [item, category, nav, extractingEpUrl]);
 
   const handleExtractError = useCallback((reason?: 'timeout' | 'load' | 'http') => {
     stopStatusTimer();
@@ -468,10 +534,10 @@ export const DetailsScreen: React.FC = () => {
           ) : ratingLoading ? (
             <View style={S.pill}><ActivityIndicator size="small" color={Colors.dark.textMuted} /></View>
           ) : null}
-          {views ? (
+          {displayViews ? (
             <View style={S.pill}>
               <Image source={require('../../assets/icons/eyes.png')} style={S.pillIcon} />
-              <Text style={S.pillTxt}>{views}</Text>
+              <Text style={S.pillTxt}>{displayViews}</Text>
             </View>
           ) : null}
           {isEpisodic && displayStatus ? (
@@ -707,8 +773,11 @@ export const DetailsScreen: React.FC = () => {
                     </View>
                     <View style={S.epInfo}>
                       <Text style={S.epTitle}>{t('episode')} {idx + 1}</Text>
-                      {epDuration && epDuration !== 'min\u062F' ? (
-                        <Text style={S.epDur}>{epDuration}</Text>
+                      {episodeViews[epUrl] ? (
+                        <View style={S.epViewsRow}>
+                          <Image source={require('../../assets/icons/eyes.png')} style={S.epViewsIcon} />
+                          <Text style={S.epDur}>{formatViews(episodeViews[epUrl])}</Text>
+                        </View>
                       ) : null}
                     </View>
                     {isExtractingThis ? (
@@ -908,6 +977,8 @@ const S = StyleSheet.create({
   epInfo:          {flex: 1},
   epTitle:         {color: Colors.dark.text, fontSize: 14, fontWeight: '600', fontFamily: 'Rubik'},
   epDur:           {color: Colors.dark.textMuted, fontSize: 12, fontFamily: 'Rubik', marginTop: 2},
+  epViewsRow:      {flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 2},
+  epViewsIcon:     {width: 12, height: 12, tintColor: Colors.dark.textMuted},
   epPlayIcon:      {width: 20, height: 20},
   noEpsWrap:       {alignItems: 'center', paddingVertical: 24, gap: 8},
   noEpsTxt:        {color: Colors.dark.textMuted, fontSize: 14, fontFamily: 'Rubik'},

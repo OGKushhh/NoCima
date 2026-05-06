@@ -87,12 +87,25 @@ export const checkApiHealth = async (): Promise<boolean> => {
 
 // ─── View counter endpoints ─────────────────────────────────────────
 
+/**
+ * Encode a content ID for use in URL paths.
+ * Episode URLs (full http URLs) are base64-encoded so they don't break the route.
+ * Regular numeric/string IDs pass through unchanged.
+ */
+const encodeContentId = (id: string): string => {
+  if (id.startsWith('http://') || id.startsWith('https://')) {
+    return Buffer.from(id).toString('base64').replace(/\//g, '_').replace(/\+/g, '-').replace(/=/g, '');
+  }
+  return encodeURIComponent(id);
+};
+
 export const postViewCount = async (
   category: string,
   contentId: string,
   incrementBy = 1,
 ): Promise<number> => {
-  const r = await api.post(`/api/view/${category}/${contentId}`, {increment_by: incrementBy});
+  const safeId = encodeContentId(contentId);
+  const r = await api.post(`/api/view/${category}/${safeId}`, {increment_by: incrementBy});
   return r.data?.views ?? 0;
 };
 
@@ -100,7 +113,21 @@ export const getViewCount = async (
   category: string,
   contentId: string,
 ): Promise<number> => {
-  const r = await api.get(`/api/view/${category}/${contentId}`);
+  const safeId = encodeContentId(contentId);
+  const r = await api.get(`/api/view/${category}/${safeId}`);
+  return r.data?.views ?? 0;
+};
+
+/**
+ * For episodic titles (series, anime, tvshows, asian-series):
+ * fetches the server-side merged total — all per-episode plays + title-level plays combined.
+ * Uses the dedicated /api/view/<category>/series-total/<id> endpoint.
+ */
+export const getSeriesTotalViews = async (
+  category: string,
+  contentId: string,
+): Promise<number> => {
+  const r = await api.get(`/api/view/${category}/series-total/${contentId}`);
   return r.data?.views ?? 0;
 };
 

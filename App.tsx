@@ -1,10 +1,11 @@
-import React, {useEffect, useState} from 'react';
-import {StatusBar, LogBox, View, ActivityIndicator, Text} from 'react-native';
+import React, {useEffect, useRef, useState} from 'react';
+import {AppState, AppStateStatus, StatusBar, LogBox, View, ActivityIndicator, Text} from 'react-native';
 import {SafeAreaProvider, initialWindowMetrics} from 'react-native-safe-area-context';
 import {AppNavigator} from './src/navigation/AppNavigator';
 import {UpdateModal} from './src/components/UpdateModal';
 import {checkForUpdate, skipVersion, openUpdateUrl, ReleaseInfo} from './src/services/updateService';
 import {restoreDownloads} from './src/services/downloadService';
+import {retrySyncViews} from './src/services/viewService';
 import {APP_VERSION} from './src/constants/endpoints';
 import {storage} from './src/storage/Storage';
 import {Colors} from './src/theme/colors';
@@ -26,6 +27,18 @@ const App: React.FC = () => {
   const [updateInfo, setUpdateInfo] = useState<ReleaseInfo | null>(null);
   const [showUpdateModal, setShowUpdateModal] = useState(false);
   const [showRewardPopup, setShowRewardPopup] = useState(false);
+  const appState = useRef<AppStateStatus>(AppState.currentState);
+
+  // Retry any queued view counts when app comes to foreground
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (nextState: AppStateStatus) => {
+      if (appState.current.match(/inactive|background/) && nextState === 'active') {
+        retrySyncViews().catch(() => {});
+      }
+      appState.current = nextState;
+    });
+    return () => sub.remove();
+  }, []);
 
   useEffect(() => {
     storage.init().then(() => {
@@ -34,6 +47,7 @@ const App: React.FC = () => {
       const shouldShowReward = recordLaunchAndCheckReward();
       setReady(true);
       restoreDownloads().catch(() => {});
+      retrySyncViews().catch(() => {});
       if (shouldShowReward) {
         // Small delay so the app finishes rendering before showing the popup
         setTimeout(() => setShowRewardPopup(true), 1500);

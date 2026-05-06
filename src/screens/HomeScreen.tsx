@@ -26,7 +26,7 @@ import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {useTranslation} from 'react-i18next';
 import {loadCategory, getMoviesArray, searchContent} from '../services/metadataService';
 import {getViewCount} from '../services/api';
-import {trySyncViews} from '../services/viewService';
+import {retrySyncViews} from '../services/viewService';
 import {ContentItem} from '../types';
 import {MovieCard, CARD_WIDTH} from '../components/MovieCard';
 import {SectionHeader} from '../components/SectionHeader';
@@ -364,7 +364,7 @@ export const HomeScreen: React.FC = () => {
         if (live.length >= 4) setMostViewed(byViewsDesc(live).slice(0, 20));
       }).catch(() => {});
 
-      trySyncViews().catch(() => {});
+      retrySyncViews().catch(() => {});
     } catch (err: any) {
       setError(err.message || 'Failed to load');
     } finally {
