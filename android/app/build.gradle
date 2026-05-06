@@ -101,11 +101,11 @@ dependencies {
         implementation jscFlavor
     }
 
-    // ── InMobi Ad SDK ──────────────────────────────────────────────────────────
+    // ── InMobi Ad SDK (Maven Central) ─────────────────────────────────────────
     implementation 'com.inmobi.monetization:inmobi-ads-kotlin:10.7.4'
 
-    // ── InMobi CMP SDK (GDPR/consent) ─────────────────────────────────────────
-    implementation 'com.inmobi.monetization:inmobi-cmp:2.4.2'
+    // ── InMobi CMP SDK (local AAR — not on any public Maven repo) ─────────────
+    implementation files('libs/inmobicmp-2.4.2.aar')
 
     // Required transitive deps for InMobi
     implementation 'androidx.recyclerview:recyclerview:1.3.2'
