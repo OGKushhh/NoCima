@@ -1,32 +1,64 @@
 /**
  * AdsterraInterstitial
  *
- * Full-screen modal WebView that fires the Adsterra popunder script.
- * - Auto-closes after `autoCloseSeconds` (default 5)
- * - Shows a countdown so users know when it will close
- * - Calls onAdComplete after first load (so the pending action is unblocked)
+ * Full-screen modal WebView ad.
+ * Uses the Social Bar / Banner format — NOT the popunder script.
+ * Popunder opens a new browser tab which does not work inside a WebView.
+ *
+ * Key Android fixes applied:
+ *  - baseUrl set so scripts resolve correctly
+ *  - mixedContentMode="always" so HTTP ads load inside HTTPS context
+ *  - thirdPartyCookiesEnabled for ad targeting
+ *  - allowUniversalAccessFromFileURLs for iframe ads
+ *  - userAgent spoofed to a real Chrome UA so ad networks serve content
  */
 
 import React, { useState, useRef, useEffect } from 'react';
 import {
   Modal, View, TouchableOpacity, Text, StyleSheet,
-  ActivityIndicator, Animated,
+  ActivityIndicator,
 } from 'react-native';
 import { WebView } from 'react-native-webview';
 
-// Adsterra popunder script URL
-const POPUNDER_HTML = `
+const CHROME_UA =
+  'Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 ' +
+  '(KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36';
+
+// Social Bar script — renders inside WebView, does NOT open a new tab
+const AD_HTML = `
 <!DOCTYPE html>
 <html>
 <head>
+  <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <style>
-    * { margin: 0; padding: 0; }
-    body { background: #000; }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; background: #000; overflow: hidden; }
+    #ad-wrap {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      width: 100%;
+      height: 100%;
+    }
+    /* 300x250 display banner centered */
+    #ad-wrap iframe, #ad-wrap ins { display: block; }
   </style>
 </head>
 <body>
-  <script src="https://pl29354759.profitablecpmratenetwork.com/f5/0a/ed/f50aed4e6faf5a467658edb59635ce30.js"></script>
+  <div id="ad-wrap">
+    <!-- 300x250 display banner -->
+    <script>
+      atOptions = {
+        'key'    : '253e281cf6be0795775d2a8300a1ab64',
+        'format' : 'iframe',
+        'height' : 250,
+        'width'  : 300,
+        'params' : {}
+      };
+    </script>
+    <script src="https://www.highperformanceformat.com/253e281cf6be0795775d2a8300a1ab64/invoke.js"></script>
+  </div>
 </body>
 </html>
 `;
@@ -42,16 +74,14 @@ const AdsterraInterstitial: React.FC<Props> = ({
   visible,
   onClose,
   onAdComplete,
-  autoCloseSeconds = 5,
+  autoCloseSeconds = 8,
 }) => {
-  const [loading,    setLoading]    = useState(true);
-  const [countdown,  setCountdown]  = useState(autoCloseSeconds);
-  const timerRef    = useRef<ReturnType<typeof setTimeout>>();
-  const intervalRef = useRef<ReturnType<typeof setInterval>>();
-  const completedRef = useRef(false);
+  const [loading,   setLoading]   = useState(true);
+  const [countdown, setCountdown] = useState(autoCloseSeconds);
+  const intervalRef  = useRef<ReturnType<typeof setInterval>>();
+  const completeRef  = useRef(false);
 
   const cleanup = () => {
-    if (timerRef.current)    clearTimeout(timerRef.current);
     if (intervalRef.current) clearInterval(intervalRef.current);
   };
 
@@ -60,22 +90,22 @@ const AdsterraInterstitial: React.FC<Props> = ({
       cleanup();
       setLoading(true);
       setCountdown(autoCloseSeconds);
-      completedRef.current = false;
+      completeRef.current = false;
     }
   }, [visible, autoCloseSeconds]);
 
   const handleLoadEnd = () => {
     setLoading(false);
 
-    // Mark ad as complete after 3 s even if user doesn't close
-    if (!completedRef.current) {
-      timerRef.current = setTimeout(() => {
-        completedRef.current = true;
+    // Mark complete after 3s
+    setTimeout(() => {
+      if (!completeRef.current) {
+        completeRef.current = true;
         onAdComplete?.();
-      }, 3000);
-    }
+      }
+    }, 3000);
 
-    // Start countdown
+    // Countdown to auto-close
     setCountdown(autoCloseSeconds);
     intervalRef.current = setInterval(() => {
       setCountdown(prev => {
@@ -91,8 +121,8 @@ const AdsterraInterstitial: React.FC<Props> = ({
 
   const handleClose = () => {
     cleanup();
-    if (!completedRef.current) {
-      completedRef.current = true;
+    if (!completeRef.current) {
+      completeRef.current = true;
       onAdComplete?.();
     }
     onClose();
@@ -106,31 +136,41 @@ const AdsterraInterstitial: React.FC<Props> = ({
       statusBarTranslucent
     >
       <View style={styles.container}>
-        {/* Header bar */}
+        {/* Header */}
         <View style={styles.header}>
-          <Text style={styles.adLabel}>إعلان</Text>
-          <TouchableOpacity style={styles.closeBtn} onPress={handleClose}>
+          <Text style={styles.adLabel}>إعلان · Ad</Text>
+          <TouchableOpacity style={styles.closeBtn} onPress={handleClose} disabled={loading}>
             <Text style={styles.closeBtnText}>
-              {loading ? '✕' : `✕ ${countdown}s`}
+              {loading ? '...' : `✕  ${countdown}s`}
             </Text>
           </TouchableOpacity>
         </View>
 
         {/* Ad WebView */}
         <WebView
-          source={{ html: POPUNDER_HTML }}
+          source={{ html: AD_HTML, baseUrl: 'https://www.highperformanceformat.com' }}
           style={styles.webview}
           onLoadEnd={handleLoadEnd}
+          // ── Critical Android ad-rendering settings ──
           javaScriptEnabled
           domStorageEnabled
+          thirdPartyCookiesEnabled
+          allowUniversalAccessFromFileURLs
+          mixedContentMode="always"
           originWhitelist={['*']}
+          userAgent={CHROME_UA}
           onShouldStartLoadWithRequest={() => true}
+          // Prevent scroll inside the ad
+          scrollEnabled={false}
+          // Keep WebView alive in background so ad loads properly
+          androidLayerType="hardware"
         />
 
         {/* Loading overlay */}
         {loading && (
-          <View style={styles.loaderOverlay}>
+          <View style={styles.loader}>
             <ActivityIndicator size="large" color="#FF4500" />
+            <Text style={styles.loaderText}>جار تحميل الإعلان...</Text>
           </View>
         )}
       </View>
@@ -139,44 +179,14 @@ const AdsterraInterstitial: React.FC<Props> = ({
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#000',
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    backgroundColor: '#111',
-  },
-  adLabel: {
-    color: 'rgba(255,255,255,0.4)',
-    fontSize: 12,
-    fontFamily: 'Rubik',
-  },
-  closeBtn: {
-    backgroundColor: 'rgba(255,255,255,0.15)',
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 20,
-  },
-  closeBtnText: {
-    color: '#fff',
-    fontSize: 13,
-    fontWeight: '700',
-    fontFamily: 'Rubik',
-  },
-  webview: {
-    flex: 1,
-  },
-  loaderOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: '#000',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
+  container:    { flex: 1, backgroundColor: '#000' },
+  header:       { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10, backgroundColor: '#111' },
+  adLabel:      { color: 'rgba(255,255,255,0.4)', fontSize: 12, fontFamily: 'Rubik' },
+  closeBtn:     { backgroundColor: 'rgba(255,255,255,0.15)', paddingHorizontal: 16, paddingVertical: 7, borderRadius: 20 },
+  closeBtnText: { color: '#fff', fontSize: 13, fontWeight: '700', fontFamily: 'Rubik' },
+  webview:      { flex: 1, backgroundColor: '#000' },
+  loader:       { ...StyleSheet.absoluteFillObject, backgroundColor: '#000', justifyContent: 'center', alignItems: 'center' },
+  loaderText:   { color: 'rgba(255,255,255,0.4)', marginTop: 12, fontSize: 13, fontFamily: 'Rubik' },
 });
 
 export default AdsterraInterstitial;

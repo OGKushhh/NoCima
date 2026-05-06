@@ -1,12 +1,14 @@
 /**
  * AdsterraBanner
  *
- * Renders either:
- *   type="native"  → Adsterra native banner (invoke.js)
- *   type="display" → Adsterra 300×250 display banner (atOptions iframe)
+ * type="native"  → Adsterra native banner (invoke.js)
+ * type="display" → Adsterra 300×250 display banner
  *
- * Both are injected into a WebView so the ad scripts run in a real browser
- * context (required for Adsterra scripts to work on React Native).
+ * Android fixes:
+ *  - Chrome userAgent so ad networks serve content
+ *  - mixedContentMode="always" for HTTP ads in HTTPS context
+ *  - thirdPartyCookiesEnabled for targeting
+ *  - baseUrl so scripts resolve correctly
  */
 
 import React from 'react';
@@ -22,34 +24,40 @@ interface Props {
   height?: number;
 }
 
-// ── Native banner (invoke.js) ────────────────────────────────────────────────
+const CHROME_UA =
+  'Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 ' +
+  '(KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36';
+
 const NATIVE_BANNER_HTML = `
 <!DOCTYPE html>
 <html>
 <head>
+  <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { background: transparent; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+    body { background: transparent; }
     #container-4959ff237f69f543e36da1a8df02d6e5 { text-align: center; width: 100%; }
   </style>
 </head>
 <body>
-  <script async="async" data-cfasync="false" src="https://pl29354810.profitablecpmratenetwork.com/4959ff237f69f543e36da1a8df02d6e5/invoke.js"></script>
+  <script async="async" data-cfasync="false"
+    src="https://pl29354810.profitablecpmratenetwork.com/4959ff237f69f543e36da1a8df02d6e5/invoke.js">
+  </script>
   <div id="container-4959ff237f69f543e36da1a8df02d6e5"></div>
 </body>
 </html>
 `;
 
-// ── Display banner 300×250 ───────────────────────────────────────────────────
 const DISPLAY_BANNER_HTML = `
 <!DOCTYPE html>
 <html>
 <head>
+  <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { background: transparent; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+    body { background: transparent; display: flex; justify-content: center; }
   </style>
 </head>
 <body>
@@ -75,20 +83,28 @@ const AdsterraBanner: React.FC<Props> = ({
 }) => {
   if (!visible) return null;
 
-  const html = type === 'display' ? DISPLAY_BANNER_HTML : NATIVE_BANNER_HTML;
-  const containerHeight = type === 'display' ? 270 : height;
+  const isDisplay  = type === 'display';
+  const html       = isDisplay ? DISPLAY_BANNER_HTML : NATIVE_BANNER_HTML;
+  const baseUrl    = isDisplay
+    ? 'https://www.highperformanceformat.com'
+    : 'https://pl29354810.profitablecpmratenetwork.com';
+  const h          = isDisplay ? 270 : height;
 
   return (
-    <View style={[styles.container, { height: containerHeight }]}>
+    <View style={[styles.container, { height: h }]}>
       <WebView
-        originWhitelist={['*']}
-        source={{ html }}
+        source={{ html, baseUrl }}
         style={styles.webview}
-        scrollEnabled={false}
+        // ── Critical Android settings ──
         javaScriptEnabled
         domStorageEnabled
+        thirdPartyCookiesEnabled
+        allowUniversalAccessFromFileURLs
+        mixedContentMode="always"
+        originWhitelist={['*']}
+        userAgent={CHROME_UA}
         onShouldStartLoadWithRequest={() => true}
-        // Transparent background
+        scrollEnabled={false}
         androidLayerType="hardware"
       />
       {onClose && (
@@ -101,31 +117,10 @@ const AdsterraBanner: React.FC<Props> = ({
 };
 
 const styles = StyleSheet.create({
-  container: {
-    width: '100%',
-    backgroundColor: 'transparent',
-    position: 'relative',
-  },
-  webview: {
-    flex: 1,
-    backgroundColor: 'transparent',
-  },
-  closeBtn: {
-    position: 'absolute',
-    top: 4,
-    right: 4,
-    width: 26,
-    height: 26,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.55)',
-    borderRadius: 13,
-  },
-  closeText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: 'bold',
-  },
+  container: { width: '100%', backgroundColor: 'transparent', position: 'relative' },
+  webview:   { flex: 1, backgroundColor: 'transparent' },
+  closeBtn:  { position: 'absolute', top: 4, right: 4, width: 26, height: 26, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 13 },
+  closeText: { color: '#fff', fontSize: 12, fontWeight: 'bold' },
 });
 
 export default AdsterraBanner;

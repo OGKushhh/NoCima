@@ -10,7 +10,8 @@ import {storage} from './src/storage/Storage';
 import {Colors} from './src/theme/colors';
 import {ThemeProvider} from './src/hooks/useTheme';
 import {AdProvider} from './src/ads/AdContext';
-import {initCounters} from './src/ads/adManager';
+import {initCounters, recordLaunchAndCheckReward} from './src/ads/adManager';
+import RewardAdPopup from './src/ads/RewardAdPopup';
 import './src/i18n';
 
 LogBox.ignoreLogs([
@@ -24,12 +25,19 @@ const App: React.FC = () => {
   const [ready, setReady] = useState(false);
   const [updateInfo, setUpdateInfo] = useState<ReleaseInfo | null>(null);
   const [showUpdateModal, setShowUpdateModal] = useState(false);
+  const [showRewardPopup, setShowRewardPopup] = useState(false);
 
   useEffect(() => {
     storage.init().then(() => {
       initCounters();
+      // Check if reward popup should show this launch (every 3rd launch)
+      const shouldShowReward = recordLaunchAndCheckReward();
       setReady(true);
       restoreDownloads().catch(() => {});
+      if (shouldShowReward) {
+        // Small delay so the app finishes rendering before showing the popup
+        setTimeout(() => setShowRewardPopup(true), 1500);
+      }
       const timer = setTimeout(async () => {
         const update = await checkForUpdate();
         if (update) {
@@ -69,6 +77,10 @@ const App: React.FC = () => {
             onDownload={(url: string) => { setShowUpdateModal(false); openUpdateUrl(url); }}
             onSkip={(version: string) => { skipVersion(version); setShowUpdateModal(false); }}
             onDismiss={() => setShowUpdateModal(false)}
+          />
+          <RewardAdPopup
+            visible={showRewardPopup}
+            onClose={() => setShowRewardPopup(false)}
           />
         </AdProvider>
       </SafeAreaProvider>

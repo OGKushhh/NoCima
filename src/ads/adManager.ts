@@ -4,11 +4,13 @@ import { storage } from '../storage/Storage';
 const KEY_AD_FREE_UNTIL      = 'ad_free_until';
 const KEY_INTERACTION_COUNT  = 'ad_interaction_count';
 const KEY_PLAY_COUNT         = 'ad_play_count';
+const KEY_LAUNCH_COUNT       = 'ad_launch_count';
 
 // ─── Thresholds ──────────────────────────────────────────────────────────────
-const INTERSTITIAL_EVERY_N       = 10; // every 10 screen interactions
+const INTERSTITIAL_EVERY_N       = 15; // every 15 screen interactions
 const PLAY_INTERSTITIAL_EVERY_N  = 3;  // every 3 play presses
 const AD_FREE_DURATION_MS        = 3 * 60 * 60 * 1000; // 3 hours
+const REWARD_POPUP_EVERY_N       = 3;  // show reward popup every 3rd launch
 
 // ─── Ad-free window ──────────────────────────────────────────────────────────
 export function isAdFree(): boolean {
@@ -27,19 +29,33 @@ export function adFreeRemainingMs(): number {
   return remaining > 0 ? remaining : 0;
 }
 
-// ─── Interaction counter (general nav interstitials) ─────────────────────────
+// ─── Launch counter ───────────────────────────────────────────────────────────
+/**
+ * Call once on app launch (after storage.init()).
+ * Returns true if the reward popup should be shown this launch.
+ * Never shows if user is already in an ad-free window.
+ */
+export function recordLaunchAndCheckReward(): boolean {
+  const count = (storage.getNumber(KEY_LAUNCH_COUNT) ?? 0) + 1;
+  storage.set(KEY_LAUNCH_COUNT, count);
+  if (isAdFree()) return false;
+  return count % REWARD_POPUP_EVERY_N === 0;
+}
+
+// ─── Init counters from storage (call after storage.init()) ──────────────────
 let interactionCount = 0;
+let playCount = 0;
 
 export function initCounters(): void {
   interactionCount = storage.getNumber(KEY_INTERACTION_COUNT) ?? 0;
   playCount        = storage.getNumber(KEY_PLAY_COUNT) ?? 0;
 }
 
+// ─── Interaction counter ─────────────────────────────────────────────────────
 export function getInteractionCount(): number {
   return interactionCount;
 }
 
-/** Increment interaction counter. Returns true if an interstitial should fire. */
 export function shouldShowInteractionAd(): boolean {
   if (isAdFree()) return false;
   interactionCount++;
@@ -48,13 +64,10 @@ export function shouldShowInteractionAd(): boolean {
 }
 
 // ─── Play-press counter ───────────────────────────────────────────────────────
-let playCount = 0;
-
 export function getPlayCount(): number {
   return playCount;
 }
 
-/** Increment play counter. Returns true if an interstitial should fire. */
 export function shouldShowPlayAd(): boolean {
   if (isAdFree()) return false;
   playCount++;

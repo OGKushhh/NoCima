@@ -13,6 +13,7 @@ import { syncIfNeeded, getLastSyncTime } from '../services/metadataService';
 import { checkForUpdate, openUpdateUrl, skipVersion } from '../services/updateService';
 import { APP_VERSION } from '../constants/endpoints';
 import { useTheme } from '../hooks/useTheme';
+import { useRewardAd, formatAdFreeRemaining } from '../ads/RewardAdPopup';
 
 // ─── Custom Modal ──────────────────────────────────────────────────────────────
 interface AppModalProps {
@@ -54,6 +55,7 @@ export const SettingsScreen: React.FC = () => {
   const { colors, isDark, setDarkMode } = useTheme();
   const { t, i18n } = useTranslation();
   const [settings, setSettings] = useState(getSettings());
+  const { rewardElement, triggerReward, adFreeActive, remainingMs } = useRewardAd();
 
   // Modal states
   const [qualityModalVisible, setQualityModalVisible] = useState(false);
@@ -332,6 +334,36 @@ export const SettingsScreen: React.FC = () => {
             </TouchableOpacity>
           </View>
 
+          {/* ── Ads ── */}
+          <Text style={styles.sectionTitle}>الإعلانات / Ads</Text>
+          <View style={styles.section}>
+            <TouchableOpacity
+              style={[styles.row, styles.rowLast]}
+              onPress={adFreeActive ? undefined : triggerReward}
+              activeOpacity={adFreeActive ? 1 : 0.65}
+            >
+              <View style={[styles.rowIcon, adFreeActive && { backgroundColor: 'rgba(76,175,80,0.15)' }]}>
+                <Text style={{ fontSize: 18 }}>{adFreeActive ? '✅' : '🎬'}</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.rowLabel}>
+                  {adFreeActive ? 'بدون إعلانات / Ad-Free Active' : 'تعطيل الإعلانات / Disable Ads'}
+                </Text>
+                <Text style={styles.rowSub}>
+                  {adFreeActive
+                    ? `ينتهي خلال ${formatAdFreeRemaining(remainingMs)} · Expires in ${formatAdFreeRemaining(remainingMs)}`
+                    : 'شاهد إعلاناً للحصول على 3 ساعات · Watch 1 ad for 3h free'}
+                </Text>
+              </View>
+              {!adFreeActive && (
+                <Image
+                  source={require('../../assets/icons/chevron-down.png')}
+                  style={{ width: 18, height: 18, tintColor: colors.textMuted, transform: [{ rotate: '-90deg' }] }}
+                />
+              )}
+            </TouchableOpacity>
+          </View>
+
           {/* ── Support — Donate button ── */}
           <Text style={styles.sectionTitle}>{t('support_us')}</Text>
           <TouchableOpacity
@@ -433,6 +465,9 @@ export const SettingsScreen: React.FC = () => {
           </>
         )}
       </AppModal>
+
+      {/* ── Reward Ad Popup (from settings trigger) ── */}
+      {rewardElement}
     </View>
   );
 };
