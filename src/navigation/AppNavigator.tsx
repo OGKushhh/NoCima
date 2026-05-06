@@ -128,7 +128,7 @@ export const AppNavigator: React.FC = () => {
         />
         <Stack.Screen
           name="Player" component={PlayerScreen}
-          options={{animation: 'fade', animationDuration: 180, orientation: 'all'}}
+          options={{animation: 'fade', animationDuration: 180}}
         />
       </Stack.Navigator>
     </NavigationContainer>
