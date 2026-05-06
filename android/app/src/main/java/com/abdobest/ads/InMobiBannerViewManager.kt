@@ -30,10 +30,9 @@ class InMobiBannerViewManager(
     @ReactProp(name = "placementId")
     fun setPlacementId(view: FrameLayout, placementId: Double) {
         val pid = placementId.toLong()
-        // Remove any existing banner
+        // Remove any previous banner
         view.removeAllViews()
 
-        // Create new banner with the correct placement ID
         val banner = InMobiBanner(view.context, pid).apply {
             setEnableAutoRefresh(false)
             setAnimationType(InMobiBanner.AnimationType.ROTATE_HORIZONTAL_AXIS)
@@ -47,13 +46,16 @@ class InMobiBannerViewManager(
                     Log.w(TAG, "Banner failed pid=$pid status=${status.message}")
                 }
 
-                // Optional: override other methods if needed
                 override fun onAdDisplayed(ad: InMobiBanner, adMetaInfo: AdMetaInfo) {
                     Log.d(TAG, "Banner displayed pid=$pid")
                 }
 
                 override fun onAdClicked(ad: InMobiBanner, adMetaInfo: AdMetaInfo) {
                     Log.d(TAG, "Banner clicked pid=$pid")
+                }
+
+                override fun onAdImpression(ad: InMobiBanner) {
+                    Log.d(TAG, "Banner impression pid=$pid")
                 }
             })
             load()
