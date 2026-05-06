@@ -9,6 +9,8 @@ import {APP_VERSION} from './src/constants/endpoints';
 import {storage} from './src/storage/Storage';
 import {Colors} from './src/theme/colors';
 import {ThemeProvider} from './src/hooks/useTheme';
+import {AdProvider} from './src/ads/AdContext';
+import {initCounters} from './src/ads/adManager';
 import './src/i18n';
 
 LogBox.ignoreLogs([
@@ -25,6 +27,7 @@ const App: React.FC = () => {
 
   useEffect(() => {
     storage.init().then(() => {
+      initCounters();
       setReady(true);
       restoreDownloads().catch(() => {});
       const timer = setTimeout(async () => {
@@ -52,20 +55,22 @@ const App: React.FC = () => {
   return (
     <ThemeProvider>
       <SafeAreaProvider initialMetrics={initialWindowMetrics}>
-        <StatusBar
-          barStyle="light-content"
-          backgroundColor={Colors.dark.background}
-          translucent={false}
-        />
-        <AppNavigator />
-        <UpdateModal
-          visible={showUpdateModal}
-          release={updateInfo}
-          currentVersion={APP_VERSION}
-          onDownload={(url: string) => { setShowUpdateModal(false); openUpdateUrl(url); }}
-          onSkip={(version: string) => { skipVersion(version); setShowUpdateModal(false); }}
-          onDismiss={() => setShowUpdateModal(false)}
-        />
+        <AdProvider>
+          <StatusBar
+            barStyle="light-content"
+            backgroundColor={Colors.dark.background}
+            translucent={false}
+          />
+          <AppNavigator />
+          <UpdateModal
+            visible={showUpdateModal}
+            release={updateInfo}
+            currentVersion={APP_VERSION}
+            onDownload={(url: string) => { setShowUpdateModal(false); openUpdateUrl(url); }}
+            onSkip={(version: string) => { skipVersion(version); setShowUpdateModal(false); }}
+            onDismiss={() => setShowUpdateModal(false)}
+          />
+        </AdProvider>
       </SafeAreaProvider>
     </ThemeProvider>
   );

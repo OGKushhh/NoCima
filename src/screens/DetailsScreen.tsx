@@ -22,6 +22,7 @@ import FastImage from 'react-native-fast-image';
 import axios from 'axios';
 import {ContentItem} from '../types';
 import {recordPlay} from '../services/viewService';
+import {useAds} from '../ads/AdContext';
 import {Colors} from '../theme/colors';
 import {useTranslation} from 'react-i18next';
 import {localizeGenres} from '../i18n/genres';
@@ -118,6 +119,7 @@ export const DetailsScreen: React.FC = () => {
   const nav = useNavigation<any>();
   const {t, i18n} = useTranslation();
   const insets = useSafeAreaInsets();
+  const {showInterstitial} = useAds();
 
   const item: ContentItem = route.params?.item;
 
@@ -322,7 +324,7 @@ export const DetailsScreen: React.FC = () => {
       recordPlay(item.id, category);
       nav.navigate('Player', {
         url: primaryUrl,
-        servers: m3u8Urls, // full list for server switching
+        servers: m3u8Urls,
         title: extractorTitleRef.current,
         contentId: item.id,
         category,
@@ -355,12 +357,11 @@ export const DetailsScreen: React.FC = () => {
   }, []);
 
   // ── Play movie (on-device extraction) ────────────────────────────
-  // If Sources[0] exists we go straight to the player token page — faster.
   const handlePlay = useCallback((allServers = false) => {
     const src = item.Sources?.[0];
     const url = src ?? `${FASEL_BASE}/?p=${item.id}`;
-    startExtraction(url, item.Title, undefined, allServers);
-  }, [item.id, item.Title, item.Sources, startExtraction]);
+    showInterstitial(() => startExtraction(url, item.Title, undefined, allServers), 'play');
+  }, [item.id, item.Title, item.Sources, startExtraction, showInterstitial]);
 
   // ── Download movie or first episode ──────────────────────────────
   const handleDownload = useCallback(() => {
@@ -379,14 +380,14 @@ export const DetailsScreen: React.FC = () => {
     if (!currentEps.length) return;
     const epUrl = currentEps[0];
     const title = `${item.Title} - ${t('season')} ${selSeason} ${t('episode')} 1`;
-    startExtraction(epUrl, title, epUrl, allServers);
-  }, [currentEps, item.Title, selSeason, t, startExtraction]);
+    showInterstitial(() => startExtraction(epUrl, title, epUrl, allServers), 'play');
+  }, [currentEps, item.Title, selSeason, t, startExtraction, showInterstitial]);
 
   // ── Play episode (on-device extraction) ──────────────────────────
   const handlePlayEpisode = useCallback((epUrl: string, epNum: number, allServers = false) => {
     const title = `${item.Title} - ${t('season')} ${selSeason} ${t('episode')} ${epNum}`;
-    startExtraction(epUrl, title, epUrl, allServers);
-  }, [item.Title, selSeason, t, startExtraction]);
+    showInterstitial(() => startExtraction(epUrl, title, epUrl, allServers), 'play');
+  }, [item.Title, selSeason, t, startExtraction, showInterstitial]);
 
   // Cache server token URLs on the item as soon as the WebView reports them.
   // Next play tap will use Sources[0] directly — skipping the main page load.

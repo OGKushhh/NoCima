@@ -33,6 +33,7 @@ import {SectionHeader} from '../components/SectionHeader';
 import {LoadingSpinner} from '../components/LoadingSpinner';
 import {ErrorView} from '../components/ErrorView';
 import {Colors} from '../theme/colors';
+import AdsterraBanner from '../ads/AdsterraBanner';
 
 const {width: SW} = Dimensions.get('window');
 const H_CARD      = 148;
@@ -512,6 +513,9 @@ export const HomeScreen: React.FC = () => {
             {heroItems.length > 0 && (
               <HeroBanner items={heroItems} onPress={goDetails} />
             )}
+
+            {/* Adsterra native banner — shown after hero */}
+            <AdsterraBanner visible type="native" height={90} />
 
             {/* Content rows */}
             <HRow
