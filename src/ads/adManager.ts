@@ -6,7 +6,7 @@ const KEY_INTERACTION_COUNT  = 'ad_interaction_count';
 const KEY_PLAY_COUNT         = 'ad_play_count';
 
 // ─── Thresholds ──────────────────────────────────────────────────────────────
-const INTERSTITIAL_EVERY_N       = 15; // every 15 screen interactions
+const INTERSTITIAL_EVERY_N       = 10; // every 10 screen interactions
 const PLAY_INTERSTITIAL_EVERY_N  = 3;  // every 3 play presses
 const AD_FREE_DURATION_MS        = 3 * 60 * 60 * 1000; // 3 hours
 
