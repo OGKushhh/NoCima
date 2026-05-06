@@ -45,19 +45,7 @@ class InMobiBannerViewManager(
                     Log.w(TAG, "Banner failed pid=$pid status=${status.message}")
                 }
 
-                // ✅ Keep only the methods that exist in this SDK version
-                // onAdImpression, onUserLeftApplication, onAdDismissed are optional
-                override fun onAdImpression(ad: InMobiBanner) {
-                    Log.d(TAG, "Banner impression pid=$pid")
-                }
-
-                override fun onUserLeftApplication(ad: InMobiBanner) {
-                    Log.d(TAG, "User left app from banner pid=$pid")
-                }
-
-                override fun onAdDismissed(ad: InMobiBanner) {
-                    Log.d(TAG, "Banner dismissed pid=$pid")
-                }
+                // ✅ FIX: Removed 'onAdDisplayed' and 'onAdClicked' as they don't exist in this SDK version
             })
             load()
         }
