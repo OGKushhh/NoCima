@@ -18,7 +18,6 @@ def reactNativeArchitectures() {
     return value ? value.split(",") : ["armeabi-v7a", "x86", "x86_64", "arm64-v8a"]
 }
 
-// Helper to get signing properties from environment or gradle.properties
 def getPassword(String key, String defaultValue) {
     return System.getenv(key) ?: (project.hasProperty(key) ? project.property(key) : defaultValue)
 }
@@ -101,16 +100,27 @@ dependencies {
         implementation jscFlavor
     }
 
-    // ── InMobi Ad SDK (Maven Central) ─────────────────────────────────────────
-    implementation 'com.inmobi.monetization:inmobi-ads-kotlin:10.7.4'
+    // ── InMobi Ad SDK 11.2.0 (Maven Central) ─────────────────────────────────
+    implementation 'com.inmobi.monetization:inmobi-ads-kotlin:11.2.0'
 
-    // ── InMobi CMP SDK (local AAR — not on any public Maven repo) ─────────────
+    // ── InMobi CMP SDK (local AAR) ──────────────────────────────────────────
     implementation files('libs/inmobicmp-2.4.2.aar')
 
-    // Required transitive deps for InMobi
+    // Required dependencies for InMobi SDK 11.x
+    implementation "androidx.media3:media3-exoplayer:1.4.1"
+    implementation "com.squareup.okhttp3:okhttp:3.14.9"
+    implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.1"
+    implementation "androidx.core:core-ktx:1.9.0"
+    implementation 'com.google.android.gms:play-services-ads-identifier:18.0.1'
+    implementation 'androidx.browser:browser:1.8.0'
+    implementation 'com.squareup.picasso:picasso:2.8'
+    implementation 'com.google.android.gms:play-services-appset:16.0.2'  // optional
+    implementation 'androidx.multidex:multidex:2.0.1'
+
+    // RecyclerView / ConstraintLayout (already present)
     implementation 'androidx.recyclerview:recyclerview:1.3.2'
-    implementation 'androidx.core:core-ktx:1.9.0'
     implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
 }
 
-apply from: file("../../node_modules/@react-native-community/cli-platform-android/native_modules.gradle"); applyNativeModulesAppBuildGradle(project)
+apply from: file("../../node_modules/@react-native-community/cli-platform-android/native_modules.gradle");
+applyNativeModulesAppBuildGradle(project)
