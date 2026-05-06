@@ -8,13 +8,10 @@ import com.inmobi.ads.*
 import com.inmobi.ads.listeners.InterstitialAdEventListener
 import com.inmobi.sdk.InMobiSdk
 import com.inmobi.sdk.SdkInitializationListener
-import com.inmobi.sdk.Error   // ✅ correct type for error
 import org.json.JSONObject
 
 /**
- * InMobiAdsModule
- *
- * Exposes the InMobi Android SDK to React Native as a NativeModule named "InMobiAds".
+ * InMobiAdsModule for SDK 10.7.4
  */
 class InMobiAdsModule(private val reactContext: ReactApplicationContext) :
     ReactContextBaseJavaModule(reactContext) {
@@ -28,8 +25,6 @@ class InMobiAdsModule(private val reactContext: ReactApplicationContext) :
 
     override fun getName(): String = "InMobiAds"
 
-    // ─── initialize ───────────────────────────────────────────────────────────
-
     @ReactMethod
     fun initialize(accountId: String, gdprConsent: Boolean) {
         val activity = currentActivity ?: run {
@@ -41,7 +36,8 @@ class InMobiAdsModule(private val reactContext: ReactApplicationContext) :
             consent.put(InMobiSdk.IM_GDPR_CONSENT_AVAILABLE, gdprConsent)
             InMobiSdk.setLogLevel(InMobiSdk.LogLevel.NONE)
             InMobiSdk.init(activity, accountId, consent, object : SdkInitializationListener {
-                override fun onInitializationComplete(error: Error?) {   // ✅ fixed type
+                // ✅ Use InMobiAdRequestStatus? (not Error) for SDK 10.7.4
+                override fun onInitializationComplete(error: InMobiAdRequestStatus?) {
                     if (error != null) {
                         Log.e(TAG, "InMobi init error: ${error.message}")
                     } else {
@@ -53,8 +49,6 @@ class InMobiAdsModule(private val reactContext: ReactApplicationContext) :
             Log.e(TAG, "initialize exception: ${e.message}")
         }
     }
-
-    // ─── Interstitial ─────────────────────────────────────────────────────────
 
     @ReactMethod
     fun loadInterstitial(placementId: Double) {
@@ -78,10 +72,8 @@ class InMobiAdsModule(private val reactContext: ReactApplicationContext) :
     fun isInterstitialReady(placementId: Double, promise: Promise) {
         val pid = placementId.toLong()
         val ad = interstitials[pid]
-        promise.resolve(ad?.isReady() == true)   // ✅ fixed function call
+        promise.resolve(ad?.isReady() == true)   // ✅ function call
     }
-
-    // ─── Rewarded ─────────────────────────────────────────────────────────────
 
     @ReactMethod
     fun loadRewarded(placementId: Double) {
@@ -105,10 +97,8 @@ class InMobiAdsModule(private val reactContext: ReactApplicationContext) :
     fun isRewardedReady(placementId: Double, promise: Promise) {
         val pid = placementId.toLong()
         val ad = rewardedAds[pid]
-        promise.resolve(ad?.isReady() == true)   // ✅ fixed function call
+        promise.resolve(ad?.isReady() == true)   // ✅ function call
     }
-
-    // ─── Factory helpers ──────────────────────────────────────────────────────
 
     private fun getOrCreateInterstitial(
         pid: Long,
@@ -148,8 +138,6 @@ class InMobiAdsModule(private val reactContext: ReactApplicationContext) :
             })
         }
     }
-
-    // ─── Event helper ─────────────────────────────────────────────────────────
 
     private fun sendEvent(eventName: String, params: WritableMap?) {
         reactContext

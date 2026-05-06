@@ -13,12 +13,6 @@ import com.inmobi.ads.InMobiAdRequestStatus
 import com.inmobi.ads.AdMetaInfo
 import com.inmobi.ads.listeners.BannerAdEventListener
 
-/**
- * InMobiBannerViewManager
- *
- * Registers the native view "InMobiBannerView" used by TopBannerAd.tsx.
- * Accepts a `placementId` prop and automatically loads + shows a banner.
- */
 class InMobiBannerViewManager(
     private val reactContext: ReactApplicationContext
 ) : SimpleViewManager<FrameLayout>() {
@@ -36,10 +30,8 @@ class InMobiBannerViewManager(
     @ReactProp(name = "placementId")
     fun setPlacementId(view: FrameLayout, placementId: Double) {
         val pid = placementId.toLong()
-        // Remove any existing banner
         view.removeAllViews()
 
-        // Create new banner with the correct placement ID
         val banner = InMobiBanner(view.context, pid).apply {
             setEnableAutoRefresh(false)
             setAnimationType(InMobiBanner.AnimationType.ROTATE_HORIZONTAL_AXIS)
@@ -53,7 +45,8 @@ class InMobiBannerViewManager(
                     Log.w(TAG, "Banner failed pid=$pid status=${status.message}")
                 }
 
-                // ✅ onAdImpression is optional but safe to keep
+                // ✅ Keep only the methods that exist in this SDK version
+                // onAdImpression, onUserLeftApplication, onAdDismissed are optional
                 override fun onAdImpression(ad: InMobiBanner) {
                     Log.d(TAG, "Banner impression pid=$pid")
                 }
