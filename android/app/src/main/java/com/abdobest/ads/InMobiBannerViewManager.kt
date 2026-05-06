@@ -53,24 +53,17 @@ class InMobiBannerViewManager(
                     Log.w(TAG, "Banner failed pid=$pid status=${status.message}")
                 }
 
-                override fun onAdDisplayed(ad: InMobiBanner, adMetaInfo: AdMetaInfo) {
-                    // Optional: track impression
-                }
-
-                override fun onAdClicked(ad: InMobiBanner) {
-                    // Optional: track click
-                }
-
+                // ✅ onAdImpression is optional but safe to keep
                 override fun onAdImpression(ad: InMobiBanner) {
-                    // Optional: track impression
+                    Log.d(TAG, "Banner impression pid=$pid")
                 }
 
                 override fun onUserLeftApplication(ad: InMobiBanner) {
-                    // Optional: handle user leaving app
+                    Log.d(TAG, "User left app from banner pid=$pid")
                 }
 
                 override fun onAdDismissed(ad: InMobiBanner) {
-                    // Optional: handle ad closure (for banners this is rare)
+                    Log.d(TAG, "Banner dismissed pid=$pid")
                 }
             })
             load()

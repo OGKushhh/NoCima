@@ -8,25 +8,13 @@ import com.inmobi.ads.*
 import com.inmobi.ads.listeners.InterstitialAdEventListener
 import com.inmobi.sdk.InMobiSdk
 import com.inmobi.sdk.SdkInitializationListener
+import com.inmobi.sdk.Error   // ✅ correct type for error
 import org.json.JSONObject
 
 /**
  * InMobiAdsModule
  *
  * Exposes the InMobi Android SDK to React Native as a NativeModule named "InMobiAds".
- *
- * Methods exposed to JS:
- *   initialize(accountId, gdprConsent)
- *   loadInterstitial(placementId)
- *   showInterstitial(placementId)
- *   isInterstitialReady(placementId) -> Promise<Boolean>
- *   loadRewarded(placementId)
- *   showRewarded(placementId)
- *   isRewardedReady(placementId) -> Promise<Boolean>
- *
- * Events emitted to JS:
- *   InMobiRewardedAdRewarded   – fired when reward is granted
- *   InMobiInterstitialDismissed – fired when interstitial closes
  */
 class InMobiAdsModule(private val reactContext: ReactApplicationContext) :
     ReactContextBaseJavaModule(reactContext) {
@@ -35,7 +23,6 @@ class InMobiAdsModule(private val reactContext: ReactApplicationContext) :
         private const val TAG = "InMobiAdsModule"
     }
 
-    // Keyed by placement id (Long)
     private val interstitials = mutableMapOf<Long, InMobiInterstitial>()
     private val rewardedAds   = mutableMapOf<Long, InMobiInterstitial>()
 
@@ -54,7 +41,7 @@ class InMobiAdsModule(private val reactContext: ReactApplicationContext) :
             consent.put(InMobiSdk.IM_GDPR_CONSENT_AVAILABLE, gdprConsent)
             InMobiSdk.setLogLevel(InMobiSdk.LogLevel.NONE)
             InMobiSdk.init(activity, accountId, consent, object : SdkInitializationListener {
-                override fun onInitializationComplete(error: InMobiAdRequestStatus?) {
+                override fun onInitializationComplete(error: Error?) {   // ✅ fixed type
                     if (error != null) {
                         Log.e(TAG, "InMobi init error: ${error.message}")
                     } else {
@@ -91,7 +78,7 @@ class InMobiAdsModule(private val reactContext: ReactApplicationContext) :
     fun isInterstitialReady(placementId: Double, promise: Promise) {
         val pid = placementId.toLong()
         val ad = interstitials[pid]
-        promise.resolve(ad?.isReady == true)
+        promise.resolve(ad?.isReady() == true)   // ✅ fixed function call
     }
 
     // ─── Rewarded ─────────────────────────────────────────────────────────────
@@ -118,7 +105,7 @@ class InMobiAdsModule(private val reactContext: ReactApplicationContext) :
     fun isRewardedReady(placementId: Double, promise: Promise) {
         val pid = placementId.toLong()
         val ad = rewardedAds[pid]
-        promise.resolve(ad?.isReady == true)
+        promise.resolve(ad?.isReady() == true)   // ✅ fixed function call
     }
 
     // ─── Factory helpers ──────────────────────────────────────────────────────
@@ -170,7 +157,6 @@ class InMobiAdsModule(private val reactContext: ReactApplicationContext) :
             .emit(eventName, params)
     }
 
-    // Required for addListener / removeListeners to work with NativeEventEmitter
     @ReactMethod fun addListener(eventName: String) {}
     @ReactMethod fun removeListeners(count: Int) {}
 }
