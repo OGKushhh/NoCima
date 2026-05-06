@@ -23,11 +23,13 @@ import axios from 'axios';
 import {ContentItem} from '../types';
 import {recordPlay} from '../services/viewService';
 import {Colors} from '../theme/colors';
+import TopBannerAd from '../components/TopBannerAd';
 import {useTranslation} from 'react-i18next';
 import {localizeGenres} from '../i18n/genres';
 import {API_BASE} from '../constants/endpoints';
 import {VideoExtractor} from '../components/VideoExtractor';
 import {startDownload} from '../services/downloadService';
+import {trackInteraction, trackPlayPress} from '../services/adManager';
 
 const FASEL_BASE = 'https://www.fasel-hd.cam';
 
@@ -357,6 +359,7 @@ export const DetailsScreen: React.FC = () => {
   // ── Play movie (on-device extraction) ────────────────────────────
   // If Sources[0] exists we go straight to the player token page — faster.
   const handlePlay = useCallback((allServers = false) => {
+    trackPlayPress();
     const src = item.Sources?.[0];
     const url = src ?? `${FASEL_BASE}/?p=${item.id}`;
     startExtraction(url, item.Title, undefined, allServers);
@@ -377,6 +380,7 @@ export const DetailsScreen: React.FC = () => {
   // ── Play first episode of current season ─────────────────────────
   const handlePlayFirst = useCallback((allServers = false) => {
     if (!currentEps.length) return;
+    trackPlayPress();
     const epUrl = currentEps[0];
     const title = `${item.Title} - ${t('season')} ${selSeason} ${t('episode')} 1`;
     startExtraction(epUrl, title, epUrl, allServers);
@@ -384,6 +388,7 @@ export const DetailsScreen: React.FC = () => {
 
   // ── Play episode (on-device extraction) ──────────────────────────
   const handlePlayEpisode = useCallback((epUrl: string, epNum: number, allServers = false) => {
+    trackPlayPress();
     const title = `${item.Title} - ${t('season')} ${selSeason} ${t('episode')} ${epNum}`;
     startExtraction(epUrl, title, epUrl, allServers);
   }, [item.Title, selSeason, t, startExtraction]);
@@ -411,7 +416,7 @@ export const DetailsScreen: React.FC = () => {
   return (
     <View style={S.container}>
       <StatusBar barStyle="light-content" backgroundColor={Colors.dark.background} />
-
+      <TopBannerAd />
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={[S.scroll, {paddingBottom: insets.bottom + 60}]}

@@ -22,6 +22,8 @@ import { Colors } from '../theme/colors';
 import { CATEGORIES } from '../constants/categories';
 import { useTranslation } from 'react-i18next';
 import { Image } from 'react-native';
+import TopBannerAd from '../components/TopBannerAd';
+import { trackInteraction } from '../services/adManager';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 const PAGE_SIZE = 30;
@@ -196,7 +198,10 @@ export const CategoryScreen: React.FC = () => {
     });
   }, [hasMore]);
 
-  const navigateToDetails = useCallback((item: ContentItem) => navigation.navigate('Details', { item }), [navigation]);
+  const navigateToDetails = useCallback((item: ContentItem) => {
+    trackInteraction();
+    navigation.navigate('Details', { item });
+  }, [navigation]);
   const renderItem = useCallback(({ item }: { item: ContentItem }) => <MovieCardItem item={item} onPress={navigateToDetails} />, [navigateToDetails]);
 
   const handleCategorySelect = useCallback((cat: string) => {
@@ -240,6 +245,7 @@ export const CategoryScreen: React.FC = () => {
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor={Colors.dark.background} />
+      <TopBannerAd />
 
       {/* Header */}
       <View style={[styles.header, { paddingTop: insets.top + 6 }, isRTL && styles.rowRTL]}>

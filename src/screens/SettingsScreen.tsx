@@ -13,6 +13,8 @@ import { syncIfNeeded, getLastSyncTime } from '../services/metadataService';
 import { checkForUpdate, openUpdateUrl, skipVersion } from '../services/updateService';
 import { APP_VERSION } from '../constants/endpoints';
 import { useTheme } from '../hooks/useTheme';
+import RewardedAdModal from '../components/RewardedAdModal';
+import { isAdFree, adFreeRemainingMs } from '../services/adManager';
 
 // ─── Custom Modal ──────────────────────────────────────────────────────────────
 interface AppModalProps {
@@ -60,6 +62,9 @@ export const SettingsScreen: React.FC = () => {
   const [cacheModalVisible, setCacheModalVisible] = useState(false);
   const [updateModalVisible, setUpdateModalVisible] = useState(false);
   const [updateInfo, setUpdateInfo] = useState<any>(null);
+  const [rewardedModalVisible, setRewardedModalVisible] = useState(false);
+  const [adFreeActive, setAdFreeActive] = useState(isAdFree());
+  const [adFreeRemaining, setAdFreeRemaining] = useState(adFreeRemainingMs());
 
   // Loading states
   const [syncing, setSyncing] = useState(false);
@@ -67,6 +72,15 @@ export const SettingsScreen: React.FC = () => {
   const [checkingUpdate, setCheckingUpdate] = useState(false);
 
   const qualityOptions = ['auto', '1080', '720', '480', '360'];
+
+  // Poll ad-free status so the button label stays current
+  React.useEffect(() => {
+    const id = setInterval(() => {
+      setAdFreeActive(isAdFree());
+      setAdFreeRemaining(adFreeRemainingMs());
+    }, 10_000);
+    return () => clearInterval(id);
+  }, []);
 
   // ─── Unified settings updater ────────────────────────────────────────────────
   const updateSetting = useCallback((key: string, value: any) => {
@@ -334,6 +348,37 @@ export const SettingsScreen: React.FC = () => {
 
           {/* ── Support — Donate button ── */}
           <Text style={styles.sectionTitle}>{t('support_us')}</Text>
+
+          {/* ── Remove Ads (rewarded video) ── */}
+          <TouchableOpacity
+            style={styles.donateBtn}
+            onPress={() => setRewardedModalVisible(true)}
+            activeOpacity={0.85}
+          >
+            <LinearGradient
+              colors={adFreeActive ? ['#2E7D32', '#43A047'] : ['#1565C0', '#5E35B1']}
+              start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+              style={styles.donateBtnInner}
+            >
+              <Image source={require('../../assets/icons/flash.png')} style={{ width: 22, height: 22, tintColor: '#fff' }} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.donateBtnText}>
+                  {adFreeActive ? t('ads_removed_title', 'Ads Removed!') : t('remove_ads_title', 'Remove Ads')}
+                </Text>
+                {adFreeActive && adFreeRemaining > 0 && (
+                  <Text style={{ color: 'rgba(255,255,255,0.75)', fontSize: 11, fontFamily: 'Rubik', marginTop: 2 }}>
+                    {Math.ceil(adFreeRemaining / 60000)} {t('minutes_left', 'min left')}
+                  </Text>
+                )}
+              </View>
+              {!adFreeActive && (
+                <Text style={{ color: 'rgba(255,255,255,0.8)', fontSize: 11, fontFamily: 'Rubik' }}>
+                  {t('watch_video', 'Watch Video')} ▶
+                </Text>
+              )}
+            </LinearGradient>
+          </TouchableOpacity>
+
           <TouchableOpacity
             style={styles.donateBtn}
             onPress={() => Linking.openURL('https://ko-fi.com/abdobest')}
@@ -433,6 +478,17 @@ export const SettingsScreen: React.FC = () => {
           </>
         )}
       </AppModal>
+
+      {/* ── Rewarded Ad Modal ── */}
+      <RewardedAdModal
+        visible={rewardedModalVisible}
+        onClose={() => {
+          setRewardedModalVisible(false);
+          // Refresh ad-free state after modal closes
+          setAdFreeActive(isAdFree());
+          setAdFreeRemaining(adFreeRemainingMs());
+        }}
+      />
     </View>
   );
 };

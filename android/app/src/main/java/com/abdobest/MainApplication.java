@@ -6,6 +6,8 @@ import com.facebook.react.ReactApplication;
 import com.facebook.react.ReactNativeHost;
 import com.facebook.react.ReactPackage;
 import com.facebook.soloader.SoLoader;
+import com.abdobest.ads.InMobiAdsPackage;
+import java.util.ArrayList;
 import java.util.List;
 
 public class MainApplication extends Application implements ReactApplication {
@@ -19,8 +21,8 @@ public class MainApplication extends Application implements ReactApplication {
 
                 @Override
                 protected List<ReactPackage> getPackages() {
-                    @SuppressWarnings("UnnecessaryLocalVariable")
-                    List<ReactPackage> packages = new PackageList(this).getPackages();
+                    List<ReactPackage> packages = new ArrayList<>(new PackageList(this).getPackages());
+                    packages.add(new InMobiAdsPackage());
                     return packages;
                 }
 

@@ -33,6 +33,8 @@ import {SectionHeader} from '../components/SectionHeader';
 import {LoadingSpinner} from '../components/LoadingSpinner';
 import {ErrorView} from '../components/ErrorView';
 import {Colors} from '../theme/colors';
+import {trackInteraction, trackPlayPress, shouldShowBanner} from '../services/adManager';
+import TopBannerAd from '../components/TopBannerAd';
 
 const {width: SW} = Dimensions.get('window');
 const H_CARD      = 148;
@@ -199,6 +201,7 @@ const HeroBanner = memo<HeroBannerProps>(({items, onPress}) => {
   // Tap on the banner advances manually and resets the timer
   const handleTap = () => {
     if (timerRef.current) clearInterval(timerRef.current);
+    trackPlayPress();
     onPress(item);
   };
 
@@ -389,7 +392,10 @@ export const HomeScreen: React.FC = () => {
     );
 
   // ── Navigation ────────────────────────────────────────────────────
-  const goDetails = useCallback((item: ContentItem) => nav.navigate('Details', {item}), [nav]);
+  const goDetails = useCallback((item: ContentItem) => {
+    trackInteraction();
+    nav.navigate('Details', {item});
+  }, [nav]);
   const goCat     = useCallback((cat: string) => nav.navigate('Category', {category: cat}), [nav]);
 
   // ── Search ────────────────────────────────────────────────────────
@@ -489,6 +495,7 @@ export const HomeScreen: React.FC = () => {
   return (
     <View style={S.container}>
       <StatusBar barStyle="light-content" backgroundColor={Colors.dark.background} />
+      <TopBannerAd />
 
       <FlatList
         data={[]}

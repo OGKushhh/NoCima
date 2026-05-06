@@ -3,12 +3,14 @@ import {StatusBar, LogBox, View, ActivityIndicator, Text} from 'react-native';
 import {SafeAreaProvider, initialWindowMetrics} from 'react-native-safe-area-context';
 import {AppNavigator} from './src/navigation/AppNavigator';
 import {UpdateModal} from './src/components/UpdateModal';
+import RewardedAdModal from './src/components/RewardedAdModal';
 import {checkForUpdate, skipVersion, openUpdateUrl, ReleaseInfo} from './src/services/updateService';
 import {restoreDownloads} from './src/services/downloadService';
 import {APP_VERSION} from './src/constants/endpoints';
 import {storage} from './src/storage/Storage';
 import {Colors} from './src/theme/colors';
 import {ThemeProvider} from './src/hooks/useTheme';
+import {initAds, shouldShowRewardedPopup} from './src/services/adManager';
 import './src/i18n';
 
 LogBox.ignoreLogs([
@@ -22,11 +24,20 @@ const App: React.FC = () => {
   const [ready, setReady] = useState(false);
   const [updateInfo, setUpdateInfo] = useState<ReleaseInfo | null>(null);
   const [showUpdateModal, setShowUpdateModal] = useState(false);
+  const [showRewardedModal, setShowRewardedModal] = useState(false);
 
   useEffect(() => {
     storage.init().then(() => {
+      // Initialise InMobi ads (also increments launch counter)
+      initAds(/* gdprConsent= */ true);
+
       setReady(true);
       restoreDownloads().catch(() => {});
+
+      // Show rewarded popup on every 3rd launch
+      if (shouldShowRewardedPopup()) {
+        setTimeout(() => setShowRewardedModal(true), 1500);
+      }
       const timer = setTimeout(async () => {
         const update = await checkForUpdate();
         if (update) {
@@ -58,6 +69,10 @@ const App: React.FC = () => {
           translucent={false}
         />
         <AppNavigator />
+        <RewardedAdModal
+          visible={showRewardedModal}
+          onClose={() => setShowRewardedModal(false)}
+        />
         <UpdateModal
           visible={showUpdateModal}
           release={updateInfo}
