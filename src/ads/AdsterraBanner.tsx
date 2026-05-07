@@ -1,16 +1,12 @@
 /**
- * AdsterraBanner
- *
- * Each type renders in its own isolated WebView — no conflicts.
- *
- * type="native"    → Adsterra native banner (invoke.js)
- * type="display"   → Adsterra 300×250 iframe banner
- * type="propeller" → PropellerAds banner only
+ * AdsterraBanner — redirect-safe
+ * Same onShouldStartLoadWithRequest guard as AdsterraInterstitial.
+ * Ad clicks open in system browser, WebView stays on the banner HTML.
  */
 
 import React from 'react';
-import { View, StyleSheet, TouchableOpacity, Text } from 'react-native';
-import { WebView } from 'react-native-webview';
+import { View, StyleSheet, TouchableOpacity, Text, Linking } from 'react-native';
+import { WebView, WebViewNavigation } from 'react-native-webview';
 
 type BannerType = 'native' | 'display' | 'propeller';
 
@@ -25,7 +21,24 @@ const CHROME_UA =
   'Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 ' +
   '(KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36';
 
-// ── Adsterra native banner ────────────────────────────────────────────────────
+const ALLOWED_DOMAINS = [
+  'highperformanceformat.com',
+  'profitablecpmratenetwork.com',
+  'nap5k.com',
+  'al5sm.com',
+  'adsterra.com',
+  'propellerads.com',
+];
+
+const handleNavRequest = (request: WebViewNavigation): boolean => {
+  const url = request.url;
+  if (!url || url === 'about:blank' || url === 'about:srcdoc') return true;
+  if (url.startsWith('data:')) return true;
+  if (ALLOWED_DOMAINS.some(d => url.includes(d))) return true;
+  Linking.openURL(url).catch(() => {});
+  return false;
+};
+
 const NATIVE_BANNER_HTML = `
 <!DOCTYPE html>
 <html>
@@ -47,7 +60,6 @@ const NATIVE_BANNER_HTML = `
 </html>
 `;
 
-// ── Adsterra 300×250 display banner ──────────────────────────────────────────
 const DISPLAY_BANNER_HTML = `
 <!DOCTYPE html>
 <html>
@@ -74,7 +86,6 @@ const DISPLAY_BANNER_HTML = `
 </html>
 `;
 
-// ── PropellerAds banner only ──────────────────────────────────────────────────
 const PROPELLER_BANNER_HTML = `
 <!DOCTYPE html>
 <html>
@@ -93,36 +104,17 @@ const PROPELLER_BANNER_HTML = `
 `;
 
 const configs: Record<BannerType, { html: string; baseUrl: string; defaultHeight: number }> = {
-  native: {
-    html: NATIVE_BANNER_HTML,
-    baseUrl: 'https://pl29354810.profitablecpmratenetwork.com',
-    defaultHeight: 90,
-  },
-  display: {
-    html: DISPLAY_BANNER_HTML,
-    baseUrl: 'https://www.highperformanceformat.com',
-    defaultHeight: 270,
-  },
-  propeller: {
-    html: PROPELLER_BANNER_HTML,
-    baseUrl: 'https://nap5k.com',
-    defaultHeight: 90,
-  },
+  native:    { html: NATIVE_BANNER_HTML,   baseUrl: 'https://pl29354810.profitablecpmratenetwork.com', defaultHeight: 90 },
+  display:   { html: DISPLAY_BANNER_HTML,  baseUrl: 'https://www.highperformanceformat.com',           defaultHeight: 270 },
+  propeller: { html: PROPELLER_BANNER_HTML, baseUrl: 'https://nap5k.com',                              defaultHeight: 90 },
 };
 
-const AdsterraBanner: React.FC<Props> = ({
-  visible,
-  type = 'native',
-  onClose,
-  height,
-}) => {
+const AdsterraBanner: React.FC<Props> = ({ visible, type = 'native', onClose, height }) => {
   if (!visible) return null;
-
   const { html, baseUrl, defaultHeight } = configs[type];
-  const h = height ?? defaultHeight;
 
   return (
-    <View style={[styles.container, { height: h }]}>
+    <View style={[styles.container, { height: height ?? defaultHeight }]}>
       <WebView
         source={{ html, baseUrl }}
         style={styles.webview}
@@ -133,9 +125,9 @@ const AdsterraBanner: React.FC<Props> = ({
         mixedContentMode="always"
         originWhitelist={['*']}
         userAgent={CHROME_UA}
-        onShouldStartLoadWithRequest={() => true}
         scrollEnabled={false}
         androidLayerType="hardware"
+        onShouldStartLoadWithRequest={handleNavRequest}
       />
       {onClose && (
         <TouchableOpacity style={styles.closeBtn} onPress={onClose}>
