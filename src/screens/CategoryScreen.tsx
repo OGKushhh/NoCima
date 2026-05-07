@@ -71,18 +71,6 @@ const MovieCardItem = memo<{ item: ContentItem; onPress: (item: ContentItem) => 
 );
 MovieCardItem.displayName = 'MovieCardItem';
 
-// Emoji per category for the tab chips
-const CAT_EMOJI: Record<string, string> = {
-  'movies':          '🎬',
-  'dubbed-movies':   '🎙️',
-  'hindi':           '🇮🇳',
-  'asian-movies':    '🌸',
-  'anime':           '⚡',
-  'anime-movies':    '🌟',
-  'series':          '📺',
-  'tvshows':         '📡',
-  'asian-series':    '🏯',
-};
 
 export const CategoryScreen: React.FC = () => {
   const route = useRoute<any>();
@@ -273,7 +261,6 @@ export const CategoryScreen: React.FC = () => {
       >
         {CATEGORIES.map(cat => {
           const isActive = selectedCategory === cat.key;
-          const emoji = CAT_EMOJI[cat.key] ?? '🎬';
           return (
             <TouchableOpacity
               key={cat.key}
@@ -281,15 +268,12 @@ export const CategoryScreen: React.FC = () => {
               onPress={() => handleCategorySelect(cat.key)}
               activeOpacity={0.75}
             >
-              <Text style={styles.catTabEmoji}>{emoji}</Text>
-              <View style={styles.catTabInner}>
-                <Text style={[styles.catTabText, isActive && styles.catTabTextActive]} numberOfLines={1}>
-                  {lang === 'ar' ? cat.labelAr : cat.labelEn}
-                </Text>
-                {isActive && !loading && (
-                  <Text style={styles.catTabCount}>{allItems.length.toLocaleString()}</Text>
-                )}
-              </View>
+              <Text style={[styles.catTabText, isActive && styles.catTabTextActive]} numberOfLines={1}>
+                {lang === 'ar' ? cat.labelAr : cat.labelEn}
+              </Text>
+              {isActive && !loading && (
+                <Text style={styles.catTabCount}>{allItems.length.toLocaleString()}</Text>
+              )}
             </TouchableOpacity>
           );
         })}
@@ -435,13 +419,11 @@ const styles = StyleSheet.create({
   filterOptionTextActive: { color: Colors.dark.primary, fontWeight: '600' },
   catTabsRow:       { marginBottom: 10 },
   catTabsContent:   { paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', paddingVertical: 6, gap: 8 },
-  catTab:           { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 22, backgroundColor: Colors.dark.surface, borderWidth: 1, borderColor: Colors.dark.border },
+  catTab:           { alignItems: 'center', paddingHorizontal: 14, paddingVertical: 7, borderRadius: 22, backgroundColor: Colors.dark.surface, borderWidth: 1, borderColor: Colors.dark.border },
   catTabActive:     { backgroundColor: Colors.dark.primary, borderColor: Colors.dark.primary },
-  catTabEmoji:      { fontSize: 15 },
-  catTabInner:      { alignItems: 'flex-start' },
   catTabText:       { color: Colors.dark.textSecondary, fontSize: 13, fontWeight: '600', fontFamily: 'Rubik' },
   catTabTextActive: { color: '#fff' },
-  catTabCount:      { color: 'rgba(255,255,255,0.65)', fontSize: 10, fontFamily: 'Rubik', lineHeight: 13 },
+  catTabCount:      { color: 'rgba(255,255,255,0.65)', fontSize: 10, fontFamily: 'Rubik', marginTop: 1 },
   filterFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 16, paddingTop: 12, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: Colors.dark.border },
   filterResultCount: { color: Colors.dark.textMuted, fontSize: 13, fontFamily: 'Rubik' },
   filterApplyBtn: { paddingHorizontal: 20, paddingVertical: 10, borderRadius: 12, backgroundColor: Colors.dark.primary },
