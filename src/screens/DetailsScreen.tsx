@@ -14,7 +14,7 @@ import React, {useState, useCallback, useMemo, useEffect, useRef} from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   ActivityIndicator, Share, Linking, Dimensions, StatusBar, Image,
-  Modal, FlatList,
+  Modal, FlatList, ToastAndroid, Platform, Alert,
 } from 'react-native';
 import {useRoute, useNavigation} from '@react-navigation/native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
@@ -487,6 +487,15 @@ export const DetailsScreen: React.FC = () => {
     Linking.openURL(`https://t.me/Abdobestt?text=${msg}`);
   };
 
+  const showComingSoon = () => {
+    const msg = lang === 'ar' ? 'ميزة التحميل قريباً! 🚀' : 'Downloads coming soon! 🚀';
+    if (Platform.OS === 'android') {
+      ToastAndroid.show(msg, ToastAndroid.SHORT);
+    } else {
+      Alert.alert('', msg);
+    }
+  };
+
   // ── Render ─────────────────────────────────────────────────────────
   return (
     <View style={S.container}>
@@ -746,7 +755,9 @@ export const DetailsScreen: React.FC = () => {
         {isEpisodic && (
           <View style={S.epsSection}>
             <View style={S.epsHeader}>
-              <Image source={require('../../assets/icons/tv.png')} style={[S.sectionIcon, {tintColor: Colors.dark.primary}]} />
+              <TouchableOpacity style={S.epNumCircle} onPress={showComingSoon}>
+                <Image source={require('../../assets/icons/download-to-storage-drive.png')} style={[S.sectionIcon, {tintColor: Colors.dark.primary}]} />
+              </TouchableOpacity>
               <Text style={S.epsTitle}>{t('episodes')}</Text>
               {loadingEps && <ActivityIndicator size="small" color={Colors.dark.primary} style={{marginLeft: 8}} />}
 
@@ -789,6 +800,9 @@ export const DetailsScreen: React.FC = () => {
                     <View style={[S.epNumCircle, isExtractingThis && S.epNumActive]}>
                       <Text style={[S.epNum, isExtractingThis && S.epNumActiveTxt]}>{idx + 1}</Text>
                     </View>
+                    <TouchableOpacity style={S.epNumCircle} onPress={showComingSoon}>
+                      <Image source={require('../../assets/icons/download-to-storage-drive.png')} style={[S.epPlayIcon, {tintColor: Colors.dark.primary}]} />
+                    </TouchableOpacity>
                     <View style={S.epInfo}>
                       <Text style={S.epTitle}>{t('episode')} {idx + 1}</Text>
                       {episodeViews[epUrl] ? (
@@ -802,7 +816,7 @@ export const DetailsScreen: React.FC = () => {
                       <ActivityIndicator size="small" color={Colors.dark.primary} />
                     ) : (
                       <Image
-                        source={require('../../assets/icons/clapboard.png')}
+                        source={require('../../assets/icons/flash.png')}
                         style={[S.epPlayIcon, {tintColor: Colors.dark.primary}]}
                       />
                     )}
