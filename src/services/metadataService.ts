@@ -165,32 +165,79 @@ export const getMoviesArray = (movies: ContentDict | null): ContentItem[] => {
   return Object.values(movies);
 };
 
-// ─── Auto-refresh (24hr check) ──────────────────────────────────────
+// ─── All syncable categories in order ────────────────────────────────────────
+export const SYNC_CATEGORIES: ContentCategory[] = [
+  'movies', 'series', 'anime', 'tvshows', 'asian-series',
+  'dubbed-movies', 'hindi', 'asian-movies', 'anime-movies',
+  'trending', 'featured',
+];
 
-export const refreshStaleCategories = async (): Promise<void> => {
-  const staleCategories: ContentCategory[] = ['movies', 'trending', 'featured'];
-  const toRefresh = staleCategories.filter(cat => {
-    const ts = getCategoryTimestamp(cat);
-    return ts === 0 || Date.now() - ts > 24 * 60 * 60 * 1000;
-  });
+export interface SyncProgress {
+  category: string;          // current category being fetched
+  done: number;              // how many finished
+  total: number;             // total to fetch
+  percent: number;           // 0-100
+  fromCache: boolean;        // true if this category was already fresh (skipped)
+}
 
-  if (toRefresh.length === 0) {
-    console.log('[Metadata] All categories fresh, no refresh needed');
-    return;
+export type SyncProgressCallback = (progress: SyncProgress) => void;
+
+// ─── Full sync all categories with progress ───────────────────────────────────
+/**
+ * Syncs all stale categories one by one (sequential so progress is meaningful).
+ * Calls onProgress after each category completes.
+ * Pass forceRefresh=true to re-fetch everything regardless of cache age.
+ */
+export const syncAllWithProgress = async (
+  onProgress?: SyncProgressCallback,
+  forceRefresh = false,
+): Promise<void> => {
+  const total = SYNC_CATEGORIES.length;
+  for (let i = 0; i < SYNC_CATEGORIES.length; i++) {
+    const cat = SYNC_CATEGORIES[i];
+    const isStale = forceRefresh || getCategoryTimestamp(cat) === 0 ||
+      Date.now() - getCategoryTimestamp(cat) > 24 * 60 * 60 * 1000;
+
+    onProgress?.({
+      category: cat,
+      done: i,
+      total,
+      percent: Math.round((i / total) * 100),
+      fromCache: !isStale,
+    });
+
+    if (isStale) {
+      try {
+        await loadCategory(cat, true);
+      } catch {
+        // continue even if one fails
+      }
+    }
   }
-
-  console.log(`[Metadata] Refreshing stale categories: ${toRefresh.join(', ')}`);
-  await Promise.allSettled(
-    toRefresh.map(cat => loadCategory(cat, true))
-  );
+  // Final 100%
+  onProgress?.({
+    category: 'done',
+    done: total,
+    total,
+    percent: 100,
+    fromCache: false,
+  });
 };
 
-// ─── Settings sync ──────────────────────────────────────────────────
+// ─── Auto-refresh (24hr check) ───────────────────────────────────────────────
+export const refreshStaleCategories = async (
+  onProgress?: SyncProgressCallback,
+): Promise<void> => {
+  await syncAllWithProgress(onProgress, false);
+};
 
-export const syncIfNeeded = async (): Promise<boolean> => {
+// ─── Settings sync ───────────────────────────────────────────────────────────
+export const syncIfNeeded = async (
+  onProgress?: SyncProgressCallback,
+): Promise<boolean> => {
   if (!isAnyCategoryStale()) return false;
   try {
-    await refreshStaleCategories();
+    await syncAllWithProgress(onProgress, false);
     return true;
   } catch {
     return false;

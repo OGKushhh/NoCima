@@ -13,6 +13,7 @@ import {ThemeProvider} from './src/hooks/useTheme';
 import {AdProvider} from './src/ads/AdContext';
 import {initCounters, recordLaunchAndCheckReward} from './src/ads/adManager';
 import RewardAdPopup from './src/ads/RewardAdPopup';
+import {CacheSyncOverlay, useCacheSync} from './src/components/CacheSyncOverlay';
 import './src/i18n';
 
 LogBox.ignoreLogs([
@@ -27,6 +28,7 @@ const App: React.FC = () => {
   const [updateInfo, setUpdateInfo] = useState<ReleaseInfo | null>(null);
   const [showUpdateModal, setShowUpdateModal] = useState(false);
   const [showRewardPopup, setShowRewardPopup] = useState(false);
+  const { running: syncRunning, progress: syncProgress, start: startSync } = useCacheSync();
   const appState = useRef<AppStateStatus>(AppState.currentState);
 
   // Retry any queued view counts when app comes to foreground
@@ -43,11 +45,12 @@ const App: React.FC = () => {
   useEffect(() => {
     storage.init().then(() => {
       initCounters();
-      // Check if reward popup should show this launch (every 3rd launch)
       const shouldShowReward = recordLaunchAndCheckReward();
       setReady(true);
       restoreDownloads().catch(() => {});
       retrySyncViews().catch(() => {});
+      // Start cache sync immediately — overlay shows automatically
+      startSync(false);
       if (shouldShowReward) {
         // Small delay so the app finishes rendering before showing the popup
         setTimeout(() => setShowRewardPopup(true), 1500);
@@ -96,6 +99,8 @@ const App: React.FC = () => {
             visible={showRewardPopup}
             onClose={() => setShowRewardPopup(false)}
           />
+          {/* Cache sync overlay — shown on launch while downloading database */}
+          <CacheSyncOverlay visible={syncRunning} progress={syncProgress} />
         </AdProvider>
       </SafeAreaProvider>
     </ThemeProvider>

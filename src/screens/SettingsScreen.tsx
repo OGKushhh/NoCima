@@ -9,7 +9,8 @@ import LinearGradient from 'react-native-linear-gradient';
 import { useTranslation } from 'react-i18next';
 import { getSettings, saveSettings } from '../storage';
 import { clearAllMetadataCache } from '../storage/cache';
-import { syncIfNeeded, getLastSyncTime } from '../services/metadataService';
+import { getLastSyncTime } from '../services/metadataService';
+import { CacheSyncInline, useCacheSync } from '../components/CacheSyncOverlay';
 import { checkForUpdate, openUpdateUrl, skipVersion } from '../services/updateService';
 import { APP_VERSION } from '../constants/endpoints';
 import { useTheme } from '../hooks/useTheme';
@@ -56,6 +57,7 @@ export const SettingsScreen: React.FC = () => {
   const { t, i18n } = useTranslation();
   const [settings, setSettings] = useState(getSettings());
   const { rewardElement, triggerReward, adFreeActive, remainingMs } = useRewardAd();
+  const { running: syncing, progress: syncProgress, start: startSync } = useCacheSync();
 
   // Modal states
   const [qualityModalVisible, setQualityModalVisible] = useState(false);
@@ -64,7 +66,6 @@ export const SettingsScreen: React.FC = () => {
   const [updateInfo, setUpdateInfo] = useState<any>(null);
 
   // Loading states
-  const [syncing, setSyncing] = useState(false);
   const [clearingCache, setClearingCache] = useState(false);
   const [checkingUpdate, setCheckingUpdate] = useState(false);
 
@@ -89,13 +90,8 @@ export const SettingsScreen: React.FC = () => {
   }, [settings.language, updateSetting, i18n]);
 
   // ─── Sync ────────────────────────────────────────────────────────────────────
-  const handleSync = useCallback(async () => {
-    setSyncing(true);
-    try {
-      await syncIfNeeded();
-    } finally {
-      setSyncing(false);
-    }
+  const handleSync = useCallback(() => {
+    startSync(true); // force refresh all categories
   }, []);
 
   // ─── Clear cache ─────────────────────────────────────────────────────────────
@@ -307,6 +303,9 @@ export const SettingsScreen: React.FC = () => {
                 : <Image source={require('../../assets/icons/chevron-down.png')} style={{ width: 18, height: 18, tintColor: colors.textMuted, transform: [{ rotate: '-90deg' }] }} />
               }
             </TouchableOpacity>
+
+            {/* Inline sync progress — shown only while syncing */}
+            <CacheSyncInline progress={syncProgress} />
             <TouchableOpacity style={[styles.row, styles.rowLast]} onPress={() => setCacheModalVisible(true)} activeOpacity={0.65}>
               <View style={styles.rowIcon}>
                 <Image source={require('../../assets/icons/files.png')} style={{ width: 20, height: 20, tintColor: colors.error }} />
