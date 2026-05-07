@@ -104,12 +104,10 @@ const rowS = StyleSheet.create({
 
 // ── Episode fetcher ──────────────────────────────────────────────────
 const fetchEpisodes = async (category: string, id: string) => {
-  const episodic = ['series', 'tvshows', 'asian-series'];
-  const isAnime = category === 'anime';
-  if (!episodic.includes(category) && !isAnime) return null;
-  const url = isAnime
-    ? `${API_BASE}/api/anime-episodes/${id}`
-    : `${API_BASE}/api/episodes/${category}/${id}`;
+  const episodic = ['series', 'tvshows', 'asian-series', 'anime'];
+  if (!episodic.includes(category)) return null;
+  // All episodic categories use the same unified endpoint: /api/episodes/{category}/{id}
+  const url = `${API_BASE}/api/episodes/${category}/${id}`;
   const r = await axios.get(url, {timeout: 20000});
   return r.data;
 };

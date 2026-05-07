@@ -1,21 +1,18 @@
 /**
  * AdsterraBanner
  *
- * type="native"  → Adsterra native banner (invoke.js)
- * type="display" → Adsterra 300×250 display banner
+ * Each type renders in its own isolated WebView — no conflicts.
  *
- * Android fixes:
- *  - Chrome userAgent so ad networks serve content
- *  - mixedContentMode="always" for HTTP ads in HTTPS context
- *  - thirdPartyCookiesEnabled for targeting
- *  - baseUrl so scripts resolve correctly
+ * type="native"    → Adsterra native banner (invoke.js)
+ * type="display"   → Adsterra 300×250 iframe banner
+ * type="propeller" → PropellerAds banner only
  */
 
 import React from 'react';
 import { View, StyleSheet, TouchableOpacity, Text } from 'react-native';
 import { WebView } from 'react-native-webview';
 
-type BannerType = 'native' | 'display';
+type BannerType = 'native' | 'display' | 'propeller';
 
 interface Props {
   visible: boolean;
@@ -28,6 +25,7 @@ const CHROME_UA =
   'Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 ' +
   '(KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36';
 
+// ── Adsterra native banner ────────────────────────────────────────────────────
 const NATIVE_BANNER_HTML = `
 <!DOCTYPE html>
 <html>
@@ -49,6 +47,7 @@ const NATIVE_BANNER_HTML = `
 </html>
 `;
 
+// ── Adsterra 300×250 display banner ──────────────────────────────────────────
 const DISPLAY_BANNER_HTML = `
 <!DOCTYPE html>
 <html>
@@ -75,27 +74,58 @@ const DISPLAY_BANNER_HTML = `
 </html>
 `;
 
+// ── PropellerAds banner only ──────────────────────────────────────────────────
+const PROPELLER_BANNER_HTML = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: transparent; }
+  </style>
+</head>
+<body>
+  <script>(function(s){s.dataset.zone='10971750',s.src='https://nap5k.com/tag.min.js'})([document.documentElement, document.body].filter(Boolean).pop().appendChild(document.createElement('script')))</script>
+</body>
+</html>
+`;
+
+const configs: Record<BannerType, { html: string; baseUrl: string; defaultHeight: number }> = {
+  native: {
+    html: NATIVE_BANNER_HTML,
+    baseUrl: 'https://pl29354810.profitablecpmratenetwork.com',
+    defaultHeight: 90,
+  },
+  display: {
+    html: DISPLAY_BANNER_HTML,
+    baseUrl: 'https://www.highperformanceformat.com',
+    defaultHeight: 270,
+  },
+  propeller: {
+    html: PROPELLER_BANNER_HTML,
+    baseUrl: 'https://nap5k.com',
+    defaultHeight: 90,
+  },
+};
+
 const AdsterraBanner: React.FC<Props> = ({
   visible,
   type = 'native',
   onClose,
-  height = 90,
+  height,
 }) => {
   if (!visible) return null;
 
-  const isDisplay  = type === 'display';
-  const html       = isDisplay ? DISPLAY_BANNER_HTML : NATIVE_BANNER_HTML;
-  const baseUrl    = isDisplay
-    ? 'https://www.highperformanceformat.com'
-    : 'https://pl29354810.profitablecpmratenetwork.com';
-  const h          = isDisplay ? 270 : height;
+  const { html, baseUrl, defaultHeight } = configs[type];
+  const h = height ?? defaultHeight;
 
   return (
     <View style={[styles.container, { height: h }]}>
       <WebView
         source={{ html, baseUrl }}
         style={styles.webview}
-        // ── Critical Android settings ──
         javaScriptEnabled
         domStorageEnabled
         thirdPartyCookiesEnabled

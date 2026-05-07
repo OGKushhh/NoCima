@@ -514,8 +514,9 @@ export const HomeScreen: React.FC = () => {
               <HeroBanner items={heroItems} onPress={goDetails} />
             )}
 
-            {/* Adsterra native banner — shown after hero */}
+            {/* ── Two ad banners under hero ── */}
             <AdsterraBanner visible type="native" height={90} />
+            <AdsterraBanner visible type="propeller" height={90} />
 
             {/* Content rows */}
             <HRow
