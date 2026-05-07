@@ -13,7 +13,7 @@
 import React, {useState, useCallback, useMemo, useEffect, useRef} from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  ActivityIndicator, Share, Dimensions, StatusBar, Image,
+  ActivityIndicator, Share, Linking, Dimensions, StatusBar, Image,
   Modal, FlatList,
 } from 'react-native';
 import {useRoute, useNavigation} from '@react-navigation/native';
@@ -104,10 +104,12 @@ const rowS = StyleSheet.create({
 
 // ── Episode fetcher ──────────────────────────────────────────────────
 const fetchEpisodes = async (category: string, id: string) => {
-  const episodic = ['series', 'tvshows', 'asian-series', 'anime'];
-  if (!episodic.includes(category)) return null;
-  // All episodic categories use the same unified endpoint: /api/episodes/{category}/{id}
-  const url = `${API_BASE}/api/episodes/${category}/${id}`;
+  const episodic = ['series', 'tvshows', 'asian-series'];
+  const isAnime = category === 'anime';
+  if (!episodic.includes(category) && !isAnime) return null;
+  const url = isAnime
+    ? `${API_BASE}/api/anime-episodes/${id}`
+    : `${API_BASE}/api/episodes/${category}/${id}`;
   const r = await axios.get(url, {timeout: 20000});
   return r.data;
 };
@@ -197,14 +199,11 @@ export const DetailsScreen: React.FC = () => {
     setLoadingEps(true);
     fetchEpisodes(category, item.id)
       .then(data => {
-        // ── Normalize season format ──────────────────────────────────────
-        // Anime: seasons["1"] = [url, url, ...]        (direct array)
-        // Series: seasons["1"] = { episodes: [...] }   (object)
-        // Normalize anime to match series format so the rest of the code works.
+        // Normalize seasons: if a season is a plain array, wrap it into { episodes: [...] }
         if (data?.seasons) {
           Object.keys(data.seasons).forEach(sk => {
             if (Array.isArray(data.seasons[sk])) {
-              data.seasons[sk] = { episodes: data.seasons[sk] };
+              data.seasons[sk] = {episodes: data.seasons[sk]};
             }
           });
         }
@@ -483,6 +482,11 @@ export const DetailsScreen: React.FC = () => {
   const handleShare = () =>
     Share.share({message: `${item.Title} - AbdoBest`});
 
+  const handleReport = () => {
+    const msg = encodeURIComponent(`[Report] ${item.Title} (ID: ${item.id}, Category: ${category})\n\nالمشكلة: `);
+    Linking.openURL(`https://t.me/Abdobestt?text=${msg}`);
+  };
+
   // ── Render ─────────────────────────────────────────────────────────
   return (
     <View style={S.container}>
@@ -497,9 +501,14 @@ export const DetailsScreen: React.FC = () => {
           <TouchableOpacity style={S.navBtn} onPress={() => nav.goBack()}>
             <Image source={require('../../assets/icons/arrow.png')} style={S.iconNav} />
           </TouchableOpacity>
-          <TouchableOpacity style={S.navBtn} onPress={handleShare}>
-            <Image source={require('../../assets/icons/share.png')} style={S.iconNav} />
-          </TouchableOpacity>
+          <View style={S.navBtnGroup}>
+            <TouchableOpacity style={S.navBtn} onPress={handleReport}>
+              <Image source={require('../../assets/icons/flag.png')} style={[S.iconNav, {tintColor: '#94A3B8'}]} />
+            </TouchableOpacity>
+            <TouchableOpacity style={S.navBtn} onPress={handleShare}>
+              <Image source={require('../../assets/icons/share.png')} style={S.iconNav} />
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* ── Title box ── */}
@@ -545,7 +554,7 @@ export const DetailsScreen: React.FC = () => {
           ) : null}
           {displayViews ? (
             <View style={S.pill}>
-              <Image source={require('../../assets/icons/eyes.png')} style={S.pillIcon} />
+              <Image source={require('../../assets/icons/eyes.png')} style={[S.pillIcon, {tintColor: '#fff'}]} />
               <Text style={S.pillTxt}>{displayViews}</Text>
             </View>
           ) : null}
@@ -559,7 +568,7 @@ export const DetailsScreen: React.FC = () => {
         {/* ── Season / Episode count badges (with loading indicator) ── */}
         {isEpisodic && (totalSeasons > 0 || totalEps > 0) && (
           <View style={S.countRow}>
-            {totalSeasons > 1 ? (
+            {totalSeasons >= 1 ? (
               <View style={S.countBadge}>
                 <Text style={S.countBadgeText}>{totalSeasons} {t('seasons')}</Text>
               </View>
@@ -741,7 +750,7 @@ export const DetailsScreen: React.FC = () => {
               <Text style={S.epsTitle}>{t('episodes')}</Text>
               {loadingEps && <ActivityIndicator size="small" color={Colors.dark.primary} style={{marginLeft: 8}} />}
 
-              {seasonKeys.length > 1 && (
+              {seasonKeys.length >= 1 && (
                 <TouchableOpacity
                   style={S.seasonBtn}
                   onPress={() => setShowSeasonDlg(true)}
@@ -895,7 +904,8 @@ const S = StyleSheet.create({
   fallback:   {color: Colors.dark.textMuted, textAlign: 'center', fontFamily: 'Rubik', marginTop: 40},
 
   topNav:     {flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 16, paddingBottom: 12},
-  navBtn:     {width: 42, height: 42, borderRadius: 21, backgroundColor: Colors.dark.surface, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: Colors.dark.border},
+  navBtn:      {width: 42, height: 42, borderRadius: 21, backgroundColor: Colors.dark.surface, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: Colors.dark.border},
+  navBtnGroup: {flexDirection: 'row', gap: 8},
   iconNav:    {width: 20, height: 20, tintColor: Colors.dark.text},
   iconMed:    {width: 20, height: 20},
 
@@ -987,7 +997,7 @@ const S = StyleSheet.create({
   epTitle:         {color: Colors.dark.text, fontSize: 14, fontWeight: '600', fontFamily: 'Rubik'},
   epDur:           {color: Colors.dark.textMuted, fontSize: 12, fontFamily: 'Rubik', marginTop: 2},
   epViewsRow:      {flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 2},
-  epViewsIcon:     {width: 12, height: 12, tintColor: Colors.dark.textMuted},
+  epViewsIcon:     {width: 12, height: 12, tintColor: 'rgba(255,255,255,0.6)'},
   epPlayIcon:      {width: 20, height: 20},
   noEpsWrap:       {alignItems: 'center', paddingVertical: 24, gap: 8},
   noEpsTxt:        {color: Colors.dark.textMuted, fontSize: 14, fontFamily: 'Rubik'},
