@@ -197,6 +197,17 @@ export const DetailsScreen: React.FC = () => {
     setLoadingEps(true);
     fetchEpisodes(category, item.id)
       .then(data => {
+        // ── Normalize season format ──────────────────────────────────────
+        // Anime: seasons["1"] = [url, url, ...]        (direct array)
+        // Series: seasons["1"] = { episodes: [...] }   (object)
+        // Normalize anime to match series format so the rest of the code works.
+        if (data?.seasons) {
+          Object.keys(data.seasons).forEach(sk => {
+            if (Array.isArray(data.seasons[sk])) {
+              data.seasons[sk] = { episodes: data.seasons[sk] };
+            }
+          });
+        }
         setEpData(data);
         if (data?.seasons) setSelSeason(Object.keys(data.seasons)[0] ?? '1');
         // Fetch per-episode view counts — collect all episode URLs across all seasons
@@ -548,7 +559,7 @@ export const DetailsScreen: React.FC = () => {
         {/* ── Season / Episode count badges (with loading indicator) ── */}
         {isEpisodic && (totalSeasons > 0 || totalEps > 0) && (
           <View style={S.countRow}>
-            {totalSeasons >= 1 ? (
+            {totalSeasons > 1 ? (
               <View style={S.countBadge}>
                 <Text style={S.countBadgeText}>{totalSeasons} {t('seasons')}</Text>
               </View>
@@ -730,7 +741,7 @@ export const DetailsScreen: React.FC = () => {
               <Text style={S.epsTitle}>{t('episodes')}</Text>
               {loadingEps && <ActivityIndicator size="small" color={Colors.dark.primary} style={{marginLeft: 8}} />}
 
-              {seasonKeys.length >= 1 && (
+              {seasonKeys.length > 1 && (
                 <TouchableOpacity
                   style={S.seasonBtn}
                   onPress={() => setShowSeasonDlg(true)}
