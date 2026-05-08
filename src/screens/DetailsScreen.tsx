@@ -104,12 +104,14 @@ const rowS = StyleSheet.create({
 
 // ── Episode fetcher ──────────────────────────────────────────────────
 const fetchEpisodes = async (category: string, id: string) => {
-  const episodic = ['series', 'tvshows', 'asian-series'];
-  const isAnime = category === 'anime';
-  if (!episodic.includes(category) && !isAnime) return null;
-  const url = isAnime
-    ? `${API_BASE}/api/anime-episodes/${id}`
-    : `${API_BASE}/api/episodes/${category}/${id}`;
+  const episodic = ['series', 'tvshows', 'asian-series', 'anime'];
+  if (!episodic.includes(category)) return null;
+  // All episodic categories use the same endpoint — the server normalises
+  // the stored JSON (which may have integer season keys or plain URL arrays)
+  // into a consistent shape before sending. Anime previously had its own
+  // endpoint (/api/anime-episodes) which returned a different structure,
+  // causing episode lists to appear empty.
+  const url = `${API_BASE}/api/episodes/${category}/${id}`;
   const r = await axios.get(url, {timeout: 20000});
   return r.data;
 };
@@ -199,13 +201,24 @@ export const DetailsScreen: React.FC = () => {
     setLoadingEps(true);
     fetchEpisodes(category, item.id)
       .then(data => {
-        // Normalize seasons: if a season is a plain array, wrap it into { episodes: [...] }
+        // Normalize into a consistent shape:
+        //   { seasons: { "1": { poster, episodes: [url, ...] }, ... } }
+        //
+        // The server may return any of:
+        //   A) { seasons: { "1": { episodes: [...] } } }  ← series/tvshows/asian
+        //   B) { seasons: { "1": [url, ...] } }           ← anime (plain array)
+        //   C) { episodes: [url, ...] }                   ← flat, no seasons key
         if (data?.seasons) {
           Object.keys(data.seasons).forEach(sk => {
             if (Array.isArray(data.seasons[sk])) {
+              // Case B: plain array → wrap
               data.seasons[sk] = {episodes: data.seasons[sk]};
             }
           });
+        } else if (Array.isArray(data?.episodes)) {
+          // Case C: flat episodes array → synthesise a season 1
+          data.seasons = {'1': {episodes: data.episodes}};
+          delete data.episodes;
         }
         setEpData(data);
         if (data?.seasons) setSelSeason(Object.keys(data.seasons)[0] ?? '1');
