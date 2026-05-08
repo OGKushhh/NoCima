@@ -94,7 +94,9 @@ export const checkApiHealth = async (): Promise<boolean> => {
  */
 const encodeContentId = (id: string): string => {
   if (id.startsWith('http://') || id.startsWith('https://')) {
-    return Buffer.from(id).toString('base64').replace(/\//g, '_').replace(/\+/g, '-').replace(/=/g, '');
+    // btoa() is built into React Native — no Buffer/Node polyfill needed
+    // encodeURIComponent handles Arabic/Unicode chars in episode URLs
+    return btoa(encodeURIComponent(id)).replace(/\//g, '_').replace(/\+/g, '-').replace(/=/g, '');
   }
   return encodeURIComponent(id);
 };

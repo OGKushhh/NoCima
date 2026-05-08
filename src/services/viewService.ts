@@ -9,58 +9,41 @@
 import {storage} from '../storage';
 import {postViewCount} from './api';
 
-const PENDING_PREFIX = 'vpend:';   // vpend:category:id → count
-const INDEX_KEY      = 'vpend_index'; // JSON array of "category:id" keys
-
-// ── Public API ───────────────────────────────────────────────────────
-
-/**
- * Call when user presses Play on any title or episode.
- * Tries to POST immediately; on failure queues for retry.
- */
-export const recordPlay = (contentId: string, category: string): void => {
-  if (!contentId || !category) return;
-
-  // Fire-and-forget: try immediately, fallback to queue
-  postViewCount(category, contentId, 1)
-    .catch(() => {
-      // Network failed — queue it for later retry
-      queuePending(category, contentId, 1);
-    });
-};
-
-/**
- * Retry all previously failed view counts.
- * Call on app launch and on foreground resume.
- */
-export const retrySyncViews = async (): Promise<void> => {
-  const index = readIndex();
-  if (!index.length) return;
-
-  const results = await Promise.allSettled(
-    index.map(async (compositeKey) => {
-      const [category, ...rest] = compositeKey.split(':');
-      const contentId = rest.join(':');
-      const count = storage.getNumber(`${PENDING_PREFIX}${compositeKey}`) ?? 0;
-      if (count <= 0) return compositeKey; // nothing to send, treat as done
-      await postViewCount(category, contentId, count);
-      storage.delete(`${PENDING_PREFIX}${compositeKey}`);
-      return compositeKey;
-    })
-  );
-
-  // Prune index — remove keys we successfully sent
-  const sent = results
-    .filter((r): r is PromiseFulfilledResult<string> => r.status === 'fulfilled')
-    .map(r => r.value);
-  const remaining = index.filter(k => !sent.includes(k));
-  writeIndex(remaining);
-};
+const PENDING_PREFIX = 'vpend:';
+const INDEX_KEY      = 'vpend_index';
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
+/**
+ * Encode contentId for safe use as an MMKV key.
+ * Episode URLs contain colons, slashes, and query chars which can
+ * corrupt MMKV keys. Base64-encode anything that isn't a plain slug.
+ */
+const encodeForKey = (contentId: string): string => {
+  if (/[:/\\?=&]/.test(contentId)) {
+    // React Native's built-in btoa works on ASCII; use manual base64 for URLs
+    // btoa() is built into React Native — no Buffer needed
+    return btoa(encodeURIComponent(contentId))
+      .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+  }
+  return contentId;
+};
+
+const decodeFromKey = (encoded: string): string => {
+  // If it looks like URL-safe base64 (no colons, slashes, etc.), try decoding
+  if (!/[:/\\?=&]/.test(encoded) && encoded.length > 20) {
+    try {
+      const padded = encoded.replace(/-/g, '+').replace(/_/g, '/');
+      const decoded = decodeURIComponent(atob(padded));
+      if (decoded.startsWith('http')) return decoded;
+    } catch {}
+  }
+  return encoded;
+};
+
 const queuePending = (category: string, contentId: string, count: number): void => {
-  const compositeKey = `${category}:${contentId}`;
+  const safeId = encodeForKey(contentId);
+  const compositeKey = `${category}:${safeId}`;
   const storageKey = `${PENDING_PREFIX}${compositeKey}`;
   const current = storage.getNumber(storageKey) ?? 0;
   storage.set(storageKey, current + count);
@@ -81,4 +64,51 @@ const readIndex = (): string[] => {
 
 const writeIndex = (index: string[]): void => {
   storage.set(INDEX_KEY, JSON.stringify(index));
+};
+
+// ── Public API ───────────────────────────────────────────────────────
+
+/**
+ * Call when user presses Play on any title or episode.
+ * Tries to POST immediately; on failure queues for retry.
+ */
+export const recordPlay = (contentId: string, category: string): void => {
+  if (!contentId || !category) return;
+
+  postViewCount(category, contentId, 1)
+    .catch(() => {
+      queuePending(category, contentId, 1);
+    });
+};
+
+/**
+ * Retry all previously failed view counts.
+ * Call on app launch and on foreground resume.
+ */
+export const retrySyncViews = async (): Promise<void> => {
+  const index = readIndex();
+  if (!index.length) return;
+
+  const results = await Promise.allSettled(
+    index.map(async (compositeKey) => {
+      // compositeKey = "category:safeEncodedId"
+      const colonIdx = compositeKey.indexOf(':');
+      const category = compositeKey.slice(0, colonIdx);
+      const safeId   = compositeKey.slice(colonIdx + 1);
+      const contentId = decodeFromKey(safeId);   // restore original URL if encoded
+
+      const count = storage.getNumber(`${PENDING_PREFIX}${compositeKey}`) ?? 0;
+      if (count <= 0) return compositeKey;
+
+      await postViewCount(category, contentId, count);
+      storage.delete(`${PENDING_PREFIX}${compositeKey}`);
+      return compositeKey;
+    })
+  );
+
+  const sent = results
+    .filter((r): r is PromiseFulfilledResult<string> => r.status === 'fulfilled')
+    .map(r => r.value);
+  const remaining = index.filter(k => !sent.includes(k));
+  writeIndex(remaining);
 };
