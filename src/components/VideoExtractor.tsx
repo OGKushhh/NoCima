@@ -252,6 +252,8 @@ const BLOCKED_DOMAINS = [
   'acscdn.com', 'crumpetprankerstench.com', 'propellerads.com',
   'clickadu.com', 'adnxs.com', 'ads.yahoo.com',
   'notix.io', 'pushwoosh.com', 'onesignal.com',
+  'tmll7.com', '1xlite-24510.bar', 'mahjong778jpx.site',
+  'browsecoherentunrefined.com',
 ];
 
 // ── Allowed domains ──────────────────────────────────────────────────────────
