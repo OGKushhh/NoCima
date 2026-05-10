@@ -126,11 +126,43 @@ const AkwamExtractor: React.FC<AkwamExtractorProps> = ({
 
   const handleNavRequest = useCallback((request: { url: string }) => {
     const url = request.url;
-    // Intercept direct mp4 navigations (e.g. redirect straight to file)
-    if (url && (url.includes('.mp4'))) {
-      done(url.split('?')[0].includes('.mp4') ? url : url);
+    if (!url) return true;
+
+    // Always allow these
+    if (url.startsWith('about:') || url.startsWith('data:') || url.startsWith('javascript:')) return true;
+
+    // Capture direct mp4 navigations (server redirects straight to file)
+    if (url.includes('.mp4')) {
+      done(url);
       return false;
     }
+
+    // Handle vlc:// and intent:// schemes (akwam uses these on some devices)
+    if (url.startsWith('vlc://')) { done(url.replace('vlc://', '')); return false; }
+    if (url.startsWith('intent://')) {
+      const m = url.match(/intent:\/\/(https?:\/\/[^#;]+)/);
+      if (m) done(m[1]);
+      return false;
+    }
+
+    // ── Allowlist — only akwam and its CDN ───────────────────────────────────
+    // Everything else (ad networks, popups, redirectors) is blocked.
+    // This is the key fix: the shortener page's ad script does window.location
+    // redirects to shounsirgie.net and similar — blocking them keeps the WebView
+    // on the akwam pages so our JS hooks can fire.
+    const ALLOWED_HOSTS = [
+      'akwam.com.co',
+      'go.akwam.com.co',
+      'akw.cam',
+      'two.akw.cam',
+      'downet.net',
+    ];
+    const isAllowed = ALLOWED_HOSTS.some(h => url.includes(h));
+    if (!isAllowed) {
+      console.log('[AkwamExtractor] blocked nav:', url.substring(0, 80));
+      return false;
+    }
+
     return true;
   }, [done]);
 
