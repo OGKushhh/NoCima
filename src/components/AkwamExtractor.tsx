@@ -41,7 +41,7 @@ interface AkwamExtractorProps {
 
 // ── Injection script ──────────────────────────────────────────────────────────
 // Runs after every page load. Checks what page we're on and either:
-// 1. Clicks the "download-link" on the intermediate page
+// 1. Clicks the "download-link" / "click here" on the intermediate page
 // 2. Extracts the mp4 from the final page and posts it
 const AKWAM_JS = `
 (function() {
@@ -51,73 +51,89 @@ const AKWAM_JS = `
     try { window.ReactNativeWebView.postMessage(JSON.stringify({type: type, data: data})); } catch(e) {}
   }
 
-  post('debug', 'AKWAM: page loaded: ' + url.substring(0, 100));
+  post('debug', 'AKWAM: page loaded: ' + url.substring(0, 120));
 
-  // ── Stage 1: Shortener "Click here" intermediate page ──────────────────────
-  // This page has class="download-link" with the real akwam URL in href.
-  // Navigate to it automatically — no user click needed.
-  var clickLink = document.querySelector('a.download-link');
-  if (clickLink && clickLink.href) {
-    var target = clickLink.href;
-    post('debug', 'AKWAM: found download-link, navigating to: ' + target.substring(0, 100));
-    window.location.href = target;
-    return;
+  // ── Stage 1: "Click here" intermediate page ────────────────────────────────
+  // Akwam shortener pages have different possible selectors for the real link.
+  // Try each in order and navigate as soon as we find one.
+  var candidates = [
+    document.querySelector('a.download-link'),
+    document.querySelector('a.click-here'),
+    document.querySelector('a[class*="download-link"]'),
+    document.querySelector('a[class*="btn-download"]'),
+    // The shortener page often has a big centred "Click Here" button
+    document.querySelector('a.btn.btn-success'),
+    document.querySelector('a.btn.btn-primary'),
+    // Generic: any <a> whose text contains "click" (case-insensitive)
+    (function() {
+      var links = document.querySelectorAll('a');
+      for (var i = 0; i < links.length; i++) {
+        var txt = (links[i].textContent || '').toLowerCase().trim();
+        var href = links[i].href || '';
+        if ((txt.indexOf('click') !== -1 || txt.indexOf('اضغط') !== -1) &&
+            href && href.indexOf('akwam') !== -1) {
+          return links[i];
+        }
+      }
+      return null;
+    })(),
+  ];
+
+  for (var ci = 0; ci < candidates.length; ci++) {
+    var link = candidates[ci];
+    if (link && link.href && link.href.indexOf('akwam') !== -1) {
+      post('debug', 'AKWAM: clicking intermediate link [' + ci + ']: ' + link.href.substring(0, 100));
+      // Simulate a real click first (triggers any JS handlers), then navigate as fallback
+      try { link.click(); } catch(e) {}
+      setTimeout(function() {
+        if (window.location.href === url) window.location.href = link.href;
+      }, 300);
+      return;
+    }
   }
 
   // ── Stage 2: Final WATCH page ──────────────────────────────────────────────
-  // akwam.com.co/watch/... has <source src="...mp4" type="video/mp4">
   if (url.indexOf('/watch/') !== -1 && url.indexOf('akwam') !== -1) {
-    // Try <source> tag first
     var source = document.querySelector('source[type="video/mp4"][src]');
     if (source && source.src && source.src.indexOf('.mp4') !== -1) {
       post('mp4', source.src);
       return;
     }
-    // Fallback: vlc:// link contains the mp4 URL
     var vlcLink = document.querySelector('a[href^="vlc://"]');
     if (vlcLink && vlcLink.href) {
       var mp4 = vlcLink.href.replace('vlc://', '');
-      if (mp4.indexOf('.mp4') !== -1) {
-        post('mp4', mp4);
-        return;
-      }
+      if (mp4.indexOf('.mp4') !== -1) { post('mp4', mp4); return; }
     }
-    // Fallback: look for downet.net URLs anywhere in page
     var bodyText = document.body ? document.body.innerHTML : '';
     var match = bodyText.match(/https?:\\/\\/[^"'<>\\s]+\\.mp4/);
-    if (match) {
-      post('mp4', match[0]);
-      return;
-    }
+    if (match) { post('mp4', match[0]); return; }
     post('debug', 'AKWAM: on watch page but no mp4 found yet');
     return;
   }
 
   // ── Stage 2: Final DOWNLOAD page ──────────────────────────────────────────
-  // akwam.com.co/download/... has <a class="link btn btn-light" download href="...mp4">
   if (url.indexOf('/download/') !== -1 && url.indexOf('akwam') !== -1) {
     // Primary: the download button
     var dlBtn = document.querySelector('a.link.btn[download]');
     if (dlBtn && dlBtn.href && dlBtn.href.indexOf('.mp4') !== -1) {
-      post('mp4', dlBtn.href);
-      return;
+      post('mp4', dlBtn.href); return;
     }
-    // Fallback: any link with .mp4 in href from downet.net
-    var links = document.querySelectorAll('a[href*=".mp4"]');
-    for (var i = 0; i < links.length; i++) {
-      var h = links[i].href;
-      if (h && h.indexOf('downet.net') !== -1) {
-        post('mp4', h);
-        return;
-      }
+    // Secondary: any btn with download attr
+    var dlBtns = document.querySelectorAll('a[download]');
+    for (var di = 0; di < dlBtns.length; di++) {
+      var h = dlBtns[di].href;
+      if (h && h.indexOf('.mp4') !== -1) { post('mp4', h); return; }
+    }
+    // Tertiary: any link with .mp4 in href
+    var allLinks = document.querySelectorAll('a[href*=".mp4"]');
+    for (var li = 0; li < allLinks.length; li++) {
+      var lh = allLinks[li].href;
+      if (lh) { post('mp4', lh); return; }
     }
     // Fallback: regex in page body
     var bodyHtml = document.body ? document.body.innerHTML : '';
     var m = bodyHtml.match(/https?:\\/\\/[^"'<>\\s]+\\.mp4/);
-    if (m) {
-      post('mp4', m[0]);
-      return;
-    }
+    if (m) { post('mp4', m[0]); return; }
     post('debug', 'AKWAM: on download page but no mp4 found yet');
     return;
   }
@@ -127,17 +143,21 @@ const AKWAM_JS = `
 true;
 `;
 
-// Allowed domains — block everything else to avoid ads/redirects hijacking the WebView
+// Allowed domains — anything NOT in this list is blocked (ads, trackers, redirects)
+// The allowlist approach is stricter than a blocklist and more reliable.
 const ALLOWED = [
   'go.akwam.com.co',
   'akwam.com.co',
   'akw.cam',
-  'downet.net',          // actual mp4 host
-  's204d1.downet.net',
-  's203d1.downet.net',
-  's301d4.downet.net',
-  's301d6.downet.net',
-  's302d2.downet.net',
+  'downet.net',
+  // Known CDN subdomains used by downet.net for actual mp4 delivery
+  's201d1.downet.net', 's202d1.downet.net', 's203d1.downet.net', 's204d1.downet.net',
+  's301d1.downet.net', 's301d2.downet.net', 's301d3.downet.net', 's301d4.downet.net',
+  's301d5.downet.net', 's301d6.downet.net', 's302d1.downet.net', 's302d2.downet.net',
+  's401d1.downet.net', 's402d1.downet.net',
+  // Google/Cloudflare needed for page JS (fonts, analytics stripped by block)
+  'fonts.googleapis.com',
+  'fonts.gstatic.com',
 ];
 
 const AkwamExtractor: React.FC<AkwamExtractorProps> = ({

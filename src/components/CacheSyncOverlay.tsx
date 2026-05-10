@@ -20,18 +20,19 @@ import { syncAllWithProgress, SyncProgress, SYNC_CATEGORIES } from '../services/
 
 // ── Category display names ────────────────────────────────────────────────────
 const CAT_LABELS: Record<string, { ar: string; en: string }> = {
-  movies:         { ar: 'أفلام',              en: 'Movies' },
-  series:         { ar: 'مسلسلات',            en: 'Series' },
-  anime:          { ar: 'أنمي',               en: 'Anime' },
-  tvshows:        { ar: 'برامج تلفزيونية',    en: 'TV Shows' },
-  'asian-series': { ar: 'مسلسلات آسيوية',    en: 'Asian Series' },
-  'dubbed-movies':{ ar: 'أفلام مدبلجة',       en: 'Dubbed Movies' },
-  hindi:          { ar: 'هندي',               en: 'Hindi' },
-  'asian-movies': { ar: 'أفلام آسيوية',       en: 'Asian Movies' },
-  'anime-movies': { ar: 'أفلام أنمي',         en: 'Anime Movies' },
-  trending:       { ar: 'الأكثر مشاهدة',      en: 'Trending' },
-  featured:       { ar: 'مميز',               en: 'Featured' },
-  done:           { ar: 'اكتمل!',             en: 'Done!' },
+  movies:          { ar: 'أفلام',              en: 'Movies' },
+  series:          { ar: 'مسلسلات',            en: 'Series' },
+  anime:           { ar: 'أنمي',               en: 'Anime' },
+  tvshows:         { ar: 'برامج تلفزيونية',    en: 'TV Shows' },
+  'asian-series':  { ar: 'مسلسلات آسيوية',    en: 'Asian Series' },
+  'arabic-series': { ar: 'مسلسلات عربية',      en: 'Arabic Series' },
+  'dubbed-movies': { ar: 'أفلام مدبلجة',       en: 'Dubbed Movies' },
+  hindi:           { ar: 'هندي',               en: 'Hindi' },
+  'asian-movies':  { ar: 'أفلام آسيوية',       en: 'Asian Movies' },
+  'anime-movies':  { ar: 'أفلام أنمي',         en: 'Anime Movies' },
+  trending:        { ar: 'الأكثر مشاهدة',      en: 'Trending' },
+  featured:        { ar: 'مميز',               en: 'Featured' },
+  done:            { ar: 'اكتمل!',             en: 'Done!' },
 };
 
 // ── Hook: useCacheSync ────────────────────────────────────────────────────────

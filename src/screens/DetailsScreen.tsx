@@ -887,9 +887,6 @@ export const DetailsScreen: React.FC = () => {
           ) : null}
           {epDuration && epDuration !== 'min\u062F' ? <InfoRow label={t('episode_duration')} value={epDuration} /> : null}
           {!isEpisodic && runtime ? <InfoRow label={t('duration')} value={runtime} /> : null}
-          {votes ? <InfoRow label={t('votes')} value={Number(votes).toLocaleString()} /> : null}
-          {dateAdded ? <InfoRow label={t('date_added')} value={dateAdded} /> : null}
-          {dateUpdated ? <InfoRow label={t('date_updated')} value={dateUpdated} /> : null}
           {rating ? (
             <View style={rowS.row}>
               <Text style={rowS.label}>{t('rating')}</Text>
@@ -899,6 +896,9 @@ export const DetailsScreen: React.FC = () => {
               </View>
             </View>
           ) : null}
+          {votes ? <InfoRow label={t('votes')} value={Number(votes).toLocaleString()} /> : null}
+          {dateAdded ? <InfoRow label={t('date_added')} value={dateAdded} /> : null}
+          {dateUpdated ? <InfoRow label={t('date_updated')} value={dateUpdated} /> : null}
         </View>
 
         {/* ── Episodes section (series/anime) ── */}
@@ -921,10 +921,11 @@ export const DetailsScreen: React.FC = () => {
               )}
             </View>
 
-            {seasonPoster ? (
+            {/* Poster: season poster for regular series, item poster for arabic-series */}
+            {(seasonPoster || (isArabicSeries && ((raw as any).poster || item['Image Source']))) ? (
               <View style={S.seasonPosterWrap}>
                 <FastImage
-                  source={{uri: seasonPoster}}
+                  source={{uri: seasonPoster || (raw as any).poster || item['Image Source']}}
                   style={S.seasonPoster}
                   resizeMode={FastImage.resizeMode.cover}
                   fallback
