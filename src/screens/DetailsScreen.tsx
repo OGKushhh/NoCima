@@ -167,7 +167,11 @@ export const DetailsScreen: React.FC = () => {
   const [showSeasonDlg, setShowSeasonDlg] = useState(false);
 
   // Rating fetch state
-  const [rating, setRating] = useState<string>('');
+  const [rating, setRating] = useState<string>(() => {
+    // arabic-series has rating float directly on the item — pre-fill immediately
+    const preRating = (item as any).rating ?? (item as any).Rating ?? '';
+    return preRating ? String(preRating) : '';
+  });
   const [ratingLoading, setRatingLoading] = useState(false);
   const [showLightbox, setShowLightbox] = useState(false);
 
@@ -198,6 +202,12 @@ export const DetailsScreen: React.FC = () => {
   const akwamCallbackRef = useRef<((mp4: string) => void) | null>(null);
 
   // ── Fetch rating ──────────────────────────────────────────────────
+  const [apiVotes, setApiVotes] = useState<string>(() => {
+    // arabic-series has votes directly on item
+    const v = (item as any).votes;
+    return v ? String(v) : '';
+  });
+
   useEffect(() => {
     if (!item?.id || !category) return;
     setRatingLoading(true);
@@ -208,6 +218,8 @@ export const DetailsScreen: React.FC = () => {
         if (data && !data.error) {
           const val = data.rating || data.imdb_rating || data.score || data.Rating || '';
           if (val) setRating(String(val));
+          const v = data.votes || data.vote_count || data.numVotes || data.Votes || '';
+          if (v) setApiVotes(String(v));
         }
       })
       .catch(() => {})
@@ -360,13 +372,13 @@ export const DetailsScreen: React.FC = () => {
                       : (raw.quality && raw.quality !== 'N/A') ? raw.quality : '';
   const numEps      = raw['Number Of Episodes'] ?? raw.episode_count ?? raw.NumberOfEpisodes ?? null;
   const numEpsText  = raw['Number Of Episodes Text'] || (numEps ? String(numEps) : '');
-  const epDuration  = raw.EpisodeDuration || raw.runtime || '';
+  const epDuration  = raw.EpisodeDuration || (isArabicSeries ? raw.runtime : '') || '';
   const status      = raw.Status || '';
   const viewingLvl = raw.ViewingLevel || '';
-  const runtime = raw.runtime ? raw.runtime : fmtRuntime(item.Runtime);
+  const runtime = isArabicSeries ? '' : (fmtRuntime(item.Runtime) || '');
   const viewType = raw.Type || '';
   // Arabic-series specific metadata
-  const votes       = raw.votes ? String(raw.votes) : '';
+  const votes       = apiVotes;  // populated from item.votes (arabic-series) or API response
   const dateAdded   = raw.date_added ? String(raw.date_added).slice(0, 10) : '';
   const dateUpdated = raw.date_updated ? String(raw.date_updated).slice(0, 10) : '';
 
@@ -504,22 +516,24 @@ export const DetailsScreen: React.FC = () => {
   }, [category, nav]);
 
   const handlePlayArabicEpisode = useCallback((ep: ArabicEpisode) => {
-    const auto = resolveQuality(ep.sources, preferredQuality);
-    if (auto) {
-      showInterstitial(() => startAkwamWatch(auto, ep), 'play');
-    } else {
-      setQualityModalMode('play');
-      setQualityModalEp(ep);
-    }
-  }, [preferredQuality, showInterstitial, startAkwamWatch]);
+    // Always show quality picker — no auto-pick, keeps choice explicit
+    setQualityModalMode('play');
+    setQualityModalEp(ep);
+  }, []);
 
   const handleArabicQualitySelected = useCallback((src: ArabicEpisodeSource, ep: ArabicEpisode) => {
     setQualityModalEp(null);
     if (qualityModalMode === 'download') {
-      // Download: use download_url directly
+      // Must resolve the shortener URL → real .mp4 via AkwamExtractor before downloading
       const epItem: ContentItem = {...item, Title: ep.title};
-      startDownload(epItem, src.download_url)
-        .catch(e => console.warn('[Details] arabic download error:', e));
+      akwamCallbackRef.current = (mp4: string) => {
+        setAkwamUrl(null);
+        startDownload(epItem, mp4)
+          .then(() => showDownloadStarted(ep.title))
+          .catch(e => console.warn('[Details] arabic download error:', e));
+      };
+      setAkwamMode('download');
+      setAkwamUrl(src.download_url);
     } else {
       showInterstitial(() => startAkwamWatch(src, ep), 'play');
     }
@@ -612,6 +626,17 @@ export const DetailsScreen: React.FC = () => {
     const msg = lang === 'ar' ? 'ميزة التحميل قريباً! 🚀' : 'Downloads coming soon! 🚀';
     if (Platform.OS === 'android') {
       ToastAndroid.show(msg, ToastAndroid.SHORT);
+    } else {
+      Alert.alert('', msg);
+    }
+  };
+
+  const showDownloadStarted = (title: string) => {
+    const msg = lang === 'ar'
+      ? `⬇ بدأ التحميل: ${title}`
+      : `⬇ Download started: ${title}`;
+    if (Platform.OS === 'android') {
+      ToastAndroid.show(msg, ToastAndroid.LONG);
     } else {
       Alert.alert('', msg);
     }
@@ -761,21 +786,15 @@ export const DetailsScreen: React.FC = () => {
           </View>
 
           <TouchableOpacity
-            style={[S.dlBtn, isArabicSeries && S.dlBtnBlue, (extracting || downloading) && {opacity: 0.5}]}
+            style={[S.dlBtn, (extracting || downloading) && {opacity: 0.5}]}
             activeOpacity={0.84}
             disabled={extracting || downloading}
             onPress={isArabicSeries ? () => setShowBulkDownload(true) : handleDownload}
           >
             {downloading ? (
-              <>
-                <ActivityIndicator color={Colors.dark.accentLight} size="small" />
-                <Text style={S.dlBtnTxt}>{t('starting_download')}</Text>
-              </>
+              <ActivityIndicator color={'#fff'} size="small" />
             ) : (
-              <>
-                <Image source={require('../../assets/icons/download-to-storage-drive.png')} style={[S.iconMed, {tintColor: isArabicSeries ? '#fff' : Colors.dark.accentLight}]} />
-                {!isArabicSeries && <Text style={S.dlBtnTxt}>{t('download')}</Text>}
-              </>
+              <Image source={require('../../assets/icons/download-to-storage-drive.png')} style={[S.iconMed, {tintColor: '#fff'}]} />
             )}
           </TouchableOpacity>
         </View>
@@ -868,8 +887,7 @@ export const DetailsScreen: React.FC = () => {
           ) : null}
           {epDuration && epDuration !== 'min\u062F' ? <InfoRow label={t('episode_duration')} value={epDuration} /> : null}
           {!isEpisodic && runtime ? <InfoRow label={t('duration')} value={runtime} /> : null}
-          {isArabicSeries && runtime ? <InfoRow label={t('episode_duration')} value={runtime} /> : null}
-          {votes ? <InfoRow label={t('votes')} value={votes} /> : null}
+          {votes ? <InfoRow label={t('votes')} value={Number(votes).toLocaleString()} /> : null}
           {dateAdded ? <InfoRow label={t('date_added')} value={dateAdded} /> : null}
           {dateUpdated ? <InfoRow label={t('date_updated')} value={dateUpdated} /> : null}
           {rating ? (
@@ -930,8 +948,8 @@ export const DetailsScreen: React.FC = () => {
                     <View style={[S.epNumCircle, isExtractingThis && S.epNumActive]}>
                       <Text style={[S.epNum, isExtractingThis && S.epNumActiveTxt]}>{idx + 1}</Text>
                     </View>
-                    <TouchableOpacity style={S.epNumCircle} onPress={showComingSoon}>
-                      <Image source={require('../../assets/icons/download-to-storage-drive.png')} style={[S.epPlayIcon, {tintColor: Colors.dark.primary}]} />
+                    <TouchableOpacity style={S.epDownloadBtn} onPress={showComingSoon}>
+                      <Image source={require('../../assets/icons/download-to-storage-drive.png')} style={[S.epPlayIcon, {tintColor: Colors.dark.accent}]} />
                     </TouchableOpacity>
                     <View style={S.epInfo}>
                       <Text style={S.epTitle}>{t('episode')} {idx + 1}</Text>
@@ -947,7 +965,7 @@ export const DetailsScreen: React.FC = () => {
                     ) : (
                       <Image
                         source={require('../../assets/icons/flash.png')}
-                        style={[S.epPlayIcon, {tintColor: Colors.dark.primary}]}
+                        style={[S.epPlayIcon, {tintColor: '#FFD700'}]}
                       />
                     )}
                   </TouchableOpacity>
@@ -974,15 +992,7 @@ export const DetailsScreen: React.FC = () => {
                   </Text>
                 </View>
                 <View style={{flex: 1}}>
-                  <View style={{flexDirection: 'row', gap: 6, flexWrap: 'wrap'}}>
-                    {ep.sources.map((src, si) => (
-                      <View key={si} style={{backgroundColor: `${Colors.dark.primary}20`, borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2}}>
-                        <Text style={{color: Colors.dark.primary, fontSize: 10, fontFamily: 'Rubik', fontWeight: '700'}}>
-                          {src.quality}
-                        </Text>
-                      </View>
-                    ))}
-                  </View>
+                  <Text style={S.epTitle} numberOfLines={1}>{t('episode')} {ep.number}</Text>
                 </View>
                 {/* Download button — opens quality picker for download */}
                 <TouchableOpacity
@@ -1180,9 +1190,8 @@ const S = StyleSheet.create({
   splitBtnMain:  {flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingHorizontal: 10},
   splitBtnSide:  {width: 54, alignItems: 'center', justifyContent: 'center'},
   splitDivider:  {width: 1, marginVertical: 14, backgroundColor: 'rgba(255,255,255,0.25)'},
-  dlBtn:         {flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', height: 54, borderRadius: 16, backgroundColor: Colors.dark.surface, gap: 8, borderWidth: 1.5, borderColor: Colors.dark.accentLight},
-  dlBtnBlue:     {backgroundColor: Colors.dark.accent, borderColor: Colors.dark.accent, flex: 0, width: 54},
-  dlBtnTxt:      {color: Colors.dark.accentLight, fontSize: 15, fontWeight: '700', fontFamily: 'Rubik'},
+  dlBtn:         {width: 54, height: 54, borderRadius: 16, backgroundColor: Colors.dark.accent, alignItems: 'center', justifyContent: 'center', elevation: 4, shadowColor: Colors.dark.accent, shadowOffset: {width: 0, height: 2}, shadowOpacity: 0.4, shadowRadius: 6},
+  dlBtnTxt:      {color: '#fff', fontSize: 15, fontWeight: '700', fontFamily: 'Rubik'},
   epDownloadBtn: {width: 38, height: 38, borderRadius: 19, backgroundColor: `${Colors.dark.accent}20`, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: `${Colors.dark.accent}40`, marginRight: 4},
 
   errBanner: {marginHorizontal: 18, marginBottom: 12, backgroundColor: `${Colors.dark.error}14`, borderRadius: 14, padding: 16, borderWidth: 1, borderColor: `${Colors.dark.error}40`},

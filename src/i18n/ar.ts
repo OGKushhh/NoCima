@@ -142,7 +142,7 @@ export const ar = {
   badge_tvshow: 'برنامج تلفزيوني',
   badge_kdrama: 'مسلسل كوري',
   arabic_series: 'مسلسلات عربية',
-  votes: 'تقييمات',
+  votes: 'عدد الأصوات',
   date_added: 'تاريخ الإضافة',
   date_updated: 'آخر تحديث',
   episode_number: 'حلقة',
