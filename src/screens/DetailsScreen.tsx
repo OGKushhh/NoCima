@@ -188,6 +188,7 @@ export const DetailsScreen: React.FC = () => {
   // ── Arabic-series / Akwam specific state ─────────────────────────────────
   const [arabicEpisodes,   setArabicEpisodes]   = useState<ArabicEpisode[]>([]);
   const [qualityModalEp,   setQualityModalEp]   = useState<ArabicEpisode | null>(null);
+  const [qualityModalMode, setQualityModalMode] = useState<'play' | 'download'>('play');
   const [showBulkDownload, setShowBulkDownload] = useState(false);
   const preferredQuality: string = isArabicSeries ? (getSettings()?.playerQuality ?? 'auto') : 'auto';
 
@@ -354,15 +355,20 @@ export const DetailsScreen: React.FC = () => {
   const year        = formatYear(raw.Year || raw.ReleaseDate);
   const releaseDate = formatYear(raw.ReleaseDate || raw.Year);
   const country     = item.Country || '';
-  const language    = raw.Language || '';
-  const format      = (item.Format && item.Format !== 'N/A') ? item.Format : '';
-  const numEps      = raw['Number Of Episodes'] ?? null;
+  const language    = raw.Language || raw.language || '';
+  const format      = (item.Format && item.Format !== 'N/A') ? item.Format
+                      : (raw.quality && raw.quality !== 'N/A') ? raw.quality : '';
+  const numEps      = raw['Number Of Episodes'] ?? raw.episode_count ?? raw.NumberOfEpisodes ?? null;
   const numEpsText  = raw['Number Of Episodes Text'] || (numEps ? String(numEps) : '');
-  const epDuration  = raw.EpisodeDuration || '';
+  const epDuration  = raw.EpisodeDuration || raw.runtime || '';
   const status      = raw.Status || '';
   const viewingLvl = raw.ViewingLevel || '';
-  const runtime = fmtRuntime(item.Runtime);
+  const runtime = raw.runtime ? raw.runtime : fmtRuntime(item.Runtime);
   const viewType = raw.Type || '';
+  // Arabic-series specific metadata
+  const votes       = raw.votes ? String(raw.votes) : '';
+  const dateAdded   = raw.date_added ? String(raw.date_added).slice(0, 10) : '';
+  const dateUpdated = raw.date_updated ? String(raw.date_updated).slice(0, 10) : '';
 
   // Status display with translation
   const displayStatus = useMemo(() => {
@@ -502,14 +508,22 @@ export const DetailsScreen: React.FC = () => {
     if (auto) {
       showInterstitial(() => startAkwamWatch(auto, ep), 'play');
     } else {
+      setQualityModalMode('play');
       setQualityModalEp(ep);
     }
   }, [preferredQuality, showInterstitial, startAkwamWatch]);
 
   const handleArabicQualitySelected = useCallback((src: ArabicEpisodeSource, ep: ArabicEpisode) => {
     setQualityModalEp(null);
-    showInterstitial(() => startAkwamWatch(src, ep), 'play');
-  }, [showInterstitial, startAkwamWatch]);
+    if (qualityModalMode === 'download') {
+      // Download: use download_url directly
+      const epItem: ContentItem = {...item, Title: ep.title};
+      startDownload(epItem, src.download_url)
+        .catch(e => console.warn('[Details] arabic download error:', e));
+    } else {
+      showInterstitial(() => startAkwamWatch(src, ep), 'play');
+    }
+  }, [qualityModalMode, item, showInterstitial, startAkwamWatch]);
 
   const handleAkwamExtracted = useCallback((mp4: string) => {
     akwamCallbackRef.current?.(mp4);
@@ -634,9 +648,9 @@ export const DetailsScreen: React.FC = () => {
 
         {/* ── Poster (no lightbox by default, but you can add one) ── */}
         <View style={S.posterWrap}>
-          {item['Image Source'] ? (
+          {(item['Image Source'] || (raw as any).Image || (raw as any).poster) ? (
             <FastImage
-              source={{uri: seasonPoster || item['Image Source']}}
+              source={{uri: seasonPoster || item['Image Source'] || (raw as any).Image || (raw as any).poster}}
               style={S.poster}
               resizeMode={FastImage.resizeMode.cover}
               fallback
@@ -747,7 +761,7 @@ export const DetailsScreen: React.FC = () => {
           </View>
 
           <TouchableOpacity
-            style={[S.dlBtn, (extracting || downloading) && {opacity: 0.5}]}
+            style={[S.dlBtn, isArabicSeries && S.dlBtnBlue, (extracting || downloading) && {opacity: 0.5}]}
             activeOpacity={0.84}
             disabled={extracting || downloading}
             onPress={isArabicSeries ? () => setShowBulkDownload(true) : handleDownload}
@@ -759,8 +773,8 @@ export const DetailsScreen: React.FC = () => {
               </>
             ) : (
               <>
-                <Image source={require('../../assets/icons/download-to-storage-drive.png')} style={[S.iconMed, {tintColor: Colors.dark.accentLight}]} />
-                <Text style={S.dlBtnTxt}>{t('download')}</Text>
+                <Image source={require('../../assets/icons/download-to-storage-drive.png')} style={[S.iconMed, {tintColor: isArabicSeries ? '#fff' : Colors.dark.accentLight}]} />
+                {!isArabicSeries && <Text style={S.dlBtnTxt}>{t('download')}</Text>}
               </>
             )}
           </TouchableOpacity>
@@ -854,6 +868,10 @@ export const DetailsScreen: React.FC = () => {
           ) : null}
           {epDuration && epDuration !== 'min\u062F' ? <InfoRow label={t('episode_duration')} value={epDuration} /> : null}
           {!isEpisodic && runtime ? <InfoRow label={t('duration')} value={runtime} /> : null}
+          {isArabicSeries && runtime ? <InfoRow label={t('episode_duration')} value={runtime} /> : null}
+          {votes ? <InfoRow label={t('votes')} value={votes} /> : null}
+          {dateAdded ? <InfoRow label={t('date_added')} value={dateAdded} /> : null}
+          {dateUpdated ? <InfoRow label={t('date_updated')} value={dateUpdated} /> : null}
           {rating ? (
             <View style={rowS.row}>
               <Text style={rowS.label}>{t('rating')}</Text>
@@ -869,9 +887,6 @@ export const DetailsScreen: React.FC = () => {
         {isEpisodic && (
           <View style={S.epsSection}>
             <View style={S.epsHeader}>
-              <TouchableOpacity style={S.epNumCircle} onPress={showComingSoon}>
-                <Image source={require('../../assets/icons/download-to-storage-drive.png')} style={[S.sectionIcon, {tintColor: Colors.dark.primary}]} />
-              </TouchableOpacity>
               <Text style={S.epsTitle}>{t('episodes')}</Text>
               {loadingEps && <ActivityIndicator size="small" color={Colors.dark.primary} style={{marginLeft: 8}} />}
 
@@ -959,8 +974,7 @@ export const DetailsScreen: React.FC = () => {
                   </Text>
                 </View>
                 <View style={{flex: 1}}>
-                  <Text style={S.epTitle} numberOfLines={1}>{ep.title}</Text>
-                  <View style={{flexDirection: 'row', gap: 6, marginTop: 4, flexWrap: 'wrap'}}>
+                  <View style={{flexDirection: 'row', gap: 6, flexWrap: 'wrap'}}>
                     {ep.sources.map((src, si) => (
                       <View key={si} style={{backgroundColor: `${Colors.dark.primary}20`, borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2}}>
                         <Text style={{color: Colors.dark.primary, fontSize: 10, fontFamily: 'Rubik', fontWeight: '700'}}>
@@ -970,9 +984,24 @@ export const DetailsScreen: React.FC = () => {
                     ))}
                   </View>
                 </View>
+                {/* Download button — opens quality picker for download */}
+                <TouchableOpacity
+                  style={S.epDownloadBtn}
+                  activeOpacity={0.7}
+                  onPress={(e) => {
+                    e.stopPropagation();
+                    setQualityModalMode('download');
+                    setQualityModalEp(ep);
+                  }}
+                >
+                  <Image
+                    source={require('../../assets/icons/download-to-storage-drive.png')}
+                    style={[S.epPlayIcon, {tintColor: Colors.dark.accent}]}
+                  />
+                </TouchableOpacity>
                 <Image
-                  source={require('../../assets/icons/play.png')}
-                  style={[S.epPlayIcon, {tintColor: Colors.dark.primary}]}
+                  source={require('../../assets/icons/flash.png')}
+                  style={[S.epPlayIcon, {tintColor: '#FFD700'}]}
                 />
               </TouchableOpacity>
             ))}
@@ -1009,6 +1038,7 @@ export const DetailsScreen: React.FC = () => {
         visible={!!qualityModalEp}
         episode={qualityModalEp}
         preferredQuality={preferredQuality}
+        mode={qualityModalMode}
         onSelect={handleArabicQualitySelected}
         onClose={() => setQualityModalEp(null)}
       />
@@ -1151,7 +1181,9 @@ const S = StyleSheet.create({
   splitBtnSide:  {width: 54, alignItems: 'center', justifyContent: 'center'},
   splitDivider:  {width: 1, marginVertical: 14, backgroundColor: 'rgba(255,255,255,0.25)'},
   dlBtn:         {flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', height: 54, borderRadius: 16, backgroundColor: Colors.dark.surface, gap: 8, borderWidth: 1.5, borderColor: Colors.dark.accentLight},
+  dlBtnBlue:     {backgroundColor: Colors.dark.accent, borderColor: Colors.dark.accent, flex: 0, width: 54},
   dlBtnTxt:      {color: Colors.dark.accentLight, fontSize: 15, fontWeight: '700', fontFamily: 'Rubik'},
+  epDownloadBtn: {width: 38, height: 38, borderRadius: 19, backgroundColor: `${Colors.dark.accent}20`, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: `${Colors.dark.accent}40`, marginRight: 4},
 
   errBanner: {marginHorizontal: 18, marginBottom: 12, backgroundColor: `${Colors.dark.error}14`, borderRadius: 14, padding: 16, borderWidth: 1, borderColor: `${Colors.dark.error}40`},
   errTop:    {flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 6, gap: 8},

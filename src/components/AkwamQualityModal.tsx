@@ -16,6 +16,7 @@ interface Props {
   visible: boolean;
   episode: ArabicEpisode | null;
   preferredQuality: string; // from settings: 'auto' | '1080' | '720' | '480' | '360'
+  mode?: 'play' | 'download';
   onSelect: (source: ArabicEpisodeSource, episode: ArabicEpisode) => void;
   onClose: () => void;
 }
@@ -44,9 +45,11 @@ export function resolveQuality(
 }
 
 const AkwamQualityModal: React.FC<Props> = ({
-  visible, episode, preferredQuality, onSelect, onClose,
+  visible, episode, preferredQuality, mode = 'play', onSelect, onClose,
 }) => {
   if (!episode) return null;
+
+  const isDownload = mode === 'download';
 
   const qualityColor = (q: string) => {
     if (q.includes('1080')) return '#FF4500';
@@ -61,8 +64,12 @@ const AkwamQualityModal: React.FC<Props> = ({
         <Pressable style={styles.card} onPress={() => {}}>
 
           {/* Title */}
-          <Text style={styles.title} numberOfLines={2}>{episode.title}</Text>
-          <Text style={styles.subtitle}>اختر الجودة / Select Quality</Text>
+          <Text style={styles.title} numberOfLines={2}>
+            {isDownload ? '⬇  تحميل / Download' : episode.title}
+          </Text>
+          <Text style={styles.subtitle}>
+            {isDownload ? 'اختر الجودة للتحميل / Select Quality to Download' : 'اختر الجودة / Select Quality'}
+          </Text>
 
           {/* Quality options */}
           {episode.sources.map((src, i) => (
@@ -86,8 +93,8 @@ const AkwamQualityModal: React.FC<Props> = ({
                   </Text>
                 ) : null}
               </View>
-              <View style={styles.playIcon}>
-                <Text style={styles.playText}>▶</Text>
+              <View style={[styles.playIcon, isDownload && styles.downloadIcon]}>
+                <Text style={styles.playText}>{isDownload ? '⬇' : '▶'}</Text>
               </View>
             </TouchableOpacity>
           ))}
@@ -171,6 +178,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#FF4500',
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  downloadIcon: {
+    backgroundColor: '#1565C0',
   },
   playText: {
     color: '#fff',

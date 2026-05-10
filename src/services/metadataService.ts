@@ -59,6 +59,12 @@ export const loadCategory = async (
           if (item.genres_ar && !item.GenresAr) item.GenresAr = item.genres_ar;
           // poster → Image (for card rendering)
           if (item.poster && !item.Image) item.Image = item.poster;
+          // poster → 'Image Source' (for standard card rendering)
+          if (item.poster && !item['Image Source']) item['Image Source'] = item.poster;
+          // rating (float) → Rating (string)
+          if (item.rating !== undefined && !item.Rating) item.Rating = String(item.rating);
+          // quality → Format
+          if (item.quality && !item.Format) item.Format = item.quality;
           // country → Country
           if (item.country && !item.Country) item.Country = item.country;
           // episode_count → NumberOfEpisodes

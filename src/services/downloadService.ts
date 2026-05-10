@@ -140,7 +140,7 @@ export const startDownload = async (
     id,
     contentId: item.id,
     title: item.Title,
-    imageUrl: item['Image Source'],
+    imageUrl: item['Image Source'] || (item as any).Image || (item as any).poster || '',
     videoUrl: m3u8Url,
     format: item.Format || '',
     quality,

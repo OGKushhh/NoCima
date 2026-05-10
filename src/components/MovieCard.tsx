@@ -42,16 +42,17 @@ const CATEGORY_I18N: Record<string, string> = {
   series:          'series',
   tvshows:         'tvshows',
   'asian-series':  'asian_series',
+  'arabic-series': 'arabic_series',
 };
 
 const MovieCardComponent: React.FC<MovieCardProps> = ({item, onPress, width = CARD_WIDTH}) => {
   const {t} = useTranslation();
-  const imageUri = item['Image Source'];
+  const imageUri = item['Image Source'] || (item as any).Image || '';
   const rating   = (item as any).Rating   || (item as any).imdb_rating || '';
   const views    = (item as any).Views    || (item as any).views       || '';
   const year     = (item as any).Year     || '';
 
-  const quality  = item.Format || '';
+  const quality  = item.Format || (item as any).quality || '';
 
   const catKey = (item.Category || '').toLowerCase();
   const categoryLabel = CATEGORY_I18N[catKey] ? t(CATEGORY_I18N[catKey]) : (item.Category || '');

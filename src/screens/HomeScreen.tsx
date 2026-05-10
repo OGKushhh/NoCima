@@ -48,6 +48,7 @@ const ALL_HERO_CATEGORIES = [
   'series',
   'tvshows',
   'asian-series',
+  'arabic-series',
   'dubbed-movies',
   'hindi',
   'asian-movies',
@@ -208,7 +209,7 @@ const HeroBanner = memo<HeroBannerProps>(({items, onPress}) => {
       {/* ── Full-bleed poster — no overlay ── */}
       <Animated.View style={[StyleSheet.absoluteFill, {opacity: fadeAnim}]}>
         <FastImage
-          source={{uri: item['Image Source']}}
+          source={{uri: item['Image Source'] || (item as any).Image}}
           style={StyleSheet.absoluteFill}
           resizeMode={FastImage.resizeMode.cover}
         />
@@ -330,7 +331,7 @@ export const HomeScreen: React.FC = () => {
       // Load all categories we need for rows + potential hero items
       const allNeeded = Array.from(new Set([
         ...heroKeys,
-        'movies', 'anime', 'series', 'asian-series', 'tvshows',
+        'movies', 'anime', 'series', 'asian-series', 'tvshows', 'arabic-series',
       ]));
 
       const results = await Promise.all(
@@ -417,7 +418,7 @@ export const HomeScreen: React.FC = () => {
     return heroCatsRef.current
       .map(cat => {
         const items = categoryData[cat] ?? [];
-        return items.find(m => !!m['Image Source']) ?? null;
+        return items.find(m => !!(m['Image Source'] || (m as any).Image)) ?? null;
       })
       .filter((x): x is ContentItem => x !== null);
   }, [categoryData]);
@@ -428,6 +429,7 @@ export const HomeScreen: React.FC = () => {
   const series       = useMemo(() => (categoryData['series'] ?? []).slice(0, 20), [categoryData]);
   const kdrama       = useMemo(() => (categoryData['asian-series'] ?? []).slice(0, 20), [categoryData]);
   const tvshows      = useMemo(() => (categoryData['tvshows'] ?? []).slice(0, 20), [categoryData]);
+  const arabicSeries = useMemo(() => (categoryData['arabic-series'] ?? []).slice(0, 20), [categoryData]);
 
   if (loading) return <LoadingSpinner />;
   if (error && !Object.keys(categoryData).length)
@@ -556,6 +558,14 @@ export const HomeScreen: React.FC = () => {
                 title={t('tvshows')}
                 items={tvshows}
                 onSeeAll={() => goCat('tvshows')}
+                onPress={goDetails}
+              />
+            )}
+            {arabicSeries.length > 0 && (
+              <HRow
+                title={t('arabic_series')}
+                items={arabicSeries}
+                onSeeAll={() => goCat('arabic-series')}
                 onPress={goDetails}
               />
             )}
