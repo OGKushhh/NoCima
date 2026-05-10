@@ -2,11 +2,11 @@
  * AkwamExtractor
  *
  * Invisible WebView that extracts direct mp4 URLs from akwam.com.co.
- * Strategy (in order):
- *   1. DOM scan — check <video src>, <source src>, JSON blobs in page HTML
- *   2. XHR/fetch hook — intercept any network request whose URL contains .mp4
- * Normal navigation is allowed — no location overrides, no redirect hacks.
- * Stops as soon as the first valid mp4 URL is found.
+ * Strategy:
+ *   1. Override window.location to block ad redirects without breaking iframes
+ *   2. DOM scan — check <video src>, <source src>, JSON blobs
+ *   3. XHR/fetch hook — intercept network requests for .mp4
+ *   4. onShouldStartLoadWithRequest only blocks explicit user-click navigations
  */
 
 import React, { useRef, useEffect, useCallback } from 'react';
@@ -38,14 +38,63 @@ const INJECTED_JS = `
     return typeof url === 'string' && url.startsWith('http') && url.includes('.mp4');
   }
 
-  // ── 1. DOM scan (runs immediately and after DOMContentLoaded) ──────────────
+  // ---------- Override window.location to block ad redirects ----------
+  const ALLOWED_LOCATION_HOSTS = [
+    'akwam.com.co',
+    'akw.cam',
+    'go.akwam.com.co',
+    'two.akw.cam',
+    'downet.net',
+  ];
+
+  function isAllowedLocation(url) {
+    if (!url || url.startsWith('about:') || url.startsWith('javascript:')) return true;
+    return ALLOWED_LOCATION_HOSTS.some(h => url.includes(h));
+  }
+
+  // Save original functions
+  const origAssign = window.location.assign;
+  const origReplace = window.location.replace;
+
+  window.location.assign = function(url) {
+    if (!isAllowedLocation(url)) {
+      console.log('[akwam] blocked assign to', url);
+      return;
+    }
+    return origAssign.call(location, url);
+  };
+
+  window.location.replace = function(url) {
+    if (!isAllowedLocation(url)) {
+      console.log('[akwam] blocked replace to', url);
+      return;
+    }
+    return origReplace.call(location, url);
+  };
+
+  // Override the href setter (the most common redirect method)
+  let _href = window.location.href;
+  Object.defineProperty(window.location, 'href', {
+    get: function() { return _href; },
+    set: function(url) {
+      if (!isAllowedLocation(url)) {
+        console.log('[akwam] blocked href set to', url);
+        return;
+      }
+      _href = url;
+      // Actually perform the navigation only if allowed
+      origAssign.call(location, url);
+    },
+    configurable: true,
+  });
+  // ---------- end location override ----------
+
+  // ── 1. DOM scan ──────────────────────────────────────────────
   function scanDOM() {
-    // <video src="..."> or <source src="...">
     var tags = document.querySelectorAll('video[src], source[src]');
     for (var i = 0; i < tags.length; i++) {
       if (isMP4(tags[i].src)) { post(tags[i].src); return; }
     }
-    // JSON blobs or inline strings anywhere in the page HTML
     var match = document.documentElement.innerHTML.match(/https?:\\/\\/[^"'<>\\s]+\\.mp4/);
     if (match) { post(match[0]); return; }
   }
@@ -53,13 +102,12 @@ const INJECTED_JS = `
   scanDOM();
   document.addEventListener('DOMContentLoaded', scanDOM);
 
-  // Also watch for dynamically inserted video/source elements
   if (window.MutationObserver) {
     var obs = new MutationObserver(function() { scanDOM(); });
     obs.observe(document.documentElement, { childList: true, subtree: true });
   }
 
-  // ── 2. HTMLMediaElement.src setter ────────────────────────────────────────
+  // ── 2. HTMLMediaElement.src setter ───────────────────────────
   var origSrcDesc = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, 'src');
   if (origSrcDesc) {
     Object.defineProperty(HTMLMediaElement.prototype, 'src', {
@@ -72,14 +120,14 @@ const INJECTED_JS = `
     });
   }
 
-  // ── 3. XHR hook ───────────────────────────────────────────────────────────
+  // ── 3. XHR hook ──────────────────────────────────────────────
   var origOpen = XMLHttpRequest.prototype.open;
   XMLHttpRequest.prototype.open = function(method, url) {
     if (isMP4(url)) post(url);
     return origOpen.apply(this, arguments);
   };
 
-  // ── 4. fetch hook ─────────────────────────────────────────────────────────
+  // ── 4. fetch hook ────────────────────────────────────────────
   var origFetch = window.fetch;
   window.fetch = function(input, init) {
     var url = typeof input === 'string' ? input : (input && input.url);
@@ -124,20 +172,20 @@ const AkwamExtractor: React.FC<AkwamExtractorProps> = ({
     }
   }, [done]);
 
-  const handleNavRequest = useCallback((request: { url: string }) => {
+  const handleNavRequest = useCallback((request: { url: string; navigationType?: string }) => {
     const url = request.url;
     if (!url) return true;
 
-    // Always allow these
+    // Allow internal browser operations
     if (url.startsWith('about:') || url.startsWith('data:') || url.startsWith('javascript:')) return true;
 
-    // Capture direct mp4 navigations (server redirects straight to file)
+    // Capture direct mp4 navigations (server redirects)
     if (url.includes('.mp4')) {
       done(url);
       return false;
     }
 
-    // Handle vlc:// and intent:// schemes (akwam uses these on some devices)
+    // Handle vlc:// and intent://
     if (url.startsWith('vlc://')) { done(url.replace('vlc://', '')); return false; }
     if (url.startsWith('intent://')) {
       const m = url.match(/intent:\/\/(https?:\/\/[^#;]+)/);
@@ -145,24 +193,22 @@ const AkwamExtractor: React.FC<AkwamExtractorProps> = ({
       return false;
     }
 
-    // ── Allowlist — only akwam and its CDN ───────────────────────────────────
-    // Everything else (ad networks, popups, redirectors) is blocked.
-    // This is the key fix: the shortener page's ad script does window.location
-    // redirects to shounsirgie.net and similar — blocking them keeps the WebView
-    // on the akwam pages so our JS hooks can fire.
-    const ALLOWED_HOSTS = [
-      'akwam.com.co',
-      'go.akwam.com.co',
-      'akw.cam',
-      'two.akw.cam',
-      'downet.net',
-    ];
-    const isAllowed = ALLOWED_HOSTS.some(h => url.includes(h));
-    if (!isAllowed) {
-      console.log('[AkwamExtractor] blocked nav:', url.substring(0, 80));
-      return false;
+    // Block explicit user navigations to ad domains (clicks, form submits)
+    // We rely on JS injection to handle window.location redirects,
+    // so only block explicit navigation actions that would leave the page.
+    const navType = request.navigationType;
+    if (navType === 'click' || navType === 'formsubmit' || navType === 'formresubmit') {
+      const ALLOWED_HOSTS = [
+        'akwam.com.co', 'go.akwam.com.co', 'akw.cam', 'two.akw.cam', 'downet.net',
+      ];
+      const isAllowed = ALLOWED_HOSTS.some(h => url.includes(h));
+      if (!isAllowed) {
+        console.log('[AkwamExtractor] blocked navigation (click) to:', url.substring(0, 80));
+        return false;
+      }
     }
 
+    // For everything else (iframe loads, ajax, etc.) allow it.
     return true;
   }, [done]);
 
