@@ -12,6 +12,7 @@ export const METADATA_ENDPOINTS: Record<string, string> = {
   series: '/api/series',
   tvshows: '/api/tvshows',
   'asian-series': '/api/asian-series',
+  'arabic-series': '/api/arabic-series',
   trending: '/api/trending',
   featured: '/api/featured',
 };

@@ -19,6 +19,7 @@ export const CATEGORIES: CategoryConfig[] = [
   { key: 'series', labelAr: 'مسلسلات', labelEn: 'Series', icon: 'play-circle', available: true, apiEndpoint: '/api/series' },
   { key: 'tvshows', labelAr: 'برامج تلفزيونية', labelEn: 'TV Shows', icon: 'monitor', available: true, apiEndpoint: '/api/tvshows' },
   { key: 'asian-series', labelAr: 'مسلسلات آسيوية', labelEn: 'Asian Series', icon: 'globe', available: true, apiEndpoint: '/api/asian-series' },
+  { key: 'arabic-series', labelAr: 'مسلسلات عربية', labelEn: 'Arabic Series', icon: 'star', available: true, apiEndpoint: '/api/arabic-series' },
 ];
 
 export const GENRE_FILTERS = [
@@ -38,4 +39,5 @@ export const ALL_CATEGORIES: Record<string, string> = {
   series: '/api/series',
   tvshows: '/api/tvshows',
   'asian-series': '/api/asian-series',
+  'arabic-series': '/api/arabic-series',
 };

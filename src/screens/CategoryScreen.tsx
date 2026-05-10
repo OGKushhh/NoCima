@@ -91,6 +91,7 @@ export const CategoryScreen: React.FC = () => {
   const [selectedGenre, setSelectedGenre] = useState<string | null>(null);
   const [selectedSort, setSelectedSort] = useState<string>('year_desc');
   const [selectedYear, setSelectedYear] = useState<string | null>(null);
+  const [ramadanFilter, setRamadanFilter] = useState<boolean>(false);
 
   const [visibleItems, setVisibleItems] = useState<ContentItem[]>([]);
   const [page, setPage] = useState(1);
@@ -128,6 +129,7 @@ export const CategoryScreen: React.FC = () => {
       // here — the pagination useEffect owns that once `filtered` updates.
       setSelectedGenre(null);
       setSelectedYear(null);
+      setRamadanFilter(false);
       setSelectedSort('year_desc');
       setSearchQuery('');
       setDebouncedQuery('');
@@ -165,6 +167,9 @@ export const CategoryScreen: React.FC = () => {
     if (selectedYear) {
       result = result.filter(item => (item as any).Year === selectedYear);
     }
+    if (ramadanFilter) {
+      result = result.filter(item => !!(item as any).IsRamadan);
+    }
     switch (selectedSort) {
       case 'az': return sortByAZ(result);
       case 'za': return sortByZA(result);
@@ -172,12 +177,12 @@ export const CategoryScreen: React.FC = () => {
       case 'rating_desc': return sortByRatingDesc(result);
       default: return sortByYearDesc(result);
     }
-  }, [allItems, debouncedQuery, selectedGenre, selectedYear, selectedSort]);
+  }, [allItems, debouncedQuery, selectedGenre, selectedYear, ramadanFilter, selectedSort]);
 
   const filteredRef = useRef(filtered);
   filteredRef.current = filtered;
 
-  useEffect(() => { setPage(1); }, [debouncedQuery, selectedGenre, selectedYear, selectedSort]);
+  useEffect(() => { setPage(1); }, [debouncedQuery, selectedGenre, selectedYear, ramadanFilter, selectedSort]);
 
   useEffect(() => {
     const end = page * PAGE_SIZE;
@@ -221,18 +226,20 @@ export const CategoryScreen: React.FC = () => {
     const currentYear = new Date().getFullYear();
     const s = new Set<string>();
     allItems.forEach(item => {
-      const y = (item as any).Year;
+      // Support both capitalized (other categories) and lowercase (arabic-series)
+      const y = (item as any).Year ?? (item as any).year;
       if (!y) return;
       const n = parseInt(y, 10);
-      if (!isNaN(n) && n >= 1900 && n <= currentYear + 1) s.add(y);
+      // Strict validation — reject obvious typos like 20026, 2028 (future)
+      if (!isNaN(n) && n >= 2000 && n <= currentYear + 1) s.add(String(n));
     });
     return Array.from(s).sort((a, b) => b.localeCompare(a));
   }, [allItems]);
 
   const catConfig = CATEGORIES.find(c => c.key === selectedCategory);
   const screenTitle = catConfig ? (lang === 'ar' ? catConfig.labelAr : catConfig.labelEn) : t(selectedCategory);
-  const activeFilterCount = (selectedGenre ? 1 : 0) + (selectedYear ? 1 : 0) + (selectedSort !== 'year_desc' ? 1 : 0);
-  const clearFilters = useCallback(() => { setSelectedGenre(null); setSelectedYear(null); setSelectedSort('year_desc'); }, []);
+  const activeFilterCount = (selectedGenre ? 1 : 0) + (selectedYear ? 1 : 0) + (ramadanFilter ? 1 : 0) + (selectedSort !== 'year_desc' ? 1 : 0);
+  const clearFilters = useCallback(() => { setSelectedGenre(null); setSelectedYear(null); setRamadanFilter(false); setSelectedSort('year_desc'); }, []);
   const closeFilterPopup = useCallback(() => setShowFilterPopup(false), []);
 
   if (loading) return <LoadingSpinner />;
@@ -295,6 +302,7 @@ export const CategoryScreen: React.FC = () => {
         <View style={[styles.activeFiltersRow, isRTL && styles.rowRTL]}>
           {selectedGenre && <TouchableOpacity style={styles.activeChip} onPress={() => setSelectedGenre(null)}><Text style={styles.activeChipText}>{selectedGenre}</Text><Text style={styles.activeChipX}>×</Text></TouchableOpacity>}
           {selectedYear && <TouchableOpacity style={styles.activeChip} onPress={() => setSelectedYear(null)}><Text style={styles.activeChipText}>{selectedYear}</Text><Text style={styles.activeChipX}>×</Text></TouchableOpacity>}
+          {ramadanFilter && <TouchableOpacity style={[styles.activeChip, {borderColor: '#C9A84C'}]} onPress={() => setRamadanFilter(false)}><Text style={[styles.activeChipText, {color: '#C9A84C'}]}>🌙 رمضان</Text><Text style={styles.activeChipX}>×</Text></TouchableOpacity>}
           {selectedSort !== 'year_desc' && <TouchableOpacity style={styles.activeChip} onPress={() => setSelectedSort('year_desc')}><Text style={styles.activeChipText}>{t(selectedSort)}</Text><Text style={styles.activeChipX}>×</Text></TouchableOpacity>}
           <TouchableOpacity onPress={clearFilters}><Text style={styles.clearAllText}>{t('cancel')}</Text></TouchableOpacity>
         </View>
@@ -369,6 +377,35 @@ export const CategoryScreen: React.FC = () => {
                       </TouchableOpacity>
                     ))}
                   </ScrollView>
+                </>
+              )}
+
+              {/* Ramadan filter — only shown for arabic-series */}
+              {selectedCategory === 'arabic-series' && (
+                <>
+                  <Text style={[styles.filterSectionTitle, isRTL && styles.textRTL]}>🌙 رمضان / Ramadan</Text>
+                  <View style={styles.filterOptionsRow}>
+                    <TouchableOpacity
+                      style={[styles.filterOptionChip, !ramadanFilter && styles.filterOptionChipActive]}
+                      onPress={() => setRamadanFilter(false)}
+                    >
+                      <Text style={[styles.filterOptionText, !ramadanFilter && styles.filterOptionTextActive]}>{t('all')}</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[
+                        styles.filterOptionChip,
+                        ramadanFilter && { borderColor: '#C9A84C', backgroundColor: 'rgba(201,168,76,0.15)' },
+                      ]}
+                      onPress={() => setRamadanFilter(!ramadanFilter)}
+                    >
+                      <Text style={[
+                        styles.filterOptionText,
+                        ramadanFilter && { color: '#C9A84C', fontWeight: '700' },
+                      ]}>
+                        🌙 مسلسلات رمضان
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
                 </>
               )}
             </ScrollView>

@@ -24,6 +24,10 @@ export interface ContentItem {
   Rating?: string;
   Views?: string;
   Year?: string;
+  // Akwam / arabic-series specific
+  IsRamadan?: boolean;
+  Image?: string;          // normalized from arabic-series poster field
+  NumberOfEpisodes?: number;
 }
 
 export interface TrendingItem {
@@ -79,4 +83,21 @@ export interface UserSettings {
   subtitleEnabled: boolean;
 }
 
-export type ContentCategory = 'movies' | 'anime' | 'series' | 'tvshows' | 'asian-series';
+export type ContentCategory = 'movies' | 'anime' | 'series' | 'tvshows' | 'asian-series' | 'arabic-series';
+
+/** One quality option for an arabic-series episode */
+export interface ArabicEpisodeSource {
+  quality: string;          // "1080p" | "720p" | "480p"
+  watch_url: string;        // direct mp4 stream URL
+  download_url: string;     // direct mp4 download URL
+  interim_download_url?: string;
+  size_mb?: number;
+}
+
+/** One episode in an arabic-series */
+export interface ArabicEpisode {
+  number: number;
+  title: string;
+  url: string;
+  sources: ArabicEpisodeSource[];
+}

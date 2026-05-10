@@ -20,7 +20,7 @@ import {useRoute, useNavigation} from '@react-navigation/native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import FastImage from 'react-native-fast-image';
 import axios from 'axios';
-import {ContentItem} from '../types';
+import {ContentItem, ArabicEpisode, ArabicEpisodeSource} from '../types';
 import {recordPlay} from '../services/viewService';
 import {getViewCount, getSeriesTotalViews} from '../services/api';
 import {useAds} from '../ads/AdContext';
@@ -29,7 +29,11 @@ import {useTranslation} from 'react-i18next';
 import {localizeGenres} from '../i18n/genres';
 import {API_BASE} from '../constants/endpoints';
 import {VideoExtractor} from '../components/VideoExtractor';
+import AkwamExtractor from '../components/AkwamExtractor';
 import {startDownload} from '../services/downloadService';
+import AkwamQualityModal, {resolveQuality} from '../components/AkwamQualityModal';
+import AkwamBulkDownloadModal from '../components/AkwamBulkDownloadModal';
+import {getSettings} from '../storage';
 
 const FASEL_BASE = 'https://www.fasel-hd.cam';
 
@@ -42,15 +46,30 @@ const POSTER_H = POSTER_W * 1.52;
 
 // Map category key → i18n key for poster badge
 const CAT_I18N: Record<string, string> = {
-  movies:          'movies',
-  'dubbed-movies': 'dubbed_movies',
-  hindi:           'hindi',
-  'asian-movies':  'asian_movies',
-  anime:           'anime',
-  'anime-movies':  'anime_movies',
-  series:          'series',
-  tvshows:         'tvshows',
-  'asian-series':  'asian_series',
+  movies:           'movies',
+  'dubbed-movies':  'dubbed_movies',
+  hindi:            'hindi',
+  'asian-movies':   'asian_movies',
+  anime:            'anime',
+  'anime-movies':   'anime_movies',
+  series:           'series',
+  tvshows:          'tvshows',
+  'asian-series':   'asian_series',
+  'arabic-series':  'arabic_series',
+};
+
+// Map category key → human-readable Arabic + English label for the info table
+const CAT_LABEL: Record<string, { ar: string; en: string }> = {
+  movies:           { ar: 'أفلام',              en: 'Movies' },
+  'dubbed-movies':  { ar: 'أفلام مدبلجة',       en: 'Dubbed Movies' },
+  hindi:            { ar: 'هندي',               en: 'Hindi' },
+  'asian-movies':   { ar: 'أفلام آسيوية',       en: 'Asian Movies' },
+  anime:            { ar: 'أنمي',               en: 'Anime' },
+  'anime-movies':   { ar: 'أفلام أنمي',         en: 'Anime Movies' },
+  series:           { ar: 'مسلسلات',            en: 'Series' },
+  tvshows:          { ar: 'برامج تلفزيونية',    en: 'TV Shows' },
+  'asian-series':   { ar: 'مسلسلات آسيوية',    en: 'Asian Series' },
+  'arabic-series':  { ar: 'مسلسلات عربية',     en: 'Arabic Series' },
 };
 
 // ── Info table row ───────────────────────────────────────────────────
@@ -104,14 +123,12 @@ const rowS = StyleSheet.create({
 
 // ── Episode fetcher ──────────────────────────────────────────────────
 const fetchEpisodes = async (category: string, id: string) => {
-  const episodic = ['series', 'tvshows', 'asian-series', 'anime'];
+  const episodic = ['series', 'tvshows', 'asian-series', 'anime', 'arabic-series'];
   if (!episodic.includes(category)) return null;
-  // All episodic categories use the same endpoint — the server normalises
-  // the stored JSON (which may have integer season keys or plain URL arrays)
-  // into a consistent shape before sending. Anime previously had its own
-  // endpoint (/api/anime-episodes) which returned a different structure,
-  // causing episode lists to appear empty.
-  const url = `${API_BASE}/api/episodes/${category}/${id}`;
+  // arabic-series has its own dedicated endpoint (different episode structure)
+  const url = category === 'arabic-series'
+    ? `${API_BASE}/api/arabic-series/episodes/${id}`
+    : `${API_BASE}/api/episodes/${category}/${id}`;
   const r = await axios.get(url, {timeout: 20000});
   return r.data;
 };
@@ -165,7 +182,19 @@ export const DetailsScreen: React.FC = () => {
   const raw = item as any;
 
   const category = (item?.Category || 'movies').toLowerCase();
-  const isEpisodic = ['series', 'tvshows', 'asian-series', 'anime'].includes(category);
+  const isEpisodic = ['series', 'tvshows', 'asian-series', 'anime', 'arabic-series'].includes(category);
+  const isArabicSeries = category === 'arabic-series';
+
+  // ── Arabic-series / Akwam specific state ─────────────────────────────────
+  const [arabicEpisodes,   setArabicEpisodes]   = useState<ArabicEpisode[]>([]);
+  const [qualityModalEp,   setQualityModalEp]   = useState<ArabicEpisode | null>(null);
+  const [showBulkDownload, setShowBulkDownload] = useState(false);
+  const preferredQuality: string = isArabicSeries ? (getSettings()?.playerQuality ?? 'auto') : 'auto';
+
+  // ── Akwam extractor state ─────────────────────────────────────────────────
+  const [akwamUrl,  setAkwamUrl]  = useState<string | null>(null);
+  const [akwamMode, setAkwamMode] = useState<'watch' | 'download'>('watch');
+  const akwamCallbackRef = useRef<((mp4: string) => void) | null>(null);
 
   // ── Fetch rating ──────────────────────────────────────────────────
   useEffect(() => {
@@ -201,6 +230,12 @@ export const DetailsScreen: React.FC = () => {
     setLoadingEps(true);
     fetchEpisodes(category, item.id)
       .then(data => {
+        // ── Arabic-series: flat episode array with sources[] per episode ──────
+        if (isArabicSeries && Array.isArray(data?.episodes)) {
+          setArabicEpisodes(data.episodes as ArabicEpisode[]);
+          setLoadingEps(false);
+          return;
+        }
         // Normalize into a consistent shape:
         //   { seasons: { "1": { poster, episodes: [url, ...] }, ... } }
         //
@@ -443,15 +478,67 @@ export const DetailsScreen: React.FC = () => {
     setExtractorUrl(url);
   }, []);
 
+  // ── Akwam: start extraction then navigate to Player ──────────────────────
+  const startAkwamWatch = useCallback((src: ArabicEpisodeSource, ep: ArabicEpisode) => {
+    setExtracting(true);
+    akwamCallbackRef.current = (mp4: string) => {
+      setAkwamUrl(null);
+      recordPlay(ep.url, category);
+      setExtracting(false);
+      nav.navigate('Player', {
+        url: mp4,
+        servers: [mp4],
+        title: ep.title,
+        contentId: ep.url,
+        category,
+      });
+    };
+    setAkwamMode('watch');
+    setAkwamUrl(src.watch_url);
+  }, [category, nav]);
+
+  const handlePlayArabicEpisode = useCallback((ep: ArabicEpisode) => {
+    const auto = resolveQuality(ep.sources, preferredQuality);
+    if (auto) {
+      showInterstitial(() => startAkwamWatch(auto, ep), 'play');
+    } else {
+      setQualityModalEp(ep);
+    }
+  }, [preferredQuality, showInterstitial, startAkwamWatch]);
+
+  const handleArabicQualitySelected = useCallback((src: ArabicEpisodeSource, ep: ArabicEpisode) => {
+    setQualityModalEp(null);
+    showInterstitial(() => startAkwamWatch(src, ep), 'play');
+  }, [showInterstitial, startAkwamWatch]);
+
+  const handleAkwamExtracted = useCallback((mp4: string) => {
+    akwamCallbackRef.current?.(mp4);
+    akwamCallbackRef.current = null;
+  }, []);
+
+  const handleAkwamError = useCallback(() => {
+    setAkwamUrl(null);
+    setExtracting(false);
+    setExtractError(t('extract_error') || 'Failed to load video. Please try again.');
+    akwamCallbackRef.current = null;
+  }, [t]);
+
   // ── Play movie (on-device extraction) ────────────────────────────
   const handlePlay = useCallback((allServers = false) => {
+    // Akwam categories have no Sources[] — play is episode-based only
+    // The play button for arabic-series routes through handlePlayFirst
+    if (isArabicSeries) return;
+    // FaselHD extraction
     const src = item.Sources?.[0];
     const url = src ?? `${FASEL_BASE}/?p=${item.id}`;
     showInterstitial(() => startExtraction(url, item.Title, undefined, allServers), 'play');
-  }, [item.id, item.Title, item.Sources, startExtraction, showInterstitial]);
+  }, [item.id, item.Title, item.Sources, isArabicSeries, startExtraction, showInterstitial]);
 
   // ── Download movie or first episode ──────────────────────────────
   const handleDownload = useCallback(() => {
+    // Akwam downloads go through AkwamBulkDownloadModal — button already routes there
+    if (isArabicSeries) return;
+    // FaselHD extraction for download
     downloadModeRef.current = true;
     if (isEpisodic && currentEps.length > 0) {
       const epUrl = currentEps[0];
@@ -460,15 +547,22 @@ export const DetailsScreen: React.FC = () => {
     } else {
       startExtraction(`${FASEL_BASE}/?p=${item.id}`, item.Title);
     }
-  }, [item, isEpisodic, currentEps, selSeason, t, startExtraction]);
+  }, [item, isArabicSeries, isEpisodic, currentEps, selSeason, t, startExtraction]);
 
   // ── Play first episode of current season ─────────────────────────
   const handlePlayFirst = useCallback((allServers = false) => {
+    // Akwam — route to first arabic episode
+    if (isArabicSeries) {
+      const firstEp = arabicEpisodes[0];
+      if (firstEp) handlePlayArabicEpisode(firstEp);
+      return;
+    }
+    // FaselHD
     if (!currentEps.length) return;
     const epUrl = currentEps[0];
     const title = `${item.Title} - ${t('season')} ${selSeason} ${t('episode')} 1`;
     showInterstitial(() => startExtraction(epUrl, title, epUrl, allServers), 'play');
-  }, [currentEps, item.Title, selSeason, t, startExtraction, showInterstitial]);
+  }, [isArabicSeries, arabicEpisodes, handlePlayArabicEpisode, currentEps, item.Title, selSeason, t, startExtraction, showInterstitial]);
 
   // ── Play episode (on-device extraction) ──────────────────────────
   const handlePlayEpisode = useCallback((epUrl: string, epNum: number, allServers = false) => {
@@ -656,7 +750,7 @@ export const DetailsScreen: React.FC = () => {
             style={[S.dlBtn, (extracting || downloading) && {opacity: 0.5}]}
             activeOpacity={0.84}
             disabled={extracting || downloading}
-            onPress={handleDownload}
+            onPress={isArabicSeries ? () => setShowBulkDownload(true) : handleDownload}
           >
             {downloading ? (
               <>
@@ -704,14 +798,21 @@ export const DetailsScreen: React.FC = () => {
         <View style={S.infoTable}>
           {releaseDate ? <InfoRow label={t('release_date')} value={String(releaseDate).slice(0, 10)} accent /> : null}
           {!releaseDate && year ? <InfoRow label={t('year')} value={String(year)} accent /> : null}
-          {item.Category ? (
-            <InfoRow
-              label={t('category')}
-              value={t(item.Category) || item.Category}
-              accent
-              onPress={() => nav.navigate('Category', {category: item.Category?.toLowerCase()})}
-            />
-          ) : null}
+          {item.Category ? (() => {
+            const catKey = item.Category?.toLowerCase() || '';
+            const catLabel = CAT_LABEL[catKey];
+            const displayValue = catLabel
+              ? (lang === 'ar' ? catLabel.ar : catLabel.en)
+              : (item.Category || '');
+            return (
+              <InfoRow
+                label={t('category')}
+                value={displayValue}
+                accent
+                onPress={() => nav.navigate('Category', {category: catKey})}
+              />
+            );
+          })() : null}
           {/* Genre chips — each navigates to CategoryScreen filtered by that genre */}
           {genresDisplay ? (
             <View style={rowS.row}>
@@ -774,7 +875,8 @@ export const DetailsScreen: React.FC = () => {
               <Text style={S.epsTitle}>{t('episodes')}</Text>
               {loadingEps && <ActivityIndicator size="small" color={Colors.dark.primary} style={{marginLeft: 8}} />}
 
-              {seasonKeys.length >= 1 && (
+              {/* Arabic-series: no season selector needed */}
+              {!isArabicSeries && seasonKeys.length >= 1 && (
                 <TouchableOpacity
                   style={S.seasonBtn}
                   onPress={() => setShowSeasonDlg(true)}
@@ -842,11 +944,44 @@ export const DetailsScreen: React.FC = () => {
                 <Text style={S.noEpsTxt}>{t('not_available')}</Text>
               </View>
             ) : null}
+
+            {/* ── Arabic-series / Akwam episode list ── */}
+            {isArabicSeries && arabicEpisodes.map(ep => (
+              <TouchableOpacity
+                key={ep.number}
+                style={S.epRow}
+                activeOpacity={0.75}
+                onPress={() => handlePlayArabicEpisode(ep)}
+              >
+                <View style={S.epNumCircle}>
+                  <Text style={{color: Colors.dark.primary, fontSize: 12, fontWeight: '700', fontFamily: 'Rubik'}}>
+                    {ep.number}
+                  </Text>
+                </View>
+                <View style={{flex: 1}}>
+                  <Text style={S.epTitle} numberOfLines={1}>{ep.title}</Text>
+                  <View style={{flexDirection: 'row', gap: 6, marginTop: 4, flexWrap: 'wrap'}}>
+                    {ep.sources.map((src, si) => (
+                      <View key={si} style={{backgroundColor: `${Colors.dark.primary}20`, borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2}}>
+                        <Text style={{color: Colors.dark.primary, fontSize: 10, fontFamily: 'Rubik', fontWeight: '700'}}>
+                          {src.quality}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                </View>
+                <Image
+                  source={require('../../assets/icons/play-button.png')}
+                  style={[S.epPlayIcon, {tintColor: Colors.dark.primary}]}
+                />
+              </TouchableOpacity>
+            ))}
+
           </View>
         )}
       </ScrollView>
 
-      {/* ── On-device WebView extractor (hidden) ── */}
+      {/* ── FaselHD WebView extractor (hidden) ── */}
       {extractorUrl && (
         <VideoExtractor
           pageUrl={extractorUrl}
@@ -857,6 +992,34 @@ export const DetailsScreen: React.FC = () => {
           collectAllServers={allServersModeRef.current}
         />
       )}
+
+      {/* ── Akwam WebView extractor (hidden) ── */}
+      {akwamUrl && (
+        <AkwamExtractor
+          startUrl={akwamUrl}
+          mode={akwamMode}
+          onExtracted={handleAkwamExtracted}
+          onError={handleAkwamError}
+          timeoutMs={30000}
+        />
+      )}
+
+      {/* ── Akwam quality picker ── */}
+      <AkwamQualityModal
+        visible={!!qualityModalEp}
+        episode={qualityModalEp}
+        preferredQuality={preferredQuality}
+        onSelect={handleArabicQualitySelected}
+        onClose={() => setQualityModalEp(null)}
+      />
+
+      {/* ── Akwam bulk download ── */}
+      <AkwamBulkDownloadModal
+        visible={showBulkDownload}
+        item={item}
+        episodes={arabicEpisodes}
+        onClose={() => setShowBulkDownload(false)}
+      />
 
       {/* ── Full-screen extracting overlay ── */}
       {extracting && (

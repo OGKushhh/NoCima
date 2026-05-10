@@ -39,7 +39,33 @@ export const loadCategory = async (
 
     if (category !== 'trending' && category !== 'featured' && data && typeof data === 'object' && !Array.isArray(data)) {
       Object.keys(data).forEach(id => {
-        if (data[id]) data[id].id = id;
+        if (!data[id]) return;
+        data[id].id = id;
+        // ── Normalize arabic-series lowercase fields → standard ContentItem fields ──
+        if (category === 'arabic-series' || data[id].is_ramadan !== undefined) {
+          const item = data[id];
+          // year → Year (validate it's a real year)
+          if (item.year && !item.Year) {
+            const n = parseInt(item.year, 10);
+            if (!isNaN(n) && n >= 2000 && n <= 2030) item.Year = String(n);
+          }
+          // is_ramadan → IsRamadan
+          if (item.is_ramadan !== undefined) item.IsRamadan = !!item.is_ramadan;
+          // title → Title
+          if (item.title && !item.Title) item.Title = item.title;
+          // genres_en → Genres
+          if (item.genres_en && !item.Genres) item.Genres = item.genres_en;
+          // genres_ar → GenresAr
+          if (item.genres_ar && !item.GenresAr) item.GenresAr = item.genres_ar;
+          // poster → Image (for card rendering)
+          if (item.poster && !item.Image) item.Image = item.poster;
+          // country → Country
+          if (item.country && !item.Country) item.Country = item.country;
+          // episode_count → NumberOfEpisodes
+          if (item.episode_count !== undefined) item.NumberOfEpisodes = item.episode_count;
+          // Normalize Category
+          if (!item.Category) item.Category = 'arabic-series';
+        }
       });
     }
 
@@ -167,7 +193,7 @@ export const getMoviesArray = (movies: ContentDict | null): ContentItem[] => {
 
 // ─── All syncable categories in order ────────────────────────────────────────
 export const SYNC_CATEGORIES: ContentCategory[] = [
-  'movies', 'series', 'anime', 'tvshows', 'asian-series',
+  'movies', 'series', 'anime', 'tvshows', 'asian-series', 'arabic-series',
   'dubbed-movies', 'hindi', 'asian-movies', 'anime-movies',
   'trending', 'featured',
 ];
