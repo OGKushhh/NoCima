@@ -971,7 +971,7 @@ export const DetailsScreen: React.FC = () => {
                   </View>
                 </View>
                 <Image
-                  source={require('../../assets/icons/play-button.png')}
+                  source={require('../../assets/icons/play.png')}
                   style={[S.epPlayIcon, {tintColor: Colors.dark.primary}]}
                 />
               </TouchableOpacity>
