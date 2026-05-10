@@ -155,7 +155,6 @@ export const PlayerScreen: React.FC = () => {
   const [activeServerIdx, setActiveServerIdx] = useState(0);
   const [showServerPicker, setShowServerPicker] = useState(false);
   const { t, i18n }  = useTranslation();
-  const isRTL = i18n.language === 'ar';
   const insets       = useSafeAreaInsets();
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const isRTL        = I18nManager.isRTL;
