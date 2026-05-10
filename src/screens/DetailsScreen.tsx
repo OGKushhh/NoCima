@@ -335,8 +335,8 @@ export const DetailsScreen: React.FC = () => {
   }, [raw]);
 
   const description = lang === 'ar'
-    ? (raw.DescriptionAr || raw.Description || '')
-    : (raw.Description || raw.DescriptionAr || '');
+    ? (raw.DescriptionAr || raw.Description || (raw as any).description || '')
+    : (raw.Description || raw.DescriptionAr || (raw as any).description || '');
 
   const fmtRuntime = (min: number | null) => {
     if (!min) return '';
@@ -528,9 +528,18 @@ export const DetailsScreen: React.FC = () => {
       const epItem: ContentItem = {...item, Title: ep.title};
       akwamCallbackRef.current = (mp4: string) => {
         setAkwamUrl(null);
+        const title = ep.title || `${t('episode')} ${ep.number}`;
         startDownload(epItem, mp4)
-          .then(() => showDownloadStarted(ep.title))
           .catch(e => console.warn('[Details] arabic download error:', e));
+        // Show toast immediately — don't wait for async promise which may silently swallow errors
+        const msg = lang === 'ar'
+          ? `⬇ بدأ التحميل: ${title}`
+          : `⬇ Download started: ${title}`;
+        if (Platform.OS === 'android') {
+          ToastAndroid.show(msg, ToastAndroid.LONG);
+        } else {
+          Alert.alert('', msg);
+        }
       };
       setAkwamMode('download');
       setAkwamUrl(src.download_url);

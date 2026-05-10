@@ -154,7 +154,8 @@ export const PlayerScreen: React.FC = () => {
   const servers: string[] = serversParam?.length > 0 ? serversParam : (url ? [url] : []);
   const [activeServerIdx, setActiveServerIdx] = useState(0);
   const [showServerPicker, setShowServerPicker] = useState(false);
-  const { t }        = useTranslation();
+  const { t, i18n }  = useTranslation();
+  const isRTL = i18n.language === 'ar';
   const insets       = useSafeAreaInsets();
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const isRTL        = I18nManager.isRTL;
@@ -526,7 +527,7 @@ export const PlayerScreen: React.FC = () => {
               onLayout={handleSeekBarLayout}
             >
               <TouchableOpacity style={styles.seekBarTouchable} onPress={handleSeekBarPress} activeOpacity={0.8}>
-                <View style={[styles.seekBarTrack, { backgroundColor: 'rgba(255,255,255,0.2)' }]}>
+                <View style={[styles.seekBarTrack, { backgroundColor: 'rgba(255,255,255,0.2)', transform: isRTL ? [{scaleX: -1}] : [] }]}>
                   <View style={[styles.seekBarBuffered, { left: 0, width: '30%' }]} />
                   <View style={[styles.seekBarProgress, { width: `${progress * 100}%`, backgroundColor: colors.primary }]}>
                     <View style={[styles.seekBarThumb, { backgroundColor: colors.primary }]} />
