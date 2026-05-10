@@ -24,7 +24,7 @@
 
 import React, { useRef, useEffect, useCallback } from 'react';
 import { View, Dimensions } from 'react-native';
-import { WebView } from 'react-native-webview';
+import { WebView, WebViewMessageEvent } from 'react-native-webview';
 
 const { width: SW, height: SH } = Dimensions.get('window');
 
@@ -39,9 +39,28 @@ interface AkwamExtractorProps {
   timeoutMs?: number;
 }
 
-// ── Injection script ──────────────────────────────────────────────────────────
-// Runs after every page load. Checks what page we're on and either:
-// 1. Clicks the "download-link" / "click here" on the intermediate page
+// ── Script injected BEFORE page content loads ─────────────────────────────────
+// Freezes location.href setter so the ad scripts can't redirect away from the page.
+// Runs in the page's JS context before any page scripts execute.
+const AKWAM_PRE_JS = `
+(function() {
+  // Freeze window.location so ad scripts can't hijack navigation
+  try {
+    var _origHref = window.location.href;
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      get: function() { return window._akwamLocation || window._origLocation; },
+    });
+  } catch(e) {}
+  // Block common ad/redirect functions
+  window.open = function() { return null; };
+})();
+true;
+`;
+
+// ── Script injected AFTER each page load ──────────────────────────────────────
+// Checks what page we're on and either:
+// 1. Clicks the "download-link" on the intermediate page
 // 2. Extracts the mp4 from the final page and posts it
 const AKWAM_JS = `
 (function() {
@@ -54,17 +73,15 @@ const AKWAM_JS = `
   post('debug', 'AKWAM: page loaded: ' + url.substring(0, 120));
 
   // ── Stage 1: "Click here" intermediate page ────────────────────────────────
-  // Akwam shortener pages have different possible selectors for the real link.
-  // Try each in order and navigate as soon as we find one.
+  // The selector is always class="download-link" based on inspecting the live HTML.
+  // Try multiple selectors in order as fallback.
   var candidates = [
+    document.querySelector('a.download-link[href*="akwam"]'),
     document.querySelector('a.download-link'),
-    document.querySelector('a.click-here'),
     document.querySelector('a[class*="download-link"]'),
     document.querySelector('a[class*="btn-download"]'),
-    // The shortener page often has a big centred "Click Here" button
-    document.querySelector('a.btn.btn-success'),
-    document.querySelector('a.btn.btn-primary'),
-    // Generic: any <a> whose text contains "click" (case-insensitive)
+    document.querySelector('a.btn.btn-success[href*="akwam"]'),
+    document.querySelector('a.btn.btn-primary[href*="akwam"]'),
     (function() {
       var links = document.querySelectorAll('a');
       for (var i = 0; i < links.length; i++) {
@@ -82,12 +99,11 @@ const AKWAM_JS = `
   for (var ci = 0; ci < candidates.length; ci++) {
     var link = candidates[ci];
     if (link && link.href && link.href.indexOf('akwam') !== -1) {
-      post('debug', 'AKWAM: clicking intermediate link [' + ci + ']: ' + link.href.substring(0, 100));
-      // Simulate a real click first (triggers any JS handlers), then navigate as fallback
-      try { link.click(); } catch(e) {}
-      setTimeout(function() {
-        if (window.location.href === url) window.location.href = link.href;
-      }, 300);
+      var target = link.href;
+      post('debug', 'AKWAM: found download-link [sel ' + ci + ']: ' + target.substring(0, 100));
+      // Post the target URL directly — let React Native navigate the WebView
+      // instead of relying on JS navigation (which ads may block)
+      post('navigate', target);
       return;
     }
   }
@@ -96,49 +112,44 @@ const AKWAM_JS = `
   if (url.indexOf('/watch/') !== -1 && url.indexOf('akwam') !== -1) {
     var source = document.querySelector('source[type="video/mp4"][src]');
     if (source && source.src && source.src.indexOf('.mp4') !== -1) {
-      post('mp4', source.src);
-      return;
+      post('mp4', source.src); return;
     }
     var vlcLink = document.querySelector('a[href^="vlc://"]');
     if (vlcLink && vlcLink.href) {
-      var mp4 = vlcLink.href.replace('vlc://', '');
-      if (mp4.indexOf('.mp4') !== -1) { post('mp4', mp4); return; }
+      var mp4v = vlcLink.href.replace('vlc://', '');
+      if (mp4v.indexOf('.mp4') !== -1) { post('mp4', mp4v); return; }
     }
     var bodyText = document.body ? document.body.innerHTML : '';
-    var match = bodyText.match(/https?:\\/\\/[^"'<>\\s]+\\.mp4/);
-    if (match) { post('mp4', match[0]); return; }
+    var matchW = bodyText.match(/https?:\/\/[^"'<>\s]+\.mp4/);
+    if (matchW) { post('mp4', matchW[0]); return; }
     post('debug', 'AKWAM: on watch page but no mp4 found yet');
     return;
   }
 
   // ── Stage 2: Final DOWNLOAD page ──────────────────────────────────────────
   if (url.indexOf('/download/') !== -1 && url.indexOf('akwam') !== -1) {
-    // Primary: the download button
     var dlBtn = document.querySelector('a.link.btn[download]');
     if (dlBtn && dlBtn.href && dlBtn.href.indexOf('.mp4') !== -1) {
       post('mp4', dlBtn.href); return;
     }
-    // Secondary: any btn with download attr
     var dlBtns = document.querySelectorAll('a[download]');
     for (var di = 0; di < dlBtns.length; di++) {
-      var h = dlBtns[di].href;
-      if (h && h.indexOf('.mp4') !== -1) { post('mp4', h); return; }
+      var dh = dlBtns[di].href;
+      if (dh && dh.indexOf('.mp4') !== -1) { post('mp4', dh); return; }
     }
-    // Tertiary: any link with .mp4 in href
     var allLinks = document.querySelectorAll('a[href*=".mp4"]');
     for (var li = 0; li < allLinks.length; li++) {
       var lh = allLinks[li].href;
       if (lh) { post('mp4', lh); return; }
     }
-    // Fallback: regex in page body
     var bodyHtml = document.body ? document.body.innerHTML : '';
-    var m = bodyHtml.match(/https?:\\/\\/[^"'<>\\s]+\\.mp4/);
-    if (m) { post('mp4', m[0]); return; }
+    var matchD = bodyHtml.match(/https?:\/\/[^"'<>\s]+\.mp4/);
+    if (matchD) { post('mp4', matchD[0]); return; }
     post('debug', 'AKWAM: on download page but no mp4 found yet');
     return;
   }
 
-  post('debug', 'AKWAM: unrecognized page, waiting...');
+  post('debug', 'AKWAM: unrecognized page, waiting for redirect...');
 })();
 true;
 `;
@@ -169,6 +180,7 @@ const AkwamExtractor: React.FC<AkwamExtractorProps> = ({
 }) => {
   const doneRef    = useRef(false);
   const timerRef   = useRef<ReturnType<typeof setTimeout>>();
+  const webViewRef = useRef<any>(null);
 
   const done = useCallback((mp4?: string) => {
     if (doneRef.current) return;
@@ -196,11 +208,24 @@ const AkwamExtractor: React.FC<AkwamExtractorProps> = ({
       if (msg.type === 'mp4' && msg.data) {
         console.log('[AkwamExtractor] got mp4:', msg.data.substring(0, 80));
         done(msg.data);
+      } else if (msg.type === 'navigate' && msg.data) {
+        // The JS found the download-link href — navigate the WebView to it
+        // imperatively rather than relying on JS window.location (ad scripts may block it)
+        console.log('[AkwamExtractor] navigating to:', msg.data.substring(0, 80));
+        webViewRef.current?.injectJavaScript(
+          `window.location.replace(${JSON.stringify(msg.data)}); true;`
+        );
       } else if (msg.type === 'debug') {
         console.log('[AkwamExtractor]', msg.data);
       }
     } catch (e) {}
   }, [done]);
+
+  const handleLoadEnd = useCallback(() => {
+    // Re-inject the extraction script after every page load
+    // (injectedJavaScript only fires once in some RN versions)
+    webViewRef.current?.injectJavaScript(AKWAM_JS);
+  }, []);
 
   const handleNavRequest = useCallback((request: { url: string }) => {
     const url = request.url;
@@ -249,12 +274,15 @@ const AkwamExtractor: React.FC<AkwamExtractorProps> = ({
       }}
     >
       <WebView
+        ref={webViewRef}
         source={{ uri: startUrl }}
         style={{ width: SW, height: SH }}
         javaScriptEnabled
         domStorageEnabled
         thirdPartyCookiesEnabled
+        injectedJavaScriptBeforeContentLoaded={AKWAM_PRE_JS}
         injectedJavaScript={AKWAM_JS}
+        onLoadEnd={handleLoadEnd}
         onMessage={handleMessage}
         onShouldStartLoadWithRequest={handleNavRequest}
         onError={handleError}
