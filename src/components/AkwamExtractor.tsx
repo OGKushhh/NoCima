@@ -1,17 +1,15 @@
 /**
  * AkwamExtractor
  *
- * WATCH mode  — three steps:
- *   1. Native fetch resolves the go.akwam.com.co/watch shortener by following
- *      the 302 redirect (fetch with redirect:'follow'). Gets the final
- *      akwam.com.co/watch/... URL. No HTML parsing.
- *   2. Hidden WebView loads that final URL – static HTML already contains
+ * WATCH mode:
+ *   1. Native fetch resolves go.akwam.com.co/watch → parses HTML for the real
+ *      akwam.com.co/watch/... link (no 302 redirect – static page).
+ *   2. Hidden WebView loads that real watch URL. The static HTML contains
  *      <source src="...mp4"> inside #player.
- *   3. Injected JS aggressively scans for the source and posts the mp4 URL back.
- *      If the WebView fails or times out, a final native fetch is used as a last
- *      resort to extract the mp4 link.
+ *   3. Injected JS scans for the source and posts the mp4 URL back.
+ *   4. A native fetch fallback runs after 10s to catch slow pages.
  *
- * DOWNLOAD mode — pure HTTP, no WebView (unchanged).
+ * DOWNLOAD mode: same resolution logic, but then pure HTTP extraction (no WebView).
  */
 
 import React, {useRef, useEffect, useCallback, useState} from 'react';
@@ -31,78 +29,59 @@ interface Props {
 const UA =
   'Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36';
 
-// ── Pure HTTP download resolution (unchanged) ────────────────────────────────
-async function resolveDownloadMp4(shortUrl: string): Promise<string> {
-  console.log('[Akwam] DOWNLOAD fetching shortener:', shortUrl);
-  const r1 = await fetch(shortUrl, {
-    method: 'GET',
-    redirect: 'follow',
-    headers: {'User-Agent': UA},
-  });
-  const html1 = await r1.text();
-  console.log('[Akwam] DOWNLOAD shortener status:', r1.status, 'finalUrl:', r1.url?.substring(0, 80));
-
-  if (r1.url && r1.url.includes('/download/')) {
-    const mp4 = extractMp4(html1);
-    if (mp4) return mp4;
-  }
-
-  const m1 = html1.match(/class="download-link"[^>]*href="([^"]+)"/);
-  const m2 = !m1 && html1.match(/href="([^"]+)"[^>]*class="download-link"/);
-  const href = (m1 || m2)?.[1];
-  if (!href) throw new Error('download-link not found. Page length: ' + html1.length);
-
-  const downloadPageUrl = href.startsWith('http') ? href : `https://akwam.com.co${href}`;
-  console.log('[Akwam] DOWNLOAD page url:', downloadPageUrl.substring(0, 80));
-
-  const r2 = await fetch(downloadPageUrl, {
-    headers: {'User-Agent': UA, 'Referer': shortUrl},
-  });
-  const html2 = await r2.text();
-  console.log('[Akwam] DOWNLOAD page status:', r2.status);
-
-  const mp4 = extractMp4(html2);
-  if (mp4) return mp4;
-
-  throw new Error('mp4 not found in download page. Length: ' + html2.length);
-}
-
+// ── Extract an mp4 URL from HTML ──────────────────────────────────────────────
 function extractMp4(html: string): string | null {
   // <source src="...mp4">
-  const sourceMatch = html.match(/<source[^>]*src="([^"]+\.mp4[^"]*)"/i);
-  if (sourceMatch) return sourceMatch[1];
-  // <a class="link btn ..." href="...mp4">
-  const linkMatch = html.match(/class="[^"]*\blink\b[^"]*\bbtn\b[^"]*"[^>]*href="([^"]+\.mp4[^"]*)"/i);
-  if (linkMatch) return linkMatch[1];
+  const m1 = html.match(/<source[^>]*src="([^"]+\.mp4[^"]*)"/i);
+  if (m1) return m1[1];
+  // <a class="link btn" href="...mp4">
+  const m2 = html.match(/class="[^"]*\blink\b[^"]*\bbtn\b[^"]*"[^>]*href="([^"]+\.mp4[^"]*)"/i);
+  if (m2) return m2[1];
   // <a href="...mp4" download>
-  const downloadMatch = html.match(/href="(https?:\/\/[^"]+\.mp4[^"]*)"[^>]*download/i);
-  if (downloadMatch) return downloadMatch[1];
+  const m3 = html.match(/href="(https?:\/\/[^"]+\.mp4[^"]*)"[^>]*download/i);
+  if (m3) return m3[1];
   // any href/src with .mp4
-  const genericMatch = html.match(/(?:href|src)="(https?:\/\/[^"]+\.mp4[^"]*)"/i);
-  if (genericMatch) return genericMatch[1];
+  const m4 = html.match(/(?:href|src)="(https?:\/\/[^"]+\.mp4[^"]*)"/i);
+  if (m4) return m4[1];
   // bare mp4 url
-  const bareMatch = html.match(/https?:\/\/[^\s"'<>]+\.mp4/i);
-  if (bareMatch) return bareMatch[0];
+  const m5 = html.match(/https?:\/\/[^\s"'<>]+\.mp4/i);
+  if (m5) return m5[0];
   return null;
 }
 
-// ── Resolve watch shortener using fetch (unchanged) ──────────────────────────
-async function resolveWatchUrl(shortUrl: string): Promise<string> {
-  console.log('[Akwam] WATCH resolving shortener:', shortUrl);
+// ── Resolve a go.akwam.com.co shortener → final watch/download page URL ────────
+async function resolveShortener(shortUrl: string, type: 'watch' | 'download'): Promise<string> {
+  console.log(`[Akwam] resolving ${type} shortener:`, shortUrl);
   const resp = await fetch(shortUrl, {
     method: 'GET',
     redirect: 'follow',
     headers: {'User-Agent': UA},
   });
-  const finalUrl = resp.url;
-  console.log('[Akwam] WATCH resolved to:', finalUrl?.substring(0, 80));
-  return finalUrl;
+  const html = await resp.text();
+
+  // If the final URL is already the target page (rare), return it directly
+  if (resp.url.includes(`/${type}/`)) {
+    return resp.url;
+  }
+
+  // The shortener shows a static "Click here" page – parse the download-link
+  const match = html.match(/<a\s[^>]*class="download-link"[^>]*href="([^"]+)"/) ||
+                html.match(/<a\s[^>]*href="([^"]+)"[^>]*class="download-link"/);
+  if (match) {
+    const href = match[1];
+    const finalUrl = href.startsWith('http') ? href : `https://akwam.com.co${href}`;
+    console.log(`[Akwam] resolved ${type} to:`, finalUrl.substring(0, 80));
+    return finalUrl;
+  }
+
+  throw new Error(`download-link not found (page length: ${html.length})`);
 }
 
-// ── Aggressive injected JS for the final watch page ──────────────────────────
+// ── Injected JS for the final watch page ──────────────────────────────────────
 const WATCH_JS = `
 (function() {
-  if (window.__akwamDone) return;
+  if (window.__akwamDone) return false;
+  window.__akwamDone = false;
 
   function post(url) {
     if (window.__akwamDone) return;
@@ -123,26 +102,20 @@ const WATCH_JS = `
     for (var i = 0; i < tags.length; i++) {
       if (tags[i].src && tags[i].src.includes('.mp4')) { post(tags[i].src); return true; }
     }
-    // 3. download link
-    var dl = document.querySelector('a[download][href*=".mp4"]');
-    if (dl && dl.href) { post(dl.href); return true; }
-    // 4. regex on entire document
+    // 3. regex fallback
     var m = document.documentElement.innerHTML.match(/https?:\\/\\/[^"\\'\\s<>]+\\.mp4/);
     if (m) { post(m[0]); return true; }
     return false;
   }
 
-  // Scan immediately and every 50ms
+  // Scan immediately and every 50ms (up to 5 seconds)
   if (scan()) return;
   var attempts = 0;
   var timer = setInterval(function() {
     if (scan() || ++attempts > 100) clearInterval(timer);
   }, 50);
-
-  // Also scan on DOM changes
-  if (window.MutationObserver) {
-    new MutationObserver(scan).observe(document.documentElement, {childList: true, subtree: true});
-  }
+  // Also react to DOM changes
+  new MutationObserver(scan).observe(document.documentElement, {childList: true, subtree: true});
 })();
 true;
 `;
@@ -153,11 +126,10 @@ const AkwamExtractor: React.FC<Props> = ({
   mode,
   onExtracted,
   onError,
-  timeoutMs = 45000, // increased for slower connections
+  timeoutMs = 45000,
 }) => {
   const doneRef    = useRef(false);
   const timerRef   = useRef<ReturnType<typeof setTimeout>>();
-  const webviewRef = useRef<WebView>(null);
   const [watchUrl, setWatchUrl] = useState<string | null>(null);
   const fallbackTimerRef = useRef<ReturnType<typeof setTimeout>>();
 
@@ -169,9 +141,8 @@ const AkwamExtractor: React.FC<Props> = ({
     mp4 ? onExtracted(mp4) : onError();
   }, [onExtracted, onError]);
 
-  // Fallback: if the WebView hasn't found the mp4 in time, try a direct fetch
+  // Native fetch fallback: if WebView doesn't find the mp4 quickly, try a direct fetch
   const startFallback = useCallback((finalUrl: string) => {
-    // Wait 10 seconds, then try fetch
     fallbackTimerRef.current = setTimeout(() => {
       if (doneRef.current) return;
       console.log('[Akwam] WATCH fallback fetch starting');
@@ -198,20 +169,24 @@ const AkwamExtractor: React.FC<Props> = ({
     }, timeoutMs);
 
     if (mode === 'download') {
-      console.log('[Akwam] DOWNLOAD start:', startUrl);
-      resolveDownloadMp4(startUrl)
-        .then(mp4 => { console.log('[Akwam] DOWNLOAD success:', mp4.substring(0, 120)); done(mp4); })
-        .catch(e  => { console.warn('[Akwam] DOWNLOAD failed:', e.message); done(); });
+      // Download – pure HTTP, no WebView
+      resolveShortener(startUrl, 'download')
+        .then(downloadPageUrl => fetch(downloadPageUrl, { headers: { 'User-Agent': UA, 'Referer': startUrl } }))
+        .then(r => r.text())
+        .then(html => {
+          const mp4 = extractMp4(html);
+          if (mp4) { console.log('[Akwam] DOWNLOAD got mp4:', mp4.substring(0, 120)); done(mp4); }
+          else throw new Error('mp4 not found');
+        })
+        .catch(e => { console.warn('[Akwam] DOWNLOAD failed:', e.message); done(); });
     } else {
-      resolveWatchUrl(startUrl)
+      // Watch – resolve shortener to real watch page, then load WebView
+      resolveShortener(startUrl, 'watch')
         .then(finalUrl => {
           setWatchUrl(finalUrl);
           startFallback(finalUrl);
         })
-        .catch(e => {
-          console.warn('[Akwam] WATCH resolution failed:', e.message);
-          done();
-        });
+        .catch(e => { console.warn('[Akwam] WATCH resolution failed:', e.message); done(); });
     }
 
     return () => {
@@ -250,7 +225,6 @@ const AkwamExtractor: React.FC<Props> = ({
   return (
     <View pointerEvents="none" style={{position: 'absolute', width: 1, height: 1, opacity: 0}}>
       <WebView
-        ref={webviewRef}
         source={{uri: watchUrl}}
         javaScriptEnabled
         domStorageEnabled
@@ -268,5 +242,5 @@ const AkwamExtractor: React.FC<Props> = ({
   );
 };
 
-export { resolveDownloadMp4 };
+export { resolveShortener as resolveDownloadMp4 }; // kept for backward compatibility
 export default AkwamExtractor;
