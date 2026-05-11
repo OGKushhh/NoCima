@@ -1,36 +1,34 @@
 /**
  * downloadService.ts
  *
- * HLS/MP4 download management using
- * @kesha-antonov/react-native-background-downloader v3.x
+ * @kesha-antonov/react-native-background-downloader v3 — REAL API:
  *
- * API reference (v3.x):
- *   createDownloadTask({ id, url, destination, metadata, headers })
- *     .begin(({ expectedBytes }) => {})
+ *   import RNBackgroundDownloader from '@kesha-antonov/react-native-background-downloader'
+ *   RNBackgroundDownloader.download({ id, url, destination, headers?, metadata? })
+ *     .begin(({ bytesTotal }) => {})
  *     .progress(({ bytesDownloaded, bytesTotal }) => {})
  *     .done(({ bytesDownloaded, bytesTotal }) => {})
  *     .error(({ error, errorCode }) => {})
- *   task.start() / task.pause() / task.resume() / task.stop()
- *   getExistingDownloadTasks() — restore after app kill
- *   directories.documents — document directory path (no RNFS needed)
- *   completeHandler(id) — must call after .done() on iOS
+ *
+ *   RNBackgroundDownloader.directories.documents  — documents path
+ *   RNBackgroundDownloader.checkForExistingDownloads() — restore after kill
+ *   RNBackgroundDownloader.completeHandler(id)    — required on iOS after done
+ *
+ *   task.pause() / task.resume() / task.stop() — all synchronous, no await
  */
 
-import {
-  createDownloadTask,
-  getExistingDownloadTasks,
-  completeHandler,
-  directories,
-  DownloadTask,
-} from '@kesha-antonov/react-native-background-downloader';
+import RNBackgroundDownloader from '@kesha-antonov/react-native-background-downloader';
 import ReactNativeBlobUtil from 'react-native-blob-util';
 import {DownloadItem, ContentItem} from '../types';
 import {storage, storageKeys} from '../storage';
 
-// ─── In-memory task registry ───────────────────────────────────────────────
-const activeTasks = new Map<string, DownloadTask>();
+// ─── Task type (v3 DownloadTask instance) ─────────────────────────────────
+type AnyTask = ReturnType<typeof RNBackgroundDownloader.download>;
 
-// ─── Change listeners ──────────────────────────────────────────────────────
+// ─── In-memory task registry ──────────────────────────────────────────────
+const activeTasks = new Map<string, AnyTask>();
+
+// ─── Change listeners ─────────────────────────────────────────────────────
 type Listener = () => void;
 const listeners = new Set<Listener>();
 
@@ -41,7 +39,7 @@ export const subscribeDownloads = (fn: Listener) => {
 
 const notify = () => listeners.forEach(fn => fn());
 
-// ─── Persistence ───────────────────────────────────────────────────────────
+// ─── Persistence ──────────────────────────────────────────────────────────
 export const getDownloadState = (): DownloadItem[] => {
   try {
     const raw = storage.getString(storageKeys.DOWNLOADS_LIST);
@@ -64,20 +62,15 @@ const updateItem = (id: string, patch: Partial<DownloadItem>) => {
   notify();
 };
 
-// ─── Destination path ──────────────────────────────────────────────────────
+// ─── Destination path ─────────────────────────────────────────────────────
 const getDestPath = (id: string) =>
-  `${directories.documents}/downloads/${id}.mp4`;
+  `${RNBackgroundDownloader.directories.documents}/downloads/${id}.mp4`;
 
-// ─── Attach handlers to a task ─────────────────────────────────────────────
-// In @kesha-antonov/react-native-background-downloader v3, the handler chain
-// (.begin / .progress / .done / .error) both attaches callbacks AND starts
-// the download. Do NOT call task.start() separately — it doesn't exist on the
-// task object returned by createDownloadTask(), which causes the
-// "undefined is not a function" crash on the downloads screen.
-const attachHandlers = (task: DownloadTask, id: string) => {
+// ─── Attach handlers to a task ────────────────────────────────────────────
+const attachHandlers = (task: AnyTask, id: string) => {
   task
-    .begin(({expectedBytes}: {expectedBytes: number}) => {
-      updateItem(id, {totalBytes: expectedBytes, status: 'downloading'});
+    .begin(({bytesTotal}: {bytesTotal: number}) => {
+      updateItem(id, {totalBytes: bytesTotal, status: 'downloading'});
     })
     .progress(({bytesDownloaded, bytesTotal}: {bytesDownloaded: number; bytesTotal: number}) => {
       const progress = bytesTotal > 0 ? bytesDownloaded / bytesTotal : 0;
@@ -99,25 +92,19 @@ const attachHandlers = (task: DownloadTask, id: string) => {
         destinationPath: destPath,
       });
       activeTasks.delete(id);
-      completeHandler(id); // required on iOS
+      RNBackgroundDownloader.completeHandler(id); // required on iOS
     })
     .error(({error, errorCode}: {error: string; errorCode: number}) => {
       console.warn('[Download] task error:', error, errorCode);
       updateItem(id, {status: 'failed', errorMessage: String(error)});
       activeTasks.delete(id);
     });
-  // ⚠️  Do NOT call task.start() here — the chain above already starts it.
 };
 
-// ─── Restore interrupted downloads on app start ────────────────────────────
+// ─── Restore interrupted downloads on app start ───────────────────────────
 export const restoreDownloads = async () => {
   try {
-    // Guard for older library versions that don't export getExistingDownloadTasks
-    if (typeof getExistingDownloadTasks !== 'function') {
-      console.log('[Download] restore skipped – getExistingDownloadTasks not available');
-      return;
-    }
-    const lostTasks = await getExistingDownloadTasks();
+    const lostTasks = await RNBackgroundDownloader.checkForExistingDownloads();
     const items = getDownloadState();
     for (const task of lostTasks) {
       const item = items.find(d => d.id === task.id);
@@ -134,13 +121,13 @@ export const restoreDownloads = async () => {
   }
 };
 
-// ─── Start a new download ──────────────────────────────────────────────────
+// ─── Start a new download ─────────────────────────────────────────────────
 export const startDownload = async (
   item: ContentItem,
-  m3u8Url: string,
+  mp4Url: string,
   quality = 'auto',
 ): Promise<DownloadItem> => {
-  const dir = `${directories.documents}/downloads`;
+  const dir = `${RNBackgroundDownloader.directories.documents}/downloads`;
   const dirExists = await ReactNativeBlobUtil.fs.isDir(dir);
   if (!dirExists) await ReactNativeBlobUtil.fs.mkdir(dir);
 
@@ -152,7 +139,7 @@ export const startDownload = async (
     contentId: item.id,
     title: item.Title,
     imageUrl: item['Image Source'] || (item as any).Image || (item as any).poster || '',
-    videoUrl: m3u8Url,
+    videoUrl: mp4Url,
     format: item.Format || '',
     quality,
     progress: 0,
@@ -166,9 +153,9 @@ export const startDownload = async (
   notify();
 
   try {
-    const task = createDownloadTask({
+    const task = RNBackgroundDownloader.download({
       id,
-      url: m3u8Url,
+      url: mp4Url,
       destination: destPath,
       metadata: {contentId: item.id, title: item.Title},
       headers: {
@@ -176,7 +163,7 @@ export const startDownload = async (
           'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
       },
     });
-    attachHandlers(task, id); // starts the download (v3: chain = start)
+    attachHandlers(task, id);
     activeTasks.set(id, task);
     updateItem(id, {status: 'downloading'});
   } catch (e: any) {
@@ -186,29 +173,29 @@ export const startDownload = async (
   return downloadItem;
 };
 
-// ─── Pause ─────────────────────────────────────────────────────────────────
-export const pauseDownload = async (id: string) => {
+// ─── Pause ────────────────────────────────────────────────────────────────
+export const pauseDownload = (id: string) => {
   const task = activeTasks.get(id);
   if (task) {
-    await task.pause();
+    task.pause();
     updateItem(id, {status: 'paused'});
   }
 };
 
-// ─── Resume ────────────────────────────────────────────────────────────────
-export const resumeDownload = async (id: string) => {
+// ─── Resume ───────────────────────────────────────────────────────────────
+export const resumeDownload = (id: string) => {
   const task = activeTasks.get(id);
   if (task) {
-    await task.resume();
+    task.resume();
     updateItem(id, {status: 'downloading'});
   }
 };
 
-// ─── Cancel + delete ───────────────────────────────────────────────────────
+// ─── Cancel + delete ──────────────────────────────────────────────────────
 export const deleteDownload = async (id: string) => {
   const task = activeTasks.get(id);
   if (task) {
-    await task.stop();
+    task.stop();
     activeTasks.delete(id);
   }
   const destPath = getDestPath(id);
@@ -223,7 +210,7 @@ export const deleteDownload = async (id: string) => {
   notify();
 };
 
-// ─── Retry a failed download ───────────────────────────────────────────────
+// ─── Retry a failed download ──────────────────────────────────────────────
 export const retryDownload = async (id: string) => {
   const items = getDownloadState();
   const item = items.find(d => d.id === id);
@@ -233,7 +220,7 @@ export const retryDownload = async (id: string) => {
   updateItem(id, {status: 'pending', progress: 0, errorMessage: undefined});
 
   try {
-    const task = createDownloadTask({
+    const task = RNBackgroundDownloader.download({
       id,
       url: item.videoUrl,
       destination: destPath,
@@ -243,7 +230,7 @@ export const retryDownload = async (id: string) => {
           'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
       },
     });
-    attachHandlers(task, id); // starts the download (v3: chain = start)
+    attachHandlers(task, id);
     activeTasks.set(id, task);
     updateItem(id, {status: 'downloading'});
   } catch (e: any) {
