@@ -15,6 +15,7 @@ import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   ActivityIndicator, Share, Linking, Dimensions, StatusBar, Image,
   Modal, FlatList, ToastAndroid, Platform, Alert,
+  PermissionsAndroid,
 } from 'react-native';
 import {useRoute, useNavigation} from '@react-navigation/native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
@@ -529,25 +530,51 @@ export const DetailsScreen: React.FC = () => {
     setQualityModalEp(ep);
   }, []);
 
+  // ── Storage permission helper ──────────────────────────────────────
+  const requestStoragePermission = useCallback(async (): Promise<boolean> => {
+    if (Platform.OS !== 'android') return true;
+    try {
+      const granted = await PermissionsAndroid.request(
+        PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE,
+        {
+          title: 'Storage Permission',
+          message: 'App needs storage access to save downloads.',
+          buttonPositive: 'OK',
+        },
+      );
+      return granted === PermissionsAndroid.RESULTS.GRANTED;
+    } catch (err) {
+      return false;
+    }
+  }, []);
+
   const handleArabicQualitySelected = useCallback((src: ArabicEpisodeSource, ep: ArabicEpisode) => {
     setQualityModalEp(null);
     if (qualityModalMode === 'download') {
       const epItem: ContentItem = {...item, Title: ep.title};
       const title = ep.title || `${t('episode')} ${ep.number}`;
 
-      // Show a toast while resolving
-      const preparingMsg = lang === 'ar'
-        ? `🔗 جاري تحضير الرابط: ${title}`
-        : `🔗 Preparing download: ${title}`;
-      if (Platform.OS === 'android') {
-        ToastAndroid.show(preparingMsg, ToastAndroid.LONG);
-      } else {
-        Alert.alert('', preparingMsg);
-      }
+      const startDownloadFlow = async () => {
+        // Show a toast while resolving
+        const preparingMsg = lang === 'ar'
+          ? `🔗 جاري تحضير الرابط: ${title}`
+          : `🔗 Preparing download: ${title}`;
+        if (Platform.OS === 'android') {
+          ToastAndroid.show(preparingMsg, ToastAndroid.LONG);
+        } else {
+          Alert.alert('', preparingMsg);
+        }
 
-      resolveAkwamDownloadLink(src.download_url)
-        .then(mp4 => {
-          startDownload(epItem, mp4);
+        // Request storage permission first
+        const hasPermission = await requestStoragePermission();
+        if (!hasPermission) {
+          Alert.alert('', 'Storage permission is required to download files.');
+          return;
+        }
+
+        try {
+          const mp4 = await resolveAkwamDownloadLink(src.download_url);
+          await startDownload(epItem, mp4);
           const doneMsg = lang === 'ar'
             ? `⬇ بدأ التحميل: ${title}`
             : `⬇ Download started: ${title}`;
@@ -556,8 +583,7 @@ export const DetailsScreen: React.FC = () => {
           } else {
             Alert.alert('', doneMsg);
           }
-        })
-        .catch(e => {
+        } catch (e) {
           console.warn('[Details] download error:', e);
           const errMsg = lang === 'ar' ? '❌ فشل التحميل' : '❌ Download failed';
           if (Platform.OS === 'android') {
@@ -565,11 +591,14 @@ export const DetailsScreen: React.FC = () => {
           } else {
             Alert.alert('', errMsg);
           }
-        });
+        }
+      };
+
+      startDownloadFlow();
     } else {
       showInterstitial(() => startAkwamWatch(src, ep), 'play');
     }
-  }, [qualityModalMode, item, showInterstitial, startAkwamWatch, lang, t]);
+  }, [qualityModalMode, item, showInterstitial, startAkwamWatch, lang, t, requestStoragePermission]);
 
   const handleAkwamExtracted = useCallback((mp4: string) => {
     akwamCallbackRef.current?.(mp4);

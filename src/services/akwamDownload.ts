@@ -1,47 +1,41 @@
-const UA = 'Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36';
+const UA = 'Mozilla/5.0 …';
 
-function extractMp4FromHtml(html: string): string | null {
-  // <a class="link btn btn-light" href="...mp4">
+function extractMp4(html: string): string | null {
   let m = html.match(/class="[^"]*\blink\b[^"]*\bbtn\b[^"]*"[^>]*href="([^"]+\.mp4[^"]*)"/);
   if (m) return m[1];
-  // any href/src with .mp4
   m = html.match(/(?:href|src)="(https?:\/\/[^"]+\.mp4[^"]*)"/);
   if (m) return m[1];
-  // bare mp4 URL
   m = html.match(/https?:\/\/[^\s"'<>]+\.mp4/);
   return m ? m[0] : null;
 }
 
 export async function resolveAkwamDownloadLink(shortUrl: string): Promise<string> {
-  // 1. Follow the shortener (which may redirect to the "Click here" page)
+  // 1. Fetch the shortener (may be a "Click here" page)
   const r = await fetch(shortUrl, {
     headers: { 'User-Agent': UA, 'Referer': 'https://akwam.com.co/' },
   });
-  const html1 = await r.text();
+  const html = await r.text();
 
-  // If we’re already on the download page (rare), extract immediately
+  // If we're already on a download page, extract immediately
   if (r.url.includes('/download/')) {
-    const mp4 = extractMp4FromHtml(html1);
+    const mp4 = extractMp4(html);
     if (mp4) return mp4;
     throw new Error('mp4 not found on direct download page');
   }
 
-  // 2. Otherwise, parse the “Click here” page for the download-link
-  const linkMatch = html1.match(/<a[^>]+class="download-link"[^>]+href="([^"]+)"/)
-                 || html1.match(/<a[^>]+href="([^"]+)"[^>]+class="download-link"/);
-  if (!linkMatch) throw new Error('download-link not found on shortener page');
+  // 2. Parse the "Click here" page for the real download URL
+  const m = html.match(/<a[^>]+class="download-link"[^>]+href="([^"]+)"/)
+         || html.match(/<a[^>]+href="([^"]+)"[^>]+class="download-link"/);
+  if (!m) throw new Error('download-link not found in shortener page');
 
-  const downloadPageUrl = linkMatch[1].startsWith('http')
-    ? linkMatch[1]
-    : `https://akwam.com.co${linkMatch[1]}`;
+  const downloadPageUrl = m[1].startsWith('http') ? m[1] : `https://akwam.com.co${m[1]}`;
 
-  // 3. Fetch the real download page
+  // 3. Fetch the real download page and extract the .mp4
   const r2 = await fetch(downloadPageUrl, {
     headers: { 'User-Agent': UA, 'Referer': 'https://akwam.com.co/' },
   });
   const html2 = await r2.text();
-  const mp4 = extractMp4FromHtml(html2);
+  const mp4 = extractMp4(html2);
   if (mp4) return mp4;
-
   throw new Error('mp4 not found on final download page');
 }
