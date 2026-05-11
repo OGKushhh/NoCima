@@ -69,12 +69,17 @@ const getDestPath = (id: string) =>
   `${directories.documents}/downloads/${id}.mp4`;
 
 // ─── Attach handlers to a task ─────────────────────────────────────────────
+// In @kesha-antonov/react-native-background-downloader v3, the handler chain
+// (.begin / .progress / .done / .error) both attaches callbacks AND starts
+// the download. Do NOT call task.start() separately — it doesn't exist on the
+// task object returned by createDownloadTask(), which causes the
+// "undefined is not a function" crash on the downloads screen.
 const attachHandlers = (task: DownloadTask, id: string) => {
   task
-    .begin(({expectedBytes}) => {
+    .begin(({expectedBytes}: {expectedBytes: number}) => {
       updateItem(id, {totalBytes: expectedBytes, status: 'downloading'});
     })
-    .progress(({bytesDownloaded, bytesTotal}) => {
+    .progress(({bytesDownloaded, bytesTotal}: {bytesDownloaded: number; bytesTotal: number}) => {
       const progress = bytesTotal > 0 ? bytesDownloaded / bytesTotal : 0;
       updateItem(id, {
         progress,
@@ -83,7 +88,7 @@ const attachHandlers = (task: DownloadTask, id: string) => {
         status: 'downloading',
       });
     })
-    .done(({bytesDownloaded, bytesTotal}) => {
+    .done(({bytesDownloaded, bytesTotal}: {bytesDownloaded: number; bytesTotal: number}) => {
       const destPath = getDestPath(id);
       updateItem(id, {
         status: 'completed',
@@ -96,11 +101,12 @@ const attachHandlers = (task: DownloadTask, id: string) => {
       activeTasks.delete(id);
       completeHandler(id); // required on iOS
     })
-    .error(({error, errorCode}) => {
+    .error(({error, errorCode}: {error: string; errorCode: number}) => {
       console.warn('[Download] task error:', error, errorCode);
       updateItem(id, {status: 'failed', errorMessage: String(error)});
       activeTasks.delete(id);
     });
+  // ⚠️  Do NOT call task.start() here — the chain above already starts it.
 };
 
 // ─── Restore interrupted downloads on app start ────────────────────────────
@@ -170,8 +176,7 @@ export const startDownload = async (
           'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
       },
     });
-    attachHandlers(task, id);
-    task.start();
+    attachHandlers(task, id); // starts the download (v3: chain = start)
     activeTasks.set(id, task);
     updateItem(id, {status: 'downloading'});
   } catch (e: any) {
@@ -238,8 +243,7 @@ export const retryDownload = async (id: string) => {
           'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
       },
     });
-    attachHandlers(task, id);
-    task.start();
+    attachHandlers(task, id); // starts the download (v3: chain = start)
     activeTasks.set(id, task);
     updateItem(id, {status: 'downloading'});
   } catch (e: any) {
