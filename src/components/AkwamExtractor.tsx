@@ -1,70 +1,158 @@
-import React, {useRef, useEffect, useState, useCallback} from 'react';
-import {View} from 'react-native';
-import {WebView} from 'react-native-webview';
+/**
+ * AkwamExtractor
+ *
+ * WATCH mode  — two steps:
+ *   1. Native fetch resolves the go.akwam.com.co/watch shortener (one 302 redirect)
+ *      to get the final akwam.com.co/watch/... URL. No HTML parsing needed.
+ *   2. Hidden WebView loads that final URL. The static HTML already contains
+ *      <source src="...mp4"> inside #player. Injected JS scans for it and posts
+ *      the URL back. No ads, no "Click here", no redirects on this page.
+ *
+ * DOWNLOAD mode — pure HTTP, no WebView:
+ *   1. Native fetch with redirect:'manual' on go.akwam.com.co/link shortener.
+ *      Either follows the 302 Location header, or parses <a class="download-link">
+ *      from the static HTML.
+ *   2. Fetch that download page, regex-extract the .mp4 href from
+ *      <a class="link btn ..."> or any href containing .mp4.
+ *   3. Call onExtracted(mp4Url) — no WebView ever rendered.
+ */
+
+import React, { useRef, useEffect, useCallback, useState } from 'react';
+import { View } from 'react-native';
+import { WebView } from 'react-native-webview';
+
+export type AkwamExtractMode = 'watch' | 'download';
 
 interface Props {
-  watchUrl: string;   // "go.akwam.com.co/watch/130928" from JSON
+  startUrl:    string;
+  mode:        AkwamExtractMode;
   onExtracted: (mp4Url: string) => void;
-  onError: () => void;
-  timeoutMs?: number;
+  onError:     () => void;
+  timeoutMs?:  number;
 }
 
-/** Resolve shortener by following redirects → final /watch/... page */
-async function resolveFinalWatchUrl(watchUrl: string): Promise<string> {
-  const resp = await fetch(watchUrl, {
-    redirect: 'follow',
-    headers: {
-      'User-Agent':
-        'Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Mobile Safari/537.36',
-    },
-  });
-  return resp.url; // now the final /watch/130928/71523/... URL
-}
-
-const JS = `
+// ── Injected into the final watch page only ───────────────────────────────────
+// The page is clean static HTML — no ads, no redirects.
+// Just look for <source src="...mp4"> inside #player and post it back.
+const WATCH_JS = `
 (function() {
-  if (window.__done) return;
-  window.__done = false;
+  if (window.__akwamDone) return;
 
-  function send(url) {
-    if (url && url.startsWith('http') && (url.includes('.mp4') || url.includes('.m3u8'))) {
-      window.ReactNativeWebView.postMessage(url);
-      window.__done = true;
+  function post(url) {
+    if (window.__akwamDone) return;
+    window.__akwamDone = true;
+    window.ReactNativeWebView.postMessage(url);
+  }
+
+  function scan() {
+    // Primary: #player source
+    var s = document.querySelector('#player source[src]');
+    if (s && s.src && s.src.includes('.mp4')) { post(s.src); return true; }
+    // Fallback: any source or video with mp4 src
+    var tags = document.querySelectorAll('source[src], video[src]');
+    for (var i = 0; i < tags.length; i++) {
+      if (tags[i].src && tags[i].src.includes('.mp4')) { post(tags[i].src); return true; }
     }
+    // Fallback: mp4 URL anywhere in the HTML
+    var m = document.documentElement.innerHTML.match(/https?:\/\/[^"'\s<>]+\.mp4/);
+    if (m) { post(m[0]); return true; }
+    return false;
   }
 
-  function grab() {
-    var el = document.querySelector('#player source[src]');
-    if (el) send(el.getAttribute('src'));
+  // Run immediately (source may already be in DOM)
+  if (scan()) return;
+
+  // Re-run on DOMContentLoaded
+  document.addEventListener('DOMContentLoaded', function() { scan(); });
+
+  // Poll every 200ms for dynamically inserted sources
+  var attempts = 0;
+  var timer = setInterval(function() {
+    if (scan() || ++attempts > 25) clearInterval(timer);
+  }, 200);
+
+  // MutationObserver as extra safety net
+  if (window.MutationObserver) {
+    new MutationObserver(function() { if (scan()) {} })
+      .observe(document.documentElement, { childList: true, subtree: true });
   }
-
-  // Grab as soon as the DOM is ready, then poll quickly
-  document.addEventListener('DOMContentLoaded', function() {
-    grab();
-    setInterval(grab, 200);
-  });
-
-  // Also react to any late‑appearing elements
-  new MutationObserver(grab).observe(document.body, {childList: true, subtree: true});
 })();
 true;
 `;
 
+// ── Pure HTTP download resolution (no WebView) ────────────────────────────────
+const UA = 'Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36';
+
+async function resolveDownloadMp4(shortUrl: string): Promise<string> {
+  // Step 1: resolve the shortener — may be a 302 or a "Click here" HTML page
+  const r1 = await fetch(shortUrl, {
+    method: 'GET',
+    redirect: 'manual',
+    headers: { 'User-Agent': UA },
+  });
+
+  let downloadPageUrl: string;
+
+  if (r1.status === 301 || r1.status === 302 || r1.status === 303 || r1.status === 307 || r1.status === 308) {
+    // Direct redirect — grab Location header
+    const loc = r1.headers.get('location') || r1.headers.get('Location');
+    if (!loc) throw new Error('redirect with no Location header');
+    downloadPageUrl = loc.startsWith('http') ? loc : `https://akwam.com.co${loc}`;
+  } else {
+    // "Click here" static HTML page — parse <a class="download-link">
+    const html = await r1.text();
+    const m = html.match(/class="download-link"[^>]*href="([^"]+)"/);
+    const m2 = !m && html.match(/href="([^"]+)"[^>]*class="download-link"/);
+    const href = (m || m2)?.[1];
+    if (!href) throw new Error('download-link not found in shortener HTML');
+    downloadPageUrl = href.startsWith('http') ? href : `https://akwam.com.co${href}`;
+  }
+
+  // Step 2: fetch the download page and extract the mp4 href
+  const r2 = await fetch(downloadPageUrl, {
+    headers: { 'User-Agent': UA, 'Referer': 'https://akwam.com.co/' },
+  });
+  const html2 = await r2.text();
+
+  // Primary: <a class="link btn ..." href="...mp4">
+  const m3 = html2.match(/class="[^"]*\blink\b[^"]*btn[^"]*"[^>]*href="([^"]+\.mp4[^"]*)"/);
+  if (m3) return m3[1];
+
+  // Fallback: any href or src containing .mp4
+  const m4 = html2.match(/(?:href|src)="(https?:\/\/[^"]+\.mp4[^"]*)"/);
+  if (m4) return m4[1];
+
+  // Last resort: bare mp4 URL anywhere in the page
+  const m5 = html2.match(/https?:\/\/[^\s"'<>]+\.mp4/);
+  if (m5) return m5[0];
+
+  throw new Error('mp4 URL not found in download page');
+}
+
+// ── Watch: resolve shortener then load final page in WebView ─────────────────
+async function resolveWatchUrl(shortUrl: string): Promise<string> {
+  // go.akwam.com.co/watch/... does a simple 302 to akwam.com.co/watch/...
+  // Follow it natively — avoids loading the shortener page (and its ads) in WebView
+  const r = await fetch(shortUrl, {
+    method: 'GET',
+    redirect: 'follow',
+    headers: { 'User-Agent': UA },
+  });
+  // After following redirects, r.url is the final URL
+  return r.url;
+}
+
+// ── Component ─────────────────────────────────────────────────────────────────
 const AkwamExtractor: React.FC<Props> = ({
-  watchUrl,
+  startUrl,
+  mode,
   onExtracted,
   onError,
-  timeoutMs = 20000,
+  timeoutMs = 30000,
 }) => {
-  const [finalUrl, setFinalUrl] = useState<string | null>(null);
-  const doneRef = useRef(false);
-  const timerRef = useRef<ReturnType<typeof setTimeout>>();
-
-  useEffect(() => {
-    resolveFinalWatchUrl(watchUrl)
-      .then(setFinalUrl)
-      .catch(() => onError());
-  }, [watchUrl]);
+  const doneRef    = useRef(false);
+  const timerRef   = useRef<ReturnType<typeof setTimeout>>();
+  const [watchUrl, setWatchUrl] = useState<string | null>(null);
 
   const done = useCallback((mp4?: string) => {
     if (doneRef.current) return;
@@ -74,32 +162,70 @@ const AkwamExtractor: React.FC<Props> = ({
   }, [onExtracted, onError]);
 
   useEffect(() => {
-    if (!finalUrl) return;
     doneRef.current = false;
-    timerRef.current = setTimeout(() => done(), timeoutMs);
-    return () => clearTimeout(timerRef.current);
-  }, [finalUrl]);
+    setWatchUrl(null);
 
-  const handleMessage = useCallback((e: any) => {
-    const url = e.nativeEvent.data;
-    if (url && url.startsWith('http')) done(url);
+    timerRef.current = setTimeout(() => {
+      console.warn('[AkwamExtractor] timeout');
+      done();
+    }, timeoutMs);
+
+    if (mode === 'download') {
+      // Pure HTTP — no WebView needed
+      resolveDownloadMp4(startUrl)
+        .then(mp4 => { console.log('[AkwamExtractor] download mp4:', mp4.substring(0, 80)); done(mp4); })
+        .catch(e  => { console.warn('[AkwamExtractor] download error:', e.message); done(); });
+
+    } else {
+      // Watch — resolve shortener first, then load final page in WebView
+      resolveWatchUrl(startUrl)
+        .then(finalUrl => {
+          console.log('[AkwamExtractor] watch final url:', finalUrl.substring(0, 80));
+          if (!doneRef.current) setWatchUrl(finalUrl);
+        })
+        .catch(e => { console.warn('[AkwamExtractor] watch resolve error:', e.message); done(); });
+    }
+
+    return () => clearTimeout(timerRef.current);
+  }, [startUrl, mode]);
+
+  const handleMessage = useCallback((event: any) => {
+    const url = event.nativeEvent.data;
+    if (url && url.includes('.mp4')) {
+      console.log('[AkwamExtractor] watch got mp4:', url.substring(0, 80));
+      done(url);
+    }
   }, [done]);
 
-  if (!finalUrl) return null;
+  const handleNavRequest = useCallback((request: { url: string }) => {
+    const url = request.url;
+    if (!url) return true;
+    if (url.startsWith('about:') || url.startsWith('data:')) return true;
+    // Capture direct mp4 redirects
+    if (url.includes('.mp4')) { done(url); return false; }
+    // Block everything except akwam and its CDN
+    const allowed = ['akwam.com.co', 'akw.cam', 'downet.net'];
+    return allowed.some(h => url.includes(h));
+  }, [done]);
+
+  // Only render WebView for watch mode and only after shortener is resolved
+  if (mode !== 'watch' || !watchUrl) return null;
 
   return (
-    <View pointerEvents="none" style={{position:'absolute',width:1,height:1,opacity:0,overflow:'hidden'}}>
+    <View pointerEvents="none" style={{ position: 'absolute', width: 1, height: 1, opacity: 0 }}>
       <WebView
-        source={{uri: finalUrl}}
-        javaScriptEnabled domStorageEnabled thirdPartyCookiesEnabled
-        injectedJavaScriptBeforeContentLoaded={JS}
+        source={{ uri: watchUrl }}
+        javaScriptEnabled
+        domStorageEnabled
+        thirdPartyCookiesEnabled
+        injectedJavaScriptBeforeContentLoaded={WATCH_JS}
         onMessage={handleMessage}
+        onShouldStartLoadWithRequest={handleNavRequest}
         onError={() => done()}
-        onHttpError={() => done()}
-        userAgent="Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Mobile Safari/537.36"
         setSupportMultipleWindows={false}
         originWhitelist={['*']}
-        mixedContentMode="compatibility"
+        mixedContentMode="always"
+        userAgent={UA}
       />
     </View>
   );
