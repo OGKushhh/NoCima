@@ -129,19 +129,6 @@ async function resolveDownloadMp4(shortUrl: string): Promise<string> {
   throw new Error('mp4 URL not found in download page');
 }
 
-// ── Watch: resolve shortener then load final page in WebView ─────────────────
-async function resolveWatchUrl(shortUrl: string): Promise<string> {
-  // go.akwam.com.co/watch/... does a simple 302 to akwam.com.co/watch/...
-  // Follow it natively — avoids loading the shortener page (and its ads) in WebView
-  const r = await fetch(shortUrl, {
-    method: 'GET',
-    redirect: 'follow',
-    headers: { 'User-Agent': UA },
-  });
-  // After following redirects, r.url is the final URL
-  return r.url;
-}
-
 // ── Component ─────────────────────────────────────────────────────────────────
 const AkwamExtractor: React.FC<Props> = ({
   startUrl,
@@ -177,13 +164,10 @@ const AkwamExtractor: React.FC<Props> = ({
         .catch(e  => { console.warn('[Akwam] DOWNLOAD failed:', e.message); done(); });
 
     } else {
-      console.log('[Akwam] WATCH start:', startUrl);
-      resolveWatchUrl(startUrl)
-        .then(finalUrl => {
-          console.log('[Akwam] WATCH resolved to:', finalUrl.substring(0, 120));
-          if (!doneRef.current) setWatchUrl(finalUrl);
-        })
-        .catch(e => { console.warn('[Akwam] WATCH resolve failed:', e.message); done(); });
+      // Load shortener URL directly in WebView — it follows the 302 to akwam.com.co/watch/... automatically.
+      // The allowlist in onShouldStartLoadWithRequest blocks ad redirects from hijacking the WebView.
+      console.log('[Akwam] WATCH start (WebView):', startUrl);
+      setWatchUrl(startUrl);
     }
 
     return () => clearTimeout(timerRef.current);
