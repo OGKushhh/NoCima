@@ -84,11 +84,15 @@ function extractMp4(html: string): string | null {
 // ── Injected JS (runs on ANY page the WebView loads) ──────────────────────
 const WATCH_JS = `
 (function() {
-  // No global guard – allows re-injection on every page load.
+  if (window.__akwamDone) return;
+  window.__akwamDone = false;
 
-  function post(url) {
+  function done(url) {
+    if (window.__akwamDone) return;
+    window.__akwamDone = true;
     window.ReactNativeWebView.postMessage(url);
   }
+
   function log(msg) {
     try { window.ReactNativeWebView.postMessage('[AKWAM_LOG] ' + msg); } catch(e) {}
   }
@@ -118,21 +122,24 @@ const WATCH_JS = `
   // Final watch page (akwam.com.co/watch/…) – scan for #player source
   function scan() {
     var s = document.querySelector('#player source[src]');
-    if (s && s.src && s.src.indexOf('.mp4') !== -1) { post(s.src); return true; }
+    if (s && s.src && s.src.indexOf('.mp4') !== -1) { done(s.src); return true; }
     var tags = document.querySelectorAll('source[src], video[src]');
     for (var i = 0; i < tags.length; i++) {
-      if (tags[i].src && tags[i].src.indexOf('.mp4') !== -1) { post(tags[i].src); return true; }
+      if (tags[i].src && tags[i].src.indexOf('.mp4') !== -1) { done(tags[i].src); return true; }
     }
     var m = document.documentElement.innerHTML.match(/https?:\\/\\/[^"\\'\\s<>]+\\.mp4/);
-    if (m) { post(m[0]); return true; }
+    if (m) { done(m[0]); return true; }
     return false;
   }
 
   if (scan()) return;
   document.addEventListener('DOMContentLoaded', scan);
-  setInterval(scan, 100); // keep polling forever
+  var poll = setInterval(function() {
+    if (scan()) clearInterval(poll);
+  }, 100);
   if (window.MutationObserver) {
-    new MutationObserver(scan).observe(document.documentElement, {childList: true, subtree: true});
+    var observer = new MutationObserver(function() { if (scan()) observer.disconnect(); });
+    observer.observe(document.documentElement, {childList: true, subtree: true});
   }
 })();
 true;
