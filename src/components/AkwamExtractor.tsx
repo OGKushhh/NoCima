@@ -171,19 +171,19 @@ const AkwamExtractor: React.FC<Props> = ({
     }, timeoutMs);
 
     if (mode === 'download') {
-      // Pure HTTP — no WebView needed
+      console.log('[Akwam] DOWNLOAD start:', startUrl);
       resolveDownloadMp4(startUrl)
-        .then(mp4 => { console.log('[AkwamExtractor] download mp4:', mp4.substring(0, 80)); done(mp4); })
-        .catch(e  => { console.warn('[AkwamExtractor] download error:', e.message); done(); });
+        .then(mp4 => { console.log('[Akwam] DOWNLOAD success:', mp4.substring(0, 120)); done(mp4); })
+        .catch(e  => { console.warn('[Akwam] DOWNLOAD failed:', e.message); done(); });
 
     } else {
-      // Watch — resolve shortener first, then load final page in WebView
+      console.log('[Akwam] WATCH start:', startUrl);
       resolveWatchUrl(startUrl)
         .then(finalUrl => {
-          console.log('[AkwamExtractor] watch final url:', finalUrl.substring(0, 80));
+          console.log('[Akwam] WATCH resolved to:', finalUrl.substring(0, 120));
           if (!doneRef.current) setWatchUrl(finalUrl);
         })
-        .catch(e => { console.warn('[AkwamExtractor] watch resolve error:', e.message); done(); });
+        .catch(e => { console.warn('[Akwam] WATCH resolve failed:', e.message); done(); });
     }
 
     return () => clearTimeout(timerRef.current);
@@ -191,21 +191,23 @@ const AkwamExtractor: React.FC<Props> = ({
 
   const handleMessage = useCallback((event: any) => {
     const url = event.nativeEvent.data;
+    console.log('[Akwam] WEBVIEW message:', url?.substring(0, 120));
     if (url && url.includes('.mp4')) {
-      console.log('[AkwamExtractor] watch got mp4:', url.substring(0, 80));
+      console.log('[Akwam] WEBVIEW got mp4:', url.substring(0, 120));
       done(url);
     }
   }, [done]);
 
   const handleNavRequest = useCallback((request: { url: string }) => {
     const url = request.url;
+    console.log('[Akwam] WEBVIEW nav:', url?.substring(0, 120));
     if (!url) return true;
     if (url.startsWith('about:') || url.startsWith('data:')) return true;
-    // Capture direct mp4 redirects
-    if (url.includes('.mp4')) { done(url); return false; }
-    // Block everything except akwam and its CDN
+    if (url.includes('.mp4')) { console.log('[Akwam] WEBVIEW intercepted mp4 nav'); done(url); return false; }
     const allowed = ['akwam.com.co', 'akw.cam', 'downet.net'];
-    return allowed.some(h => url.includes(h));
+    const ok = allowed.some(h => url.includes(h));
+    if (!ok) console.log('[Akwam] WEBVIEW blocked:', url.substring(0, 120));
+    return ok;
   }, [done]);
 
   // Only render WebView for watch mode and only after shortener is resolved
