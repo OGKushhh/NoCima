@@ -17,6 +17,7 @@ import {
 import { ArabicEpisode, ArabicEpisodeSource, ContentItem } from '../types';
 import { Colors } from '../theme/colors';
 import { startDownload } from '../services/downloadService';
+import { resolveAkwamDownloadLink } from '../services/akwamDownload';
 
 interface Props {
   visible: boolean;
@@ -89,14 +90,14 @@ const AkwamBulkDownloadModal: React.FC<Props> = ({
       for (const ep of toDownload) {
         const src = pickSource(ep, selQuality);
         if (!src) continue;
-        // Build a fake ContentItem per episode for downloadService
         const epItem: ContentItem = {
           ...item,
           Title: ep.title,
         };
-        // download_url is the interim link that redirects to actual download
-        await startDownload(epItem, src.download_url)
-          .catch(e => console.warn('[ArabicBulkDownload] ep error:', e));
+        // Resolve the shortener to the real .mp4, then start the download
+        resolveAkwamDownloadLink(src.download_url)
+          .then(mp4 => startDownload(epItem, mp4))
+          .catch(e => console.warn('[BulkDownload] ep error:', e));
       }
       setDone(true);
       setTimeout(() => {

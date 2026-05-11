@@ -172,6 +172,7 @@ export const ar = {
   delete_download: 'حذف التحميل',
   delete_download_confirm: 'سيؤدي هذا إلى إزالة الملف من جهازك.',
   download_hls_unsupported: 'تحميل بث HLS غير مدعوم حالياً.',
+  hls_download_coming_soon: 'تحميل HLS قريباً!',
   starting_download: 'جارِ بدء التحميل...',
   // Volume
   volume: 'الصوت',

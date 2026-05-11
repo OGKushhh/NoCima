@@ -172,6 +172,7 @@ export const en = {
   delete_download: 'Delete download',
   delete_download_confirm: 'This will remove the file from your device.',
   download_hls_unsupported: 'HLS stream downloads are not supported yet.',
+  hls_download_coming_soon: 'HLS download coming soon!',
   starting_download: 'Starting download...',
   // Volume
   volume: 'Volume',

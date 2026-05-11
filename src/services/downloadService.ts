@@ -106,6 +106,11 @@ const attachHandlers = (task: DownloadTask, id: string) => {
 // ─── Restore interrupted downloads on app start ────────────────────────────
 export const restoreDownloads = async () => {
   try {
+    // Guard for older library versions that don't export getExistingDownloadTasks
+    if (typeof getExistingDownloadTasks !== 'function') {
+      console.log('[Download] restore skipped – getExistingDownloadTasks not available');
+      return;
+    }
     const lostTasks = await getExistingDownloadTasks();
     const items = getDownloadState();
     for (const task of lostTasks) {

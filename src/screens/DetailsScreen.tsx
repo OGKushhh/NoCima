@@ -34,6 +34,7 @@ import {startDownload} from '../services/downloadService';
 import AkwamQualityModal, {resolveQuality} from '../components/AkwamQualityModal';
 import AkwamBulkDownloadModal from '../components/AkwamBulkDownloadModal';
 import {getSettings} from '../storage';
+import { resolveAkwamDownloadLink } from '../services/akwamDownload';
 
 const FASEL_BASE = 'https://www.fasel-hd.cam';
 
@@ -441,11 +442,18 @@ export const DetailsScreen: React.FC = () => {
 
     if (downloadModeRef.current) {
       downloadModeRef.current = false;
-      const isMp4 = !primaryUrl.includes('.m3u8') && (primaryUrl.includes('.mp4') || !primaryUrl.includes('.'));
-      if (!isMp4) {
-        setExtractError(t('download_hls_unsupported') || 'Download is not supported for HLS streams yet.');
+      const isHls = primaryUrl.includes('.m3u8');
+      if (isHls) {
+        // HLS download not yet available – show a friendly toast
+        const comingSoon = t('hls_download_coming_soon');
+        if (Platform.OS === 'android') {
+          ToastAndroid.show(comingSoon, ToastAndroid.LONG);
+        } else {
+          Alert.alert('', comingSoon);
+        }
         return;
       }
+      // MP4 download
       setDownloading(true);
       startDownload(item, primaryUrl)
         .catch(e => console.warn('[Details] startDownload error:', e))
@@ -470,7 +478,7 @@ export const DetailsScreen: React.FC = () => {
         category,
       });
     }
-  }, [item, category, nav, extractingEpUrl]);
+  }, [item, category, nav, extractingEpUrl, t]);
 
   const handleExtractError = useCallback((reason?: 'timeout' | 'load' | 'http') => {
     stopStatusTimer();
@@ -524,29 +532,44 @@ export const DetailsScreen: React.FC = () => {
   const handleArabicQualitySelected = useCallback((src: ArabicEpisodeSource, ep: ArabicEpisode) => {
     setQualityModalEp(null);
     if (qualityModalMode === 'download') {
-      // Must resolve the shortener URL → real .mp4 via AkwamExtractor before downloading
       const epItem: ContentItem = {...item, Title: ep.title};
-      akwamCallbackRef.current = (mp4: string) => {
-        setAkwamUrl(null);
-        const title = ep.title || `${t('episode')} ${ep.number}`;
-        startDownload(epItem, mp4)
-          .catch(e => console.warn('[Details] arabic download error:', e));
-        // Show toast immediately — don't wait for async promise which may silently swallow errors
-        const msg = lang === 'ar'
-          ? `⬇ بدأ التحميل: ${title}`
-          : `⬇ Download started: ${title}`;
-        if (Platform.OS === 'android') {
-          ToastAndroid.show(msg, ToastAndroid.LONG);
-        } else {
-          Alert.alert('', msg);
-        }
-      };
-      setAkwamMode('download');
-      setAkwamUrl(src.download_url);
+      const title = ep.title || `${t('episode')} ${ep.number}`;
+
+      // Show a toast while resolving
+      const preparingMsg = lang === 'ar'
+        ? `🔗 جاري تحضير الرابط: ${title}`
+        : `🔗 Preparing download: ${title}`;
+      if (Platform.OS === 'android') {
+        ToastAndroid.show(preparingMsg, ToastAndroid.LONG);
+      } else {
+        Alert.alert('', preparingMsg);
+      }
+
+      resolveAkwamDownloadLink(src.download_url)
+        .then(mp4 => {
+          startDownload(epItem, mp4);
+          const doneMsg = lang === 'ar'
+            ? `⬇ بدأ التحميل: ${title}`
+            : `⬇ Download started: ${title}`;
+          if (Platform.OS === 'android') {
+            ToastAndroid.show(doneMsg, ToastAndroid.LONG);
+          } else {
+            Alert.alert('', doneMsg);
+          }
+        })
+        .catch(e => {
+          console.warn('[Details] download error:', e);
+          const errMsg = lang === 'ar' ? '❌ فشل التحميل' : '❌ Download failed';
+          if (Platform.OS === 'android') {
+            ToastAndroid.show(errMsg, ToastAndroid.SHORT);
+          } else {
+            Alert.alert('', errMsg);
+          }
+        });
     } else {
       showInterstitial(() => startAkwamWatch(src, ep), 'play');
     }
-  }, [qualityModalMode, item, showInterstitial, startAkwamWatch]);
+  }, [qualityModalMode, item, showInterstitial, startAkwamWatch, lang, t]);
 
   const handleAkwamExtracted = useCallback((mp4: string) => {
     akwamCallbackRef.current?.(mp4);
