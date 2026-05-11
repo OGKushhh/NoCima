@@ -7,7 +7,9 @@
  *      akwam.com.co/watch/... URL. No HTML parsing.
  *   2. Hidden WebView loads that final URL – static HTML already contains
  *      <source src="...mp4"> inside #player.
- *   3. Injected JS scans for the source and posts the mp4 URL back.
+ *   3. Injected JS aggressively scans for the source and posts the mp4 URL back.
+ *      If the WebView fails or times out, a final native fetch is used as a last
+ *      resort to extract the mp4 link.
  *
  * DOWNLOAD mode — pure HTTP, no WebView (unchanged).
  */
@@ -66,18 +68,25 @@ async function resolveDownloadMp4(shortUrl: string): Promise<string> {
 }
 
 function extractMp4(html: string): string | null {
-  const m1 = html.match(/class="[^"]*link[^"]*btn[^"]*"[^>]*href="([^"]+\.mp4[^"]*)"/);
-  if (m1) return m1[1];
-  const m2 = html.match(/href="(https?:\/\/[^"]+\.mp4[^"]*)"[^>]*download/);
-  if (m2) return m2[1];
-  const m3 = html.match(/(?:href|src)="(https?:\/\/[^"]+\.mp4[^"]*)"/);
-  if (m3) return m3[1];
-  const m4 = html.match(/https?:\/\/[^\s"'<>]+\.mp4/);
-  if (m4) return m4[0];
+  // <source src="...mp4">
+  const sourceMatch = html.match(/<source[^>]*src="([^"]+\.mp4[^"]*)"/i);
+  if (sourceMatch) return sourceMatch[1];
+  // <a class="link btn ..." href="...mp4">
+  const linkMatch = html.match(/class="[^"]*\blink\b[^"]*\bbtn\b[^"]*"[^>]*href="([^"]+\.mp4[^"]*)"/i);
+  if (linkMatch) return linkMatch[1];
+  // <a href="...mp4" download>
+  const downloadMatch = html.match(/href="(https?:\/\/[^"]+\.mp4[^"]*)"[^>]*download/i);
+  if (downloadMatch) return downloadMatch[1];
+  // any href/src with .mp4
+  const genericMatch = html.match(/(?:href|src)="(https?:\/\/[^"]+\.mp4[^"]*)"/i);
+  if (genericMatch) return genericMatch[1];
+  // bare mp4 url
+  const bareMatch = html.match(/https?:\/\/[^\s"'<>]+\.mp4/i);
+  if (bareMatch) return bareMatch[0];
   return null;
 }
 
-// ── NEW: Resolve watch shortener using fetch (like download) ─────────────────
+// ── Resolve watch shortener using fetch (unchanged) ──────────────────────────
 async function resolveWatchUrl(shortUrl: string): Promise<string> {
   console.log('[Akwam] WATCH resolving shortener:', shortUrl);
   const resp = await fetch(shortUrl, {
@@ -85,12 +94,12 @@ async function resolveWatchUrl(shortUrl: string): Promise<string> {
     redirect: 'follow',
     headers: {'User-Agent': UA},
   });
-  const finalUrl = resp.url; // This is the akwam.com.co/watch/... page
+  const finalUrl = resp.url;
   console.log('[Akwam] WATCH resolved to:', finalUrl?.substring(0, 80));
   return finalUrl;
 }
 
-// ── Injected JS for the final watch page ─────────────────────────────────────
+// ── Aggressive injected JS for the final watch page ──────────────────────────
 const WATCH_JS = `
 (function() {
   if (window.__akwamDone) return;
@@ -105,46 +114,32 @@ const WATCH_JS = `
     try { window.ReactNativeWebView.postMessage('[AKWAM_LOG] ' + msg); } catch(e) {}
   }
 
-  var url = window.location.href;
-  log('page: ' + url.substring(0, 80));
-
-  if (url.indexOf('go.akwam.com.co') !== -1 || url.indexOf('akw.cam') !== -1) {
-    // Not expected if we resolved, but just in case - click the download-link
-    function clickDownloadLink() {
-      var link = document.querySelector('a.download-link[href*="akwam.com.co"]') ||
-                 document.querySelector('a.download-link');
-      if (link && link.href) {
-        log('clicking download-link: ' + link.href.substring(0, 80));
-        link.click();
-        return true;
-      }
-      return false;
-    }
-    if (clickDownloadLink()) return;
-    document.addEventListener('DOMContentLoaded', clickDownloadLink);
-    return;
-  }
-
   function scan() {
+    // 1. #player source
     var s = document.querySelector('#player source[src]');
     if (s && s.src && s.src.includes('.mp4')) { post(s.src); return true; }
+    // 2. any source or video
     var tags = document.querySelectorAll('source[src], video[src]');
     for (var i = 0; i < tags.length; i++) {
       if (tags[i].src && tags[i].src.includes('.mp4')) { post(tags[i].src); return true; }
     }
+    // 3. download link
     var dl = document.querySelector('a[download][href*=".mp4"]');
     if (dl && dl.href) { post(dl.href); return true; }
+    // 4. regex on entire document
     var m = document.documentElement.innerHTML.match(/https?:\\/\\/[^"\\'\\s<>]+\\.mp4/);
     if (m) { post(m[0]); return true; }
     return false;
   }
 
+  // Scan immediately and every 50ms
   if (scan()) return;
-  document.addEventListener('DOMContentLoaded', function() { scan(); });
   var attempts = 0;
   var timer = setInterval(function() {
-    if (scan() || ++attempts > 25) clearInterval(timer);
-  }, 200);
+    if (scan() || ++attempts > 100) clearInterval(timer);
+  }, 50);
+
+  // Also scan on DOM changes
   if (window.MutationObserver) {
     new MutationObserver(scan).observe(document.documentElement, {childList: true, subtree: true});
   }
@@ -158,18 +153,40 @@ const AkwamExtractor: React.FC<Props> = ({
   mode,
   onExtracted,
   onError,
-  timeoutMs = 30000,
+  timeoutMs = 45000, // increased for slower connections
 }) => {
-  const doneRef  = useRef(false);
-  const timerRef = useRef<ReturnType<typeof setTimeout>>();
+  const doneRef    = useRef(false);
+  const timerRef   = useRef<ReturnType<typeof setTimeout>>();
+  const webviewRef = useRef<WebView>(null);
   const [watchUrl, setWatchUrl] = useState<string | null>(null);
+  const fallbackTimerRef = useRef<ReturnType<typeof setTimeout>>();
 
   const done = useCallback((mp4?: string) => {
     if (doneRef.current) return;
     doneRef.current = true;
     clearTimeout(timerRef.current);
+    clearTimeout(fallbackTimerRef.current);
     mp4 ? onExtracted(mp4) : onError();
   }, [onExtracted, onError]);
+
+  // Fallback: if the WebView hasn't found the mp4 in time, try a direct fetch
+  const startFallback = useCallback((finalUrl: string) => {
+    // Wait 10 seconds, then try fetch
+    fallbackTimerRef.current = setTimeout(() => {
+      if (doneRef.current) return;
+      console.log('[Akwam] WATCH fallback fetch starting');
+      fetch(finalUrl, { headers: { 'User-Agent': UA } })
+        .then(r => r.text())
+        .then(html => {
+          const mp4 = extractMp4(html);
+          if (mp4) {
+            console.log('[Akwam] WATCH fallback got mp4:', mp4.substring(0, 120));
+            done(mp4);
+          }
+        })
+        .catch(() => {});
+    }, 10000);
+  }, [done]);
 
   useEffect(() => {
     doneRef.current = false;
@@ -186,10 +203,10 @@ const AkwamExtractor: React.FC<Props> = ({
         .then(mp4 => { console.log('[Akwam] DOWNLOAD success:', mp4.substring(0, 120)); done(mp4); })
         .catch(e  => { console.warn('[Akwam] DOWNLOAD failed:', e.message); done(); });
     } else {
-      // RESOLVE the shortener first, then load the final URL in WebView
       resolveWatchUrl(startUrl)
         .then(finalUrl => {
           setWatchUrl(finalUrl);
+          startFallback(finalUrl);
         })
         .catch(e => {
           console.warn('[Akwam] WATCH resolution failed:', e.message);
@@ -197,7 +214,10 @@ const AkwamExtractor: React.FC<Props> = ({
         });
     }
 
-    return () => clearTimeout(timerRef.current);
+    return () => {
+      clearTimeout(timerRef.current);
+      clearTimeout(fallbackTimerRef.current);
+    };
   }, [startUrl, mode]);
 
   const handleMessage = useCallback((event: any) => {
@@ -225,12 +245,12 @@ const AkwamExtractor: React.FC<Props> = ({
     return ok;
   }, [done]);
 
-  // Only render WebView for watch once the final URL is resolved
   if (mode !== 'watch' || !watchUrl) return null;
 
   return (
     <View pointerEvents="none" style={{position: 'absolute', width: 1, height: 1, opacity: 0}}>
       <WebView
+        ref={webviewRef}
         source={{uri: watchUrl}}
         javaScriptEnabled
         domStorageEnabled
@@ -248,4 +268,5 @@ const AkwamExtractor: React.FC<Props> = ({
   );
 };
 
+export { resolveDownloadMp4 };
 export default AkwamExtractor;
