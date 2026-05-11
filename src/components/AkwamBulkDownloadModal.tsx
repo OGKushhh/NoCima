@@ -9,7 +9,7 @@
  *  4. Download button → queues each selected episode
  */
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Modal, View, Text, TouchableOpacity, StyleSheet, ScrollView,
   Pressable, ActivityIndicator,
@@ -53,19 +53,21 @@ function pickSource(ep: ArabicEpisode, quality: string): ArabicEpisodeSource | n
 const AkwamBulkDownloadModal: React.FC<Props> = ({
   visible, item, episodes, onClose,
 }) => {
-  const qualities    = useMemo(() => allQualities(episodes), [episodes]);
-  const [selQuality, setSelQuality]   = useState<string>('');
-  const [scope,      setScope]        = useState<Scope>('all');
-  const [selected,   setSelected]     = useState<Set<number>>(new Set());
-  const [loading,    setLoading]      = useState(false);
-  const [done,       setDone]         = useState(false);
+  const qualities = useMemo(() => allQualities(episodes), [episodes]);
 
-  // Fix: update selQuality when qualities become available
+  // FIX: useState initial value only runs once on mount, when episodes is still [].
+  // Use useEffect to set selQuality whenever qualities becomes available.
+  const [selQuality, setSelQuality] = useState<string>('');
   useEffect(() => {
     if (qualities.length > 0 && !selQuality) {
       setSelQuality(qualities[0]);
     }
   }, [qualities]);
+
+  const [scope,    setScope]    = useState<Scope>('all');
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [loading,  setLoading]  = useState(false);
+  const [done,     setDone]     = useState(false);
 
   const toggleEp = (num: number) => {
     setSelected(prev => {
@@ -92,18 +94,23 @@ const AkwamBulkDownloadModal: React.FC<Props> = ({
 
     setLoading(true);
     try {
-      for (const ep of toDownload) {
-        const src = pickSource(ep, selQuality);
-        if (!src) continue;
-        const epItem: ContentItem = {
-          ...item,
-          Title: ep.title,
-        };
-        // Resolve the shortener to the real .mp4, then start the download
-        resolveAkwamDownloadLink(src.download_url)
-          .then(mp4 => startDownload(epItem, mp4))
-          .catch(e => console.warn('[BulkDownload] ep error:', e));
-      }
+      // FIX: await all promises so startDownload fully completes (writes to
+      // storage + fires notify()) before the modal closes and the downloads
+      // screen tries to read the list. The old fire-and-forget meant the modal
+      // closed before anything was ever saved.
+      await Promise.all(
+        toDownload.map(async ep => {
+          const src = pickSource(ep, selQuality);
+          if (!src) return;
+          const epItem: ContentItem = { ...item, Title: ep.title };
+          try {
+            const mp4 = await resolveAkwamDownloadLink(src.download_url);
+            await startDownload(epItem, mp4);
+          } catch (e) {
+            console.warn('[BulkDownload] ep error:', ep.number, e);
+          }
+        })
+      );
       setDone(true);
       setTimeout(() => {
         setDone(false);
@@ -129,11 +136,13 @@ const AkwamBulkDownloadModal: React.FC<Props> = ({
       <Pressable style={styles.backdrop} onPress={onClose}>
         <Pressable style={styles.sheet} onPress={() => {}}>
 
+          {/* Handle */}
           <View style={styles.handle} />
 
           <Text style={styles.title}>تحميل الحلقات / Download Episodes</Text>
           <Text style={styles.seriesName} numberOfLines={1}>{item.Title}</Text>
 
+          {/* ── Quality selector ── */}
           <Text style={styles.sectionLabel}>الجودة / Quality</Text>
           <View style={styles.qualityRow}>
             {qualities.map(q => (
@@ -150,6 +159,7 @@ const AkwamBulkDownloadModal: React.FC<Props> = ({
             ))}
           </View>
 
+          {/* ── Scope selector ── */}
           <Text style={styles.sectionLabel}>النطاق / Scope</Text>
           <View style={styles.scopeRow}>
             <TouchableOpacity
@@ -170,6 +180,7 @@ const AkwamBulkDownloadModal: React.FC<Props> = ({
             </TouchableOpacity>
           </View>
 
+          {/* ── Episode list (when specific) ── */}
           {scope === 'specific' && (
             <>
               <TouchableOpacity style={styles.selectAllBtn} onPress={toggleAll}>
@@ -217,6 +228,7 @@ const AkwamBulkDownloadModal: React.FC<Props> = ({
             </>
           )}
 
+          {/* ── Download button ── */}
           <TouchableOpacity
             style={[
               styles.downloadBtn,
