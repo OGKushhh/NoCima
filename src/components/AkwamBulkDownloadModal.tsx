@@ -9,7 +9,7 @@
  *  4. Download button → queues each selected episode
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Modal, View, Text, TouchableOpacity, StyleSheet, ScrollView,
   Pressable, ActivityIndicator,
@@ -41,10 +41,8 @@ function allQualities(episodes: ArabicEpisode[]): string[] {
 /** Pick best matching source for a quality label, fallback to highest available */
 function pickSource(ep: ArabicEpisode, quality: string): ArabicEpisodeSource | null {
   if (!ep.sources.length) return null;
-  // Try exact match first
   const exact = ep.sources.find(s => s.quality === quality);
   if (exact) return exact;
-  // Fallback: pick highest available quality (sources are sorted highest first by allQualities)
   return ep.sources.reduce((best, src) => {
     const bestNum = parseInt(best.quality) || 0;
     const srcNum  = parseInt(src.quality)  || 0;
@@ -56,11 +54,18 @@ const AkwamBulkDownloadModal: React.FC<Props> = ({
   visible, item, episodes, onClose,
 }) => {
   const qualities    = useMemo(() => allQualities(episodes), [episodes]);
-  const [selQuality, setSelQuality]   = useState<string>(qualities[0] ?? '');
+  const [selQuality, setSelQuality]   = useState<string>('');
   const [scope,      setScope]        = useState<Scope>('all');
   const [selected,   setSelected]     = useState<Set<number>>(new Set());
   const [loading,    setLoading]      = useState(false);
   const [done,       setDone]         = useState(false);
+
+  // Fix: update selQuality when qualities become available
+  useEffect(() => {
+    if (qualities.length > 0 && !selQuality) {
+      setSelQuality(qualities[0]);
+    }
+  }, [qualities]);
 
   const toggleEp = (num: number) => {
     setSelected(prev => {
@@ -124,13 +129,11 @@ const AkwamBulkDownloadModal: React.FC<Props> = ({
       <Pressable style={styles.backdrop} onPress={onClose}>
         <Pressable style={styles.sheet} onPress={() => {}}>
 
-          {/* Handle */}
           <View style={styles.handle} />
 
           <Text style={styles.title}>تحميل الحلقات / Download Episodes</Text>
           <Text style={styles.seriesName} numberOfLines={1}>{item.Title}</Text>
 
-          {/* ── Quality selector ── */}
           <Text style={styles.sectionLabel}>الجودة / Quality</Text>
           <View style={styles.qualityRow}>
             {qualities.map(q => (
@@ -147,7 +150,6 @@ const AkwamBulkDownloadModal: React.FC<Props> = ({
             ))}
           </View>
 
-          {/* ── Scope selector ── */}
           <Text style={styles.sectionLabel}>النطاق / Scope</Text>
           <View style={styles.scopeRow}>
             <TouchableOpacity
@@ -168,7 +170,6 @@ const AkwamBulkDownloadModal: React.FC<Props> = ({
             </TouchableOpacity>
           </View>
 
-          {/* ── Episode list (when specific) ── */}
           {scope === 'specific' && (
             <>
               <TouchableOpacity style={styles.selectAllBtn} onPress={toggleAll}>
@@ -216,7 +217,6 @@ const AkwamBulkDownloadModal: React.FC<Props> = ({
             </>
           )}
 
-          {/* ── Download button ── */}
           <TouchableOpacity
             style={[
               styles.downloadBtn,
