@@ -44,36 +44,70 @@ const WATCH_JS = `
     window.ReactNativeWebView.postMessage(url);
   }
 
+  function log(msg) {
+    try { window.ReactNativeWebView.postMessage('[AKWAM_LOG] ' + msg); } catch(e) {}
+  }
+
+  var url = window.location.href;
+  log('page: ' + url.substring(0, 80));
+
+  // ── Shortener page (go.akwam.com.co) ─────────────────────────────────────
+  // Has <a class="download-link" href="https://akwam.com.co/watch/...">
+  // We click it so the WebView navigates to the final watch/download page.
+  if (url.indexOf('go.akwam.com.co') !== -1 || url.indexOf('akw.cam') !== -1) {
+    function clickDownloadLink() {
+      var link = document.querySelector('a.download-link[href*="akwam.com.co"]');
+      if (!link) link = document.querySelector('a.download-link');
+      if (link && link.href) {
+        log('clicking download-link: ' + link.href.substring(0, 80));
+        link.click();
+        return true;
+      }
+      return false;
+    }
+
+    // Try immediately (HTML may already be parsed)
+    if (clickDownloadLink()) return;
+
+    // Wait for DOM
+    document.addEventListener('DOMContentLoaded', function() { clickDownloadLink(); });
+
+    // Poll as fallback
+    var tries = 0;
+    var t = setInterval(function() {
+      if (clickDownloadLink() || ++tries > 20) clearInterval(t);
+    }, 200);
+    return;
+  }
+
+  // ── Final watch/download page (akwam.com.co) ──────────────────────────────
+  // Static HTML already has <source src="...mp4"> or <a href="...mp4" download>
   function scan() {
-    // Primary: #player source
+    // Watch page: #player source
     var s = document.querySelector('#player source[src]');
     if (s && s.src && s.src.includes('.mp4')) { post(s.src); return true; }
-    // Fallback: any source or video with mp4 src
+    // Any source or video tag
     var tags = document.querySelectorAll('source[src], video[src]');
     for (var i = 0; i < tags.length; i++) {
       if (tags[i].src && tags[i].src.includes('.mp4')) { post(tags[i].src); return true; }
     }
-    // Fallback: mp4 URL anywhere in the HTML
+    // Download page: <a class="link btn" href="...mp4" download>
+    var dlBtn = document.querySelector('a[download][href*=".mp4"]');
+    if (dlBtn && dlBtn.href) { post(dlBtn.href); return true; }
+    // Any mp4 URL in the HTML
     var m = document.documentElement.innerHTML.match(/https?:\/\/[^"'\s<>]+\.mp4/);
     if (m) { post(m[0]); return true; }
     return false;
   }
 
-  // Run immediately (source may already be in DOM)
   if (scan()) return;
-
-  // Re-run on DOMContentLoaded
   document.addEventListener('DOMContentLoaded', function() { scan(); });
-
-  // Poll every 200ms for dynamically inserted sources
   var attempts = 0;
   var timer = setInterval(function() {
     if (scan() || ++attempts > 25) clearInterval(timer);
   }, 200);
-
-  // MutationObserver as extra safety net
   if (window.MutationObserver) {
-    new MutationObserver(function() { if (scan()) {} })
+    new MutationObserver(function() { scan(); })
       .observe(document.documentElement, { childList: true, subtree: true });
   }
 })();
@@ -84,49 +118,62 @@ true;
 const UA = 'Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36';
 
 async function resolveDownloadMp4(shortUrl: string): Promise<string> {
-  // Step 1: resolve the shortener — may be a 302 or a "Click here" HTML page
+  // Step 1: fetch the shortener with redirect:follow.
+  // On Android RN, redirect:'manual' returns an opaque response with no readable
+  // headers or body — useless. With redirect:'follow', fetch either:
+  //   a) follows the 302 straight to akwam.com.co/download/... and we get that HTML, or
+  //   b) lands on the "Click here" HTML page which contains <a class="download-link">
+  console.log('[Akwam] DOWNLOAD fetching shortener:', shortUrl);
   const r1 = await fetch(shortUrl, {
     method: 'GET',
-    redirect: 'manual',
+    redirect: 'follow',
     headers: { 'User-Agent': UA },
   });
+  const html1 = await r1.text();
+  console.log('[Akwam] DOWNLOAD shortener status:', r1.status, 'finalUrl:', r1.url?.substring(0, 80));
 
-  let downloadPageUrl: string;
-
-  if (r1.status === 301 || r1.status === 302 || r1.status === 303 || r1.status === 307 || r1.status === 308) {
-    // Direct redirect — grab Location header
-    const loc = r1.headers.get('location') || r1.headers.get('Location');
-    if (!loc) throw new Error('redirect with no Location header');
-    downloadPageUrl = loc.startsWith('http') ? loc : `https://akwam.com.co${loc}`;
-  } else {
-    // "Click here" static HTML page — parse <a class="download-link">
-    const html = await r1.text();
-    const m = html.match(/class="download-link"[^>]*href="([^"]+)"/);
-    const m2 = !m && html.match(/href="([^"]+)"[^>]*class="download-link"/);
-    const href = (m || m2)?.[1];
-    if (!href) throw new Error('download-link not found in shortener HTML');
-    downloadPageUrl = href.startsWith('http') ? href : `https://akwam.com.co${href}`;
+  // If we're already on the download page, extract mp4 directly
+  if (r1.url && r1.url.includes('/download/')) {
+    const mp4 = extractMp4(html1);
+    if (mp4) return mp4;
   }
 
-  // Step 2: fetch the download page and extract the mp4 href
+  // Otherwise parse the "Click here" page for the download-link href
+  const m1 = html1.match(/class="download-link"[^>]*href="([^"]+)"/);
+  const m2 = !m1 && html1.match(/href="([^"]+)"[^>]*class="download-link"/);
+  const href = (m1 || m2)?.[1];
+  if (!href) throw new Error('download-link not found. Page length: ' + html1.length);
+
+  const downloadPageUrl = href.startsWith('http') ? href : \`https://akwam.com.co\${href}\`;
+  console.log('[Akwam] DOWNLOAD page url:', downloadPageUrl.substring(0, 80));
+
+  // Step 2: fetch the actual download page
   const r2 = await fetch(downloadPageUrl, {
-    headers: { 'User-Agent': UA, 'Referer': 'https://akwam.com.co/' },
+    headers: { 'User-Agent': UA, 'Referer': shortUrl },
   });
   const html2 = await r2.text();
+  console.log('[Akwam] DOWNLOAD page status:', r2.status);
 
-  // Primary: <a class="link btn ..." href="...mp4">
-  const m3 = html2.match(/class="[^"]*\blink\b[^"]*btn[^"]*"[^>]*href="([^"]+\.mp4[^"]*)"/);
+  const mp4 = extractMp4(html2);
+  if (mp4) return mp4;
+
+  throw new Error('mp4 not found in download page. Length: ' + html2.length);
+}
+
+function extractMp4(html: string): string | null {
+  // <a class="link btn ..." href="...mp4">
+  const m1 = html.match(/class="[^"]*link[^"]*btn[^"]*"[^>]*href="([^"]+\.mp4[^"]*)"/);
+  if (m1) return m1[1];
+  // <a href="...mp4" download>
+  const m2 = html.match(/href="(https?:\/\/[^"]+\.mp4[^"]*)"[^>]*download/);
+  if (m2) return m2[1];
+  // any href/src with .mp4
+  const m3 = html.match(/(?:href|src)="(https?:\/\/[^"]+\.mp4[^"]*)"/);
   if (m3) return m3[1];
-
-  // Fallback: any href or src containing .mp4
-  const m4 = html2.match(/(?:href|src)="(https?:\/\/[^"]+\.mp4[^"]*)"/);
-  if (m4) return m4[1];
-
-  // Last resort: bare mp4 URL anywhere in the page
-  const m5 = html2.match(/https?:\/\/[^\s"'<>]+\.mp4/);
-  if (m5) return m5[0];
-
-  throw new Error('mp4 URL not found in download page');
+  // bare mp4 url
+  const m4 = html.match(/https?:\/\/[^\s"'<>]+\.mp4/);
+  if (m4) return m4[0];
+  return null;
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -174,23 +221,31 @@ const AkwamExtractor: React.FC<Props> = ({
   }, [startUrl, mode]);
 
   const handleMessage = useCallback((event: any) => {
-    const url = event.nativeEvent.data;
-    console.log('[Akwam] WEBVIEW message:', url?.substring(0, 120));
-    if (url && url.includes('.mp4')) {
-      console.log('[Akwam] WEBVIEW got mp4:', url.substring(0, 120));
-      done(url);
+    const msg = event.nativeEvent.data;
+    if (!msg) return;
+    // Debug logs from injected JS
+    if (msg.startsWith('[AKWAM_LOG]')) {
+      console.log('[Akwam]', msg.substring(11));
+      return;
+    }
+    // mp4 URL
+    if (msg.includes('.mp4')) {
+      console.log('[Akwam] got mp4:', msg.substring(0, 120));
+      done(msg);
     }
   }, [done]);
 
   const handleNavRequest = useCallback((request: { url: string }) => {
     const url = request.url;
-    console.log('[Akwam] WEBVIEW nav:', url?.substring(0, 120));
+    console.log('[Akwam] nav:', url?.substring(0, 120));
     if (!url) return true;
     if (url.startsWith('about:') || url.startsWith('data:')) return true;
-    if (url.includes('.mp4')) { console.log('[Akwam] WEBVIEW intercepted mp4 nav'); done(url); return false; }
-    const allowed = ['akwam.com.co', 'akw.cam', 'downet.net'];
+    // Capture direct mp4 navigation
+    if (url.includes('.mp4')) { done(url); return false; }
+    // Allow akwam domains — including the shortener (go.akwam.com.co)
+    const allowed = ['akwam.com.co', 'go.akwam.com.co', 'akw.cam', 'downet.net'];
     const ok = allowed.some(h => url.includes(h));
-    if (!ok) console.log('[Akwam] WEBVIEW blocked:', url.substring(0, 120));
+    if (!ok) console.log('[Akwam] blocked:', url.substring(0, 80));
     return ok;
   }, [done]);
 
