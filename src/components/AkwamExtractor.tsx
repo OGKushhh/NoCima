@@ -144,7 +144,7 @@ async function resolveDownloadMp4(shortUrl: string): Promise<string> {
   const href = (m1 || m2)?.[1];
   if (!href) throw new Error('download-link not found. Page length: ' + html1.length);
 
-  const downloadPageUrl = href.startsWith('http') ? href : \`https://akwam.com.co\${href}\`;
+  const downloadPageUrl = href.startsWith('http') ? href : `https://akwam.com.co${href}`;
   console.log('[Akwam] DOWNLOAD page url:', downloadPageUrl.substring(0, 80));
 
   // Step 2: fetch the actual download page
