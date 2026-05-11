@@ -983,16 +983,19 @@ export const DetailsScreen: React.FC = () => {
             </View>
 
             {/* Poster: season poster for regular series, item poster for arabic-series */}
-            {(seasonPoster || (isArabicSeries && ((raw as any).poster || item['Image Source']))) ? (
-              <View style={S.seasonPosterWrap}>
-                <FastImage
-                  source={{uri: seasonPoster || (raw as any).poster || item['Image Source']}}
-                  style={S.seasonPoster}
-                  resizeMode={FastImage.resizeMode.cover}
-                  fallback
-                />
-              </View>
-            ) : null}
+            {(() => {
+              const posterUri = seasonPoster || item['Image Source'] || (raw as any).poster || (raw as any).Image || '';
+              if (!posterUri) return null;
+              return (
+                <View style={S.seasonPosterWrap}>
+                  <FastImage
+                    source={{uri: posterUri}}
+                    style={S.seasonPoster}
+                    resizeMode={FastImage.resizeMode.cover}
+                  />
+                </View>
+              );
+            })()}
 
             {loadingEps ? (
               <ActivityIndicator color={Colors.dark.primary} style={{margin: 20}} />
@@ -1033,7 +1036,7 @@ export const DetailsScreen: React.FC = () => {
                   </TouchableOpacity>
                 );
               })
-            ) : !loadingEps ? (
+            ) : !loadingEps && !isArabicSeries ? (
               <View style={S.noEpsWrap}>
                 <Image source={require('../../assets/icons/files.png')} style={{width: 32, height: 32, tintColor: Colors.dark.textMuted}} />
                 <Text style={S.noEpsTxt}>{t('not_available')}</Text>
@@ -1053,10 +1056,6 @@ export const DetailsScreen: React.FC = () => {
                     {ep.number}
                   </Text>
                 </View>
-                <View style={{flex: 1}}>
-                  <Text style={S.epTitle} numberOfLines={1}>{t('episode')} {ep.number}</Text>
-                </View>
-                {/* Download button — opens quality picker for download */}
                 <TouchableOpacity
                   style={S.epDownloadBtn}
                   activeOpacity={0.7}
@@ -1071,6 +1070,9 @@ export const DetailsScreen: React.FC = () => {
                     style={[S.epPlayIcon, {tintColor: Colors.dark.accent}]}
                   />
                 </TouchableOpacity>
+                <View style={{flex: 1}}>
+                  <Text style={S.epTitle} numberOfLines={1}>{t('episode')} {ep.number}</Text>
+                </View>
                 <Image
                   source={require('../../assets/icons/flash.png')}
                   style={[S.epPlayIcon, {tintColor: '#FFD700'}]}
