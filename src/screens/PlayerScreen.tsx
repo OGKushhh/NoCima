@@ -6,11 +6,12 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import Video, { VideoRef, OnProgressData, OnBufferData } from 'react-native-video';
-import { useRoute, useNavigation } from '@react-navigation/native';
+import { useRoute, useNavigation, useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import { getSettings, saveSettings } from '../storage';
 import { useTheme } from '../hooks/useTheme';
+import ImmersiveMode from 'react-native-immersive-mode';
 
 // ─── Orientation (no external library needed) ─────────────────────────────────
 // We use react-native's built-in Dimensions + a JS-side rotation flag.
@@ -145,6 +146,17 @@ const VOLUME_OPTIONS = [
   { label: '🔊  100%',  value: 100 },
 ];
 
+const SPEED_OPTIONS = [
+  { label: '0.25×', value: 0.25 },
+  { label: '0.5×',  value: 0.5  },
+  { label: '0.75×', value: 0.75 },
+  { label: '1×',    value: 1.0  },
+  { label: '1.25×', value: 1.25 },
+  { label: '1.5×',  value: 1.5  },
+  { label: '1.75×', value: 1.75 },
+  { label: '2×',    value: 2.0  },
+];
+
 // ─────────────────────────────────────────────────────────────────────────────
 export const PlayerScreen: React.FC = () => {
   const { colors }   = useTheme();
@@ -184,6 +196,20 @@ export const PlayerScreen: React.FC = () => {
       Orientation.unlockAllOrientations();
     };
   }, []);
+
+  // ── Immersive mode (hide nav buttons) ────────────────────────────────────
+  useFocusEffect(
+    useCallback(() => {
+      // Enter immersive sticky mode — hides both status bar AND nav buttons
+      ImmersiveMode.fullLayout(true);
+      ImmersiveMode.setBarMode('BarHide');
+      return () => {
+        // Restore system UI when leaving the player
+        ImmersiveMode.fullLayout(false);
+        ImmersiveMode.setBarMode('Normal');
+      };
+    }, []),
+  );
 
   // ── Playback state ────────────────────────────────────────────────────────
   const [playing, setPlaying]           = useState(true);
@@ -260,10 +286,12 @@ export const PlayerScreen: React.FC = () => {
     return { type: 'resolution' as const, value: res };
   })();
 
-  // ── Volume ────────────────────────────────────────────────────────────────
+  // ── Volume & Speed ────────────────────────────────────────────────────────
   const [volumePct, setVolumePct]           = useState(100);
+  const [playbackRate, setPlaybackRate]     = useState(1.0);
   const [showQualityPicker, setShowQualityPicker] = useState(false);
   const [showVolumePicker, setShowVolumePicker]   = useState(false);
+  const [showSpeedPicker, setShowSpeedPicker]     = useState(false);
   const videoPropVolume = volumePct / 100;
 
   // ── Seek-after-load ref ───────────────────────────────────────────────────
@@ -408,6 +436,7 @@ export const PlayerScreen: React.FC = () => {
           style={styles.video}
           paused={!playing}
           volume={videoPropVolume}
+          rate={playbackRate}
           selectedVideoTrack={selectedVideoTrack}
           onProgress={handleProgress}
           onLoad={handleLoad}
@@ -474,6 +503,17 @@ export const PlayerScreen: React.FC = () => {
             >
               <Image source={require('../../assets/icons/medium-volume.png')} style={{ width: 18, height: 18, tintColor: '#fff' }} />
               <Text style={styles.topBadgeTxt}>{volumePct}%</Text>
+            </TouchableOpacity>
+
+            {/* Speed */}
+            <TouchableOpacity
+              style={styles.topBadgeBtn}
+              onPress={() => { setShowSpeedPicker(true); showControlsTemporarily(); }}
+            >
+              <Image source={require('../../assets/icons/flash.png')} style={{ width: 15, height: 15, tintColor: '#fff' }} />
+              <Text style={styles.topBadgeTxt}>
+                {playbackRate === 1.0 ? '1×' : `${playbackRate}×`}
+              </Text>
             </TouchableOpacity>
 
             {/* Server switcher */}
@@ -603,6 +643,31 @@ export const PlayerScreen: React.FC = () => {
               >
                 <Text style={[styles.modalOptionText, { color: colors.text }]}>{opt.label}</Text>
                 {volumePct === opt.value && (
+                  <Image source={require('../../assets/icons/checkmark.png')} style={{ width: 18, height: 18, tintColor: colors.primary }} />
+                )}
+              </TouchableOpacity>
+            ))}
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* ── Speed picker modal ── */}
+      <Modal transparent visible={showSpeedPicker} animationType="fade" onRequestClose={() => setShowSpeedPicker(false)}>
+        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowSpeedPicker(false)}>
+          <View style={[styles.modalContent, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <Text style={[styles.modalTitle, { color: colors.text }]}>{'Playback Speed'}</Text>
+            {SPEED_OPTIONS.map(opt => (
+              <TouchableOpacity
+                key={opt.value}
+                style={[styles.modalOption, { borderBottomColor: colors.border }]}
+                onPress={() => {
+                  setPlaybackRate(opt.value);
+                  setShowSpeedPicker(false);
+                  showControlsTemporarily();
+                }}
+              >
+                <Text style={[styles.modalOptionText, { color: colors.text }]}>{opt.label}</Text>
+                {playbackRate === opt.value && (
                   <Image source={require('../../assets/icons/checkmark.png')} style={{ width: 18, height: 18, tintColor: colors.primary }} />
                 )}
               </TouchableOpacity>
