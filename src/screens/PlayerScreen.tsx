@@ -3,7 +3,7 @@ import {
   View, StyleSheet, TouchableOpacity, Text,
   ActivityIndicator, StatusBar, Animated, Image,
   I18nManager, Modal, GestureResponderEvent,
-  useWindowDimensions,
+  useWindowDimensions, ScrollView,
 } from 'react-native';
 import Video, { VideoRef, OnProgressData, OnBufferData } from 'react-native-video';
 import { useRoute, useNavigation, useFocusEffect } from '@react-navigation/native';
@@ -202,7 +202,7 @@ export const PlayerScreen: React.FC = () => {
     useCallback(() => {
       // Enter immersive sticky mode — hides both status bar AND nav buttons
       ImmersiveMode.fullLayout(true);
-      ImmersiveMode.setBarMode('BarHide');
+      ImmersiveMode.setBarMode('FullSticky'); // hides both status bar AND nav buttons, re-shows on swipe then hides again
       return () => {
         // Restore system UI when leaving the player
         ImmersiveMode.fullLayout(false);
@@ -651,28 +651,32 @@ export const PlayerScreen: React.FC = () => {
         </TouchableOpacity>
       </Modal>
 
-      {/* ── Speed picker modal ── */}
-      <Modal transparent visible={showSpeedPicker} animationType="fade" onRequestClose={() => setShowSpeedPicker(false)}>
-        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowSpeedPicker(false)}>
-          <View style={[styles.modalContent, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            <Text style={[styles.modalTitle, { color: colors.text }]}>{'Playback Speed'}</Text>
-            {SPEED_OPTIONS.map(opt => (
-              <TouchableOpacity
-                key={opt.value}
-                style={[styles.modalOption, { borderBottomColor: colors.border }]}
-                onPress={() => {
-                  setPlaybackRate(opt.value);
-                  setShowSpeedPicker(false);
-                  showControlsTemporarily();
-                }}
-              >
-                <Text style={[styles.modalOptionText, { color: colors.text }]}>{opt.label}</Text>
-                {playbackRate === opt.value && (
-                  <Image source={require('../../assets/icons/checkmark.png')} style={{ width: 18, height: 18, tintColor: colors.primary }} />
-                )}
-              </TouchableOpacity>
-            ))}
-          </View>
+      {/* ── Speed picker modal — bottom sheet with ScrollView (works in landscape) ── */}
+      <Modal transparent visible={showSpeedPicker} animationType="slide" onRequestClose={() => setShowSpeedPicker(false)}>
+        <TouchableOpacity style={styles.sheetOverlay} activeOpacity={1} onPress={() => setShowSpeedPicker(false)}>
+          <TouchableOpacity activeOpacity={1} style={[styles.sheetContent, { backgroundColor: colors.surface, borderColor: colors.border, paddingBottom: insets.bottom + 8 }]}>
+            {/* handle */}
+            <View style={styles.sheetHandle} />
+            <Text style={[styles.modalTitle, { color: colors.text, textAlign: 'center', marginBottom: 12 }]}>{'Playback Speed'}</Text>
+            <ScrollView bounces={false} showsVerticalScrollIndicator={false}>
+              {SPEED_OPTIONS.map(opt => (
+                <TouchableOpacity
+                  key={opt.value}
+                  style={[styles.modalOption, { borderBottomColor: colors.border }]}
+                  onPress={() => {
+                    setPlaybackRate(opt.value);
+                    setShowSpeedPicker(false);
+                    showControlsTemporarily();
+                  }}
+                >
+                  <Text style={[styles.modalOptionText, { color: colors.text, fontWeight: playbackRate === opt.value ? '700' : '400' }]}>{opt.label}</Text>
+                  {playbackRate === opt.value && (
+                    <Image source={require('../../assets/icons/checkmark.png')} style={{ width: 18, height: 18, tintColor: colors.primary }} />
+                  )}
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </TouchableOpacity>
         </TouchableOpacity>
       </Modal>
 
@@ -737,6 +741,9 @@ const styles = StyleSheet.create({
   playPauseButton:  { width: 60, height: 60, borderRadius: 30, justifyContent: 'center', alignItems: 'center', marginHorizontal: 12 },
   modalOverlay:     { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
   modalContent:     { borderRadius: 16, padding: 20, width: '80%', maxWidth: 300, borderWidth: 1 },
+  sheetOverlay:     { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  sheetContent:     { borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 16, maxHeight: '70%', borderTopWidth: 1, borderLeftWidth: 1, borderRightWidth: 1 },
+  sheetHandle:      { width: 40, height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.25)', alignSelf: 'center', marginBottom: 12 },
   modalTitle:       { fontSize: 18, fontWeight: 'bold', marginBottom: 16 },
   modalOption:      { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth },
   modalOptionText:  { fontSize: 16 },
