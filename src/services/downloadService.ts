@@ -36,7 +36,8 @@ setConfig({ isLogsEnabled: true, progressInterval: 1000 });
 type AnyTask = ReturnType<typeof download>;
 
 // ─── In-memory task registry ──────────────────────────────────────────────
-const activeTasks = new Map<string, AnyTask>();
+const activeTasks = new Map<string, any>(); // background-downloader tasks (restore only)
+const blobTasks   = new Map<string, any>(); // blob-util StatefulPromise tasks
 
 // ─── Change listeners ─────────────────────────────────────────────────────
 type Listener = () => void;
@@ -132,18 +133,19 @@ export const restoreDownloads = async () => {
   }
 };
 
-// ─── Start a new download ─────────────────────────────────────────────────
+// ─── Start a new download (uses ReactNativeBlobUtil — starts immediately,
+//     avoiding signed-URL expiry that kills Android DownloadManager) ────────
 export const startDownload = async (
   item: ContentItem,
   mp4Url: string,
   quality = 'auto',
 ): Promise<DownloadItem> => {
-  const dir = `${directories.documents}/downloads`;
+  const dir = `${ReactNativeBlobUtil.fs.dirs.DocumentDir}/downloads`;
   const dirExists = await ReactNativeBlobUtil.fs.isDir(dir);
   if (!dirExists) await ReactNativeBlobUtil.fs.mkdir(dir);
 
   const id = `dl_${item.id}_${Date.now()}`;
-  const destPath = getDestPath(id);
+  const destPath = `${dir}/${id}.mp4`;
 
   const downloadItem: DownloadItem = {
     id,
@@ -154,7 +156,7 @@ export const startDownload = async (
     format: item.Format || '',
     quality,
     progress: 0,
-    status: 'pending',
+    status: 'downloading',
     timestamp: Date.now(),
     destinationPath: destPath,
   };
@@ -163,56 +165,81 @@ export const startDownload = async (
   saveDownloadState([downloadItem, ...current]);
   notify();
 
-  try {
-    console.log('[Download] starting download:', { id, url: mp4Url, destination: destPath });
-    const task = download({
-      id,
-      url: mp4Url,
-      destination: destPath,
-      metadata: {contentId: item.id, title: item.Title},
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
-        'Referer': 'https://akwam.com.co/',
-        'Origin': 'https://akwam.com.co',
-      },
+  // Store the task so pause/cancel works
+  const task = ReactNativeBlobUtil.config({
+    path: destPath,
+    fileCache: true,
+    overwrite: true,
+    indicator: true,
+  }).fetch('GET', mp4Url, {
+    'User-Agent': 'Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+    'Referer': 'https://akwam.com.co/',
+    'Origin': 'https://akwam.com.co',
+  });
+
+  // Track progress
+  task.progress({ interval: 500 }, (received: number, total: number) => {
+    const progress = total > 0 ? received / total : 0;
+    updateItem(id, {
+      progress,
+      downloadedBytes: received,
+      totalBytes: total,
+      status: 'downloading',
     });
-    console.log('[Download] task created:', task?.id, task?.state);
-    attachHandlers(task, id);
-    activeTasks.set(id, task);
-    updateItem(id, {status: 'downloading'});
-  } catch (e: any) {
-    console.warn('[Download] startDownload error:', e);
-    updateItem(id, {status: 'failed', errorMessage: e.message});
-  }
+  });
+
+  // Store reference for pause/cancel (blob-util uses a StatefulPromise)
+  blobTasks.set(id, task);
+
+  // Handle completion / error asynchronously
+  task
+    .then((res: any) => {
+      console.log('[Download] done:', id, res.path());
+      updateItem(id, {
+        status: 'completed',
+        progress: 1,
+        localPath: `file://${destPath}`,
+        destinationPath: destPath,
+      });
+      blobTasks.delete(id);
+    })
+    .catch((e: any) => {
+      if (e?.message === 'cancelled') {
+        updateItem(id, {status: 'paused'});
+      } else {
+        console.warn('[Download] error:', e);
+        updateItem(id, {status: 'failed', errorMessage: String(e?.message || e)});
+      }
+      blobTasks.delete(id);
+    });
 
   return downloadItem;
 };
 
 // ─── Pause ────────────────────────────────────────────────────────────────
 export const pauseDownload = (id: string) => {
-  const task = activeTasks.get(id);
+  const task = blobTasks.get(id);
   if (task) {
-    task.pause();
+    task.cancel(); // blob-util: cancel fires .catch with 'cancelled'
     updateItem(id, {status: 'paused'});
   }
 };
 
-// ─── Resume ───────────────────────────────────────────────────────────────
-export const resumeDownload = (id: string) => {
-  const task = activeTasks.get(id);
-  if (task) {
-    task.resume();
-    updateItem(id, {status: 'downloading'});
-  }
+// ─── Resume (re-starts download from scratch — blob-util has no resume) ──
+export const resumeDownload = async (id: string) => {
+  const items = getDownloadState();
+  const item = items.find(d => d.id === id);
+  if (!item || item.status !== 'paused') return;
+  updateItem(id, {status: 'pending', progress: 0, errorMessage: undefined});
+  await retryDownload(id);
 };
 
 // ─── Cancel + delete ──────────────────────────────────────────────────────
 export const deleteDownload = async (id: string) => {
-  const task = activeTasks.get(id);
-  if (task) {
-    task.stop();
-    activeTasks.delete(id);
-  }
+  const blobTask = blobTasks.get(id);
+  if (blobTask) { blobTask.cancel(); blobTasks.delete(id); }
+  const bgTask = activeTasks.get(id);
+  if (bgTask) { bgTask.stop(); activeTasks.delete(id); }
   const destPath = getDestPath(id);
   try {
     const exists = await ReactNativeBlobUtil.fs.exists(destPath);
@@ -229,27 +256,42 @@ export const deleteDownload = async (id: string) => {
 export const retryDownload = async (id: string) => {
   const items = getDownloadState();
   const item = items.find(d => d.id === id);
-  if (!item || item.status !== 'failed') return;
+  if (!item || (item.status !== 'failed' && item.status !== 'paused' && item.status !== 'pending')) return;
 
-  const destPath = getDestPath(id);
-  updateItem(id, {status: 'pending', progress: 0, errorMessage: undefined});
+  const destPath = item.destinationPath;
+  updateItem(id, {status: 'downloading', progress: 0, errorMessage: undefined});
 
-  try {
-    const task = download({
-      id,
-      url: item.videoUrl,
-      destination: destPath,
-      metadata: {contentId: item.contentId, title: item.title},
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
-        'Referer': 'https://akwam.com.co/',
-        'Origin': 'https://akwam.com.co',
-      },
+  const task = ReactNativeBlobUtil.config({
+    path: destPath,
+    fileCache: true,
+    overwrite: true,
+    indicator: true,
+  }).fetch('GET', item.videoUrl, {
+    'User-Agent': 'Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+    'Referer': 'https://akwam.com.co/',
+    'Origin': 'https://akwam.com.co',
+  });
+
+  task.progress({ interval: 500 }, (received: number, total: number) => {
+    const progress = total > 0 ? received / total : 0;
+    updateItem(id, { progress, downloadedBytes: received, totalBytes: total, status: 'downloading' });
+  });
+
+  blobTasks.set(id, task);
+
+  task
+    .then((res: any) => {
+      console.log('[Download] retry done:', id, res.path());
+      updateItem(id, { status: 'completed', progress: 1, localPath: `file://${destPath}`, destinationPath: destPath });
+      blobTasks.delete(id);
+    })
+    .catch((e: any) => {
+      if (e?.message === 'cancelled') {
+        updateItem(id, { status: 'paused' });
+      } else {
+        console.warn('[Download] retry error:', e);
+        updateItem(id, { status: 'failed', errorMessage: String(e?.message || e) });
+      }
+      blobTasks.delete(id);
     });
-    attachHandlers(task, id);
-    activeTasks.set(id, task);
-    updateItem(id, {status: 'downloading'});
-  } catch (e: any) {
-    updateItem(id, {status: 'failed', errorMessage: e.message});
-  }
 };
