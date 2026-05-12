@@ -171,8 +171,9 @@ export const startDownload = async (
       destination: destPath,
       metadata: {contentId: item.id, title: item.Title},
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'User-Agent': 'Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
         'Referer': 'https://akwam.com.co/',
+        'Origin': 'https://akwam.com.co',
       },
     });
     console.log('[Download] task created:', task?.id, task?.state);
@@ -240,8 +241,9 @@ export const retryDownload = async (id: string) => {
       destination: destPath,
       metadata: {contentId: item.contentId, title: item.title},
       headers: {
-        'User-Agent':
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'User-Agent': 'Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+        'Referer': 'https://akwam.com.co/',
+        'Origin': 'https://akwam.com.co',
       },
     });
     attachHandlers(task, id);
