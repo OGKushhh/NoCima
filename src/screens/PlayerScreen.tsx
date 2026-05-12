@@ -431,7 +431,15 @@ export const PlayerScreen: React.FC = () => {
       <View style={styles.videoContainer}>
         <Video
           ref={videoRef}
-          source={{ uri: activeUri, type: activeUri?.includes('.m3u8') ? 'm3u8' : undefined }}
+          source={{
+            uri: activeUri,
+            type: activeUri?.includes('.m3u8') ? 'm3u8' : undefined,
+            headers: {
+              'Referer': 'https://akwam.com.co/',
+              'Origin': 'https://akwam.com.co',
+              'User-Agent': 'Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+            },
+          }}
           resizeMode="contain"
           style={styles.video}
           paused={!playing}
