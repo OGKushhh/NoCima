@@ -23,10 +23,14 @@ import {
   completeHandler,
   directories,
   checkForExistingDownloads,
+  setConfig,
 } from '@kesha-antonov/react-native-background-downloader';
 import ReactNativeBlobUtil from 'react-native-blob-util';
 import {DownloadItem, ContentItem} from '../types';
 import {storage, storageKeys} from '../storage';
+
+// Enable native download logs so we can see exactly what's happening
+setConfig({ isLogsEnabled: true, progressInterval: 1000 });
 
 // ─── Task type ────────────────────────────────────────────────────────────
 type AnyTask = ReturnType<typeof download>;
@@ -160,20 +164,23 @@ export const startDownload = async (
   notify();
 
   try {
+    console.log('[Download] starting download:', { id, url: mp4Url, destination: destPath });
     const task = download({
       id,
       url: mp4Url,
       destination: destPath,
       metadata: {contentId: item.id, title: item.Title},
       headers: {
-        'User-Agent':
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Referer': 'https://akwam.com.co/',
       },
     });
+    console.log('[Download] task created:', task?.id, task?.state);
     attachHandlers(task, id);
     activeTasks.set(id, task);
     updateItem(id, {status: 'downloading'});
   } catch (e: any) {
+    console.warn('[Download] startDownload error:', e);
     updateItem(id, {status: 'failed', errorMessage: e.message});
   }
 

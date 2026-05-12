@@ -574,6 +574,7 @@ export const DetailsScreen: React.FC = () => {
 
         try {
           const mp4 = await resolveAkwamDownloadLink(src.download_url);
+          console.log('[Details] resolved mp4 URL:', mp4);
           await startDownload(epItem, mp4);
           const doneMsg = lang === 'ar'
             ? `⬇ بدأ التحميل: ${title}`

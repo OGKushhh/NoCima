@@ -5,93 +5,153 @@ import {
   getCategoryTimestamp, isAnyCategoryStale, clearAllMetadataCache,
 } from '../storage/cache';
 import {ContentItem, TrendingContent} from '../types';
+import {METADATA_TTL_MS} from '../constants/endpoints';
 
 const metadataApi = axios.create({
   baseURL: API_BASE,
   timeout: 30000,
 });
 
-export type ContentCategory = 'movies' | 'dubbed-movies' | 'hindi' | 'asian-movies' | 'anime' | 'anime-movies' | 'series' | 'tvshows' | 'asian-series' | 'trending' | 'featured';
+export type ContentCategory =
+  | 'movies' | 'dubbed-movies' | 'hindi' | 'asian-movies'
+  | 'anime'  | 'anime-movies'  | 'series' | 'tvshows'
+  | 'asian-series' | 'arabic-series' | 'trending' | 'featured';
 
 type ContentDict = Record<string, ContentItem>;
 
-// ─── Core: Load a single category ─────────────────────────────────
-export const loadCategory = async (
+export type BackgroundUpdateCallback = (
   category: ContentCategory,
-  forceRefresh = false,
-): Promise<ContentDict | TrendingContent | null> => {
-  // 1. Return fresh cache unless forced
-  if (!forceRefresh) {
-    const fresh = await getMetadataIfFresh(category);
-    if (fresh !== null) return fresh;
-  }
+  data: ContentDict | TrendingContent,
+) => void;
 
-  // 2. Fetch from API
+// ─────────────────────────────────────────────────────────────────────────────
+// Internal: fetch from API, normalise, and write to cache
+// ─────────────────────────────────────────────────────────────────────────────
+const fetchAndCache = async (
+  category: ContentCategory,
+): Promise<ContentDict | TrendingContent | null> => {
   const endpoint = METADATA_ENDPOINTS[category];
   if (!endpoint) {
     console.warn(`[Metadata] Unknown category: ${category}`);
     return null;
   }
 
-  try {
-    const response = await metadataApi.get(endpoint);
-    let data = response.data;
+  const response = await metadataApi.get(endpoint);
+  let data = response.data;
 
-    if (category !== 'trending' && category !== 'featured' && data && typeof data === 'object' && !Array.isArray(data)) {
-      Object.keys(data).forEach(id => {
-        if (!data[id]) return;
-        data[id].id = id;
-        // ── Normalize arabic-series lowercase fields → standard ContentItem fields ──
-        if (category === 'arabic-series' || data[id].is_ramadan !== undefined) {
-          const item = data[id];
-          // year → Year (validate it's a real year)
-          if (item.year && !item.Year) {
-            const n = parseInt(item.year, 10);
-            if (!isNaN(n) && n >= 2000 && n <= 2030) item.Year = String(n);
-          }
-          // is_ramadan → IsRamadan
-          if (item.is_ramadan !== undefined) item.IsRamadan = !!item.is_ramadan;
-          // title → Title
-          if (item.title && !item.Title) item.Title = item.title;
-          // genres_en → Genres
-          if (item.genres_en && !item.Genres) item.Genres = item.genres_en;
-          // genres_ar → GenresAr
-          if (item.genres_ar && !item.GenresAr) item.GenresAr = item.genres_ar;
-          // poster → Image (for card rendering)
-          if (item.poster && !item.Image) item.Image = item.poster;
-          // poster → 'Image Source' (for standard card rendering)
-          if (item.poster && !item['Image Source']) item['Image Source'] = item.poster;
-          // rating (float) → Rating (string)
-          if (item.rating !== undefined && !item.Rating) item.Rating = String(item.rating);
-          // quality → Format
-          if (item.quality && !item.Format) item.Format = item.quality;
-          // country → Country
-          if (item.country && !item.Country) item.Country = item.country;
-          // episode_count → NumberOfEpisodes
-          if (item.episode_count !== undefined) item.NumberOfEpisodes = item.episode_count;
-          // Normalize Category
-          if (!item.Category) item.Category = 'arabic-series';
+  // Normalise arabic-series fields → standard ContentItem fields
+  if (
+    category !== 'trending' &&
+    category !== 'featured' &&
+    data &&
+    typeof data === 'object' &&
+    !Array.isArray(data)
+  ) {
+    Object.keys(data).forEach(id => {
+      if (!data[id]) return;
+      data[id].id = id;
+
+      if (category === 'arabic-series' || data[id].is_ramadan !== undefined) {
+        const item = data[id];
+        if (item.year && !item.Year) {
+          const n = parseInt(item.year, 10);
+          if (!isNaN(n) && n >= 2000 && n <= 2030) item.Year = String(n);
         }
+        if (item.is_ramadan !== undefined) item.IsRamadan = !!item.is_ramadan;
+        if (item.title    && !item.Title)       item.Title       = item.title;
+        if (item.genres_en && !item.Genres)     item.Genres      = item.genres_en;
+        if (item.genres_ar && !item.GenresAr)   item.GenresAr    = item.genres_ar;
+        if (item.poster   && !item.Image)       item.Image       = item.poster;
+        if (item.poster   && !item['Image Source']) item['Image Source'] = item.poster;
+        if (item.rating !== undefined && !item.Rating) item.Rating = String(item.rating);
+        if (item.quality  && !item.Format)      item.Format      = item.quality;
+        if (item.country  && !item.Country)     item.Country     = item.country;
+        if (item.episode_count !== undefined)   item.NumberOfEpisodes = item.episode_count;
+        if (!item.Category) item.Category = 'arabic-series';
+      }
+    });
+  }
+
+  await setMetadataWithTimestamp(category, data);
+  console.log(`[Metadata] Fetched & cached: ${category}`);
+  return data;
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// loadCategory — stale-while-revalidate
+//
+// Behaviour:
+//   • Cache fresh (< 24 h)   → return cache immediately, no network call.
+//   • Cache stale (≥ 24 h)   → return cache immediately for instant display,
+//                               kick off a background fetch, call
+//                               onBackgroundUpdate(category, freshData) when done.
+//   • No cache at all        → must wait for the network (first install / cleared).
+//   • forceRefresh = true    → always wait for a fresh network response
+//                               (pull-to-refresh path).
+// ─────────────────────────────────────────────────────────────────────────────
+export const loadCategory = async (
+  category: ContentCategory,
+  forceRefresh = false,
+  onBackgroundUpdate?: BackgroundUpdateCallback,
+): Promise<ContentDict | TrendingContent | null> => {
+
+  // ── Force refresh: skip cache entirely ──────────────────────────────────
+  if (forceRefresh) {
+    try {
+      return await fetchAndCache(category);
+    } catch (error: any) {
+      console.warn(`[Metadata] Force-fetch failed for ${category}: ${error.message}`);
+      // Fall back to whatever is on disk
+      return getMetadataAnyAge(category);
+    }
+  }
+
+  // ── Check freshness ─────────────────────────────────────────────────────
+  const ts      = getCategoryTimestamp(category);
+  const ageMs   = ts ? Date.now() - ts : Infinity;
+  const isStale = ageMs >= METADATA_TTL_MS;
+
+  // ── Fresh cache: return immediately, no network ─────────────────────────
+  if (!isStale) {
+    const fresh = await getMetadataIfFresh(category);
+    if (fresh !== null) return fresh;
+  }
+
+  // ── Stale or missing cache ──────────────────────────────────────────────
+  const cached = await getMetadataAnyAge(category);
+
+  if (cached !== null && onBackgroundUpdate) {
+    // Return stale cache immediately so the UI renders without waiting,
+    // then fetch in the background and notify caller when fresh data arrives.
+    fetchAndCache(category)
+      .then(fresh => {
+        if (fresh) onBackgroundUpdate(category, fresh);
+      })
+      .catch(err => {
+        console.warn(`[Metadata] Background fetch failed for ${category}: ${err.message}`);
       });
-    }
+    return cached;
+  }
 
-    await setMetadataWithTimestamp(category, data);
-    console.log(`[Metadata] Fetched & cached: ${category}`);
-    return data;
+  if (cached !== null && !onBackgroundUpdate) {
+    // Caller didn't supply a callback — return stale cache and silently
+    // re-fetch so next call gets fresh data (fire-and-forget).
+    fetchAndCache(category).catch(() => {});
+    return cached;
+  }
+
+  // ── No cache at all: must wait ───────────────────────────────────────────
+  try {
+    return await fetchAndCache(category);
   } catch (error: any) {
-    console.warn(`[Metadata] Failed to fetch ${category}: ${error.message}`);
-
-    const stale = await getMetadataAnyAge(category);
-    if (stale !== null) {
-      console.log(`[Metadata] Using stale cache for: ${category}`);
-      return stale;
-    }
-
+    console.warn(`[Metadata] Fetch failed for ${category}: ${error.message}`);
     throw new Error(`Failed to load ${category}. Check your internet connection.`);
   }
 };
 
-// ─── Convenience wrappers ─────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Convenience wrappers (unchanged API)
+// ─────────────────────────────────────────────────────────────────────────────
 
 export const loadMovies = async (forceRefresh = false): Promise<ContentDict> => {
   const data = await loadCategory('movies', forceRefresh);
@@ -123,18 +183,21 @@ export const loadTVShows = async (forceRefresh = false): Promise<ContentDict> =>
   return (data as ContentDict) || {};
 };
 
-// ─── Search & Filter utilities ──────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Search & Filter utilities (unchanged)
+// ─────────────────────────────────────────────────────────────────────────────
 
-/** Search across all categories — uses disk cache if available, fetches if not */
 export const searchContent = async (query: string): Promise<ContentItem[]> => {
   const lowerQuery = query.toLowerCase().trim();
   if (!lowerQuery) return [];
 
-  const availableCategories: ContentCategory[] = ['movies', 'series', 'anime', 'tvshows', 'asian-series', 'dubbed-movies', 'hindi', 'asian-movies'];
+  const availableCategories: ContentCategory[] = [
+    'movies', 'series', 'anime', 'tvshows', 'asian-series',
+    'dubbed-movies', 'hindi', 'asian-movies',
+  ];
   let allResults: ContentItem[] = [];
 
   for (const cat of availableCategories) {
-    // Try disk cache first; if empty, fetch from API so search always works
     let data = await getMetadataAnyAge(cat);
     if (!data || typeof data !== 'object' || Object.keys(data).length === 0) {
       try {
@@ -147,8 +210,8 @@ export const searchContent = async (query: string): Promise<ContentItem[]> => {
 
     const items = Object.values(data) as ContentItem[];
     for (const item of items) {
-      const titleMatch = item.Title?.toLowerCase().includes(lowerQuery);
-      const genreMatch = item.Genres?.some(g => g.toLowerCase().includes(lowerQuery));
+      const titleMatch   = item.Title?.toLowerCase().includes(lowerQuery);
+      const genreMatch   = item.Genres?.some(g => g.toLowerCase().includes(lowerQuery));
       const genreArMatch = item.GenresAr?.some(g => g.toLowerCase().includes(lowerQuery));
       const countryMatch = item.Country?.toLowerCase().includes(lowerQuery);
       if (titleMatch || genreMatch || genreArMatch || countryMatch) {
@@ -166,38 +229,37 @@ export const searchContent = async (query: string): Promise<ContentItem[]> => {
   });
 };
 
-/** Search within a single dict */
 export const searchContentInDict = (movies: ContentDict, query: string): ContentItem[] => {
   const lowerQuery = query.toLowerCase().trim();
   if (!lowerQuery) return [];
 
   return Object.values(movies).filter(item => {
-    const titleMatch = item.Title?.toLowerCase().includes(lowerQuery);
-    const genreMatch = item.Genres?.some(g => g.toLowerCase().includes(lowerQuery));
+    const titleMatch   = item.Title?.toLowerCase().includes(lowerQuery);
+    const genreMatch   = item.Genres?.some(g => g.toLowerCase().includes(lowerQuery));
     const genreArMatch = item.GenresAr?.some(g => g.toLowerCase().includes(lowerQuery));
     const countryMatch = item.Country?.toLowerCase().includes(lowerQuery);
-    const formatMatch = item.Format?.toLowerCase().includes(lowerQuery);
+    const formatMatch  = item.Format?.toLowerCase().includes(lowerQuery);
     return titleMatch || genreMatch || genreArMatch || countryMatch || formatMatch;
   });
 };
 
-/** Filter items by genre */
 export const filterByGenre = (movies: ContentDict, genre: string): ContentItem[] => {
   const cleanGenre = genre.replace(/^[\p{Emoji}\s]+/u, '').trim();
-  return Object.values(movies).filter(item => {
-    return item.Genres?.some(g =>
-      g.toLowerCase().includes(cleanGenre.toLowerCase())
-    ) || item.GenresAr?.includes(genre);
-  });
+  return Object.values(movies).filter(item =>
+    item.Genres?.some(g => g.toLowerCase().includes(cleanGenre.toLowerCase())) ||
+    item.GenresAr?.includes(genre),
+  );
 };
 
-/** Convert dict to array (null-safe) */
 export const getMoviesArray = (movies: ContentDict | null): ContentItem[] => {
   if (!movies || typeof movies !== 'object') return [];
   return Object.values(movies);
 };
 
-// ─── All syncable categories in order ────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Sync utilities (unchanged)
+// ─────────────────────────────────────────────────────────────────────────────
+
 export const SYNC_CATEGORIES: ContentCategory[] = [
   'movies', 'series', 'anime', 'tvshows', 'asian-series', 'arabic-series',
   'dubbed-movies', 'hindi', 'asian-movies', 'anime-movies',
@@ -205,21 +267,15 @@ export const SYNC_CATEGORIES: ContentCategory[] = [
 ];
 
 export interface SyncProgress {
-  category: string;          // current category being fetched
-  done: number;              // how many finished
-  total: number;             // total to fetch
-  percent: number;           // 0-100
-  fromCache: boolean;        // true if this category was already fresh (skipped)
+  category: string;
+  done: number;
+  total: number;
+  percent: number;
+  fromCache: boolean;
 }
 
 export type SyncProgressCallback = (progress: SyncProgress) => void;
 
-// ─── Full sync all categories with progress ───────────────────────────────────
-/**
- * Syncs all stale categories one by one (sequential so progress is meaningful).
- * Calls onProgress after each category completes.
- * Pass forceRefresh=true to re-fetch everything regardless of cache age.
- */
 export const syncAllWithProgress = async (
   onProgress?: SyncProgressCallback,
   forceRefresh = false,
@@ -227,8 +283,10 @@ export const syncAllWithProgress = async (
   const total = SYNC_CATEGORIES.length;
   for (let i = 0; i < SYNC_CATEGORIES.length; i++) {
     const cat = SYNC_CATEGORIES[i];
-    const isStale = forceRefresh || getCategoryTimestamp(cat) === 0 ||
-      Date.now() - getCategoryTimestamp(cat) > 24 * 60 * 60 * 1000;
+    const isStale =
+      forceRefresh ||
+      getCategoryTimestamp(cat) === 0 ||
+      Date.now() - getCategoryTimestamp(cat) > METADATA_TTL_MS;
 
     onProgress?.({
       category: cat,
@@ -246,24 +304,15 @@ export const syncAllWithProgress = async (
       }
     }
   }
-  // Final 100%
-  onProgress?.({
-    category: 'done',
-    done: total,
-    total,
-    percent: 100,
-    fromCache: false,
-  });
+  onProgress?.({category: 'done', done: total, total, percent: 100, fromCache: false});
 };
 
-// ─── Auto-refresh (24hr check) ───────────────────────────────────────────────
 export const refreshStaleCategories = async (
   onProgress?: SyncProgressCallback,
 ): Promise<void> => {
   await syncAllWithProgress(onProgress, false);
 };
 
-// ─── Settings sync ───────────────────────────────────────────────────────────
 export const syncIfNeeded = async (
   onProgress?: SyncProgressCallback,
 ): Promise<boolean> => {
@@ -278,7 +327,9 @@ export const syncIfNeeded = async (
 
 export const getLastSyncTime = (): number => {
   let latest = 0;
-  const categories: ContentCategory[] = ['movies', 'anime', 'series', 'tvshows', 'asian-series', 'trending', 'featured'];
+  const categories: ContentCategory[] = [
+    'movies', 'anime', 'series', 'tvshows', 'asian-series', 'trending', 'featured',
+  ];
   for (const cat of categories) {
     const ts = getCategoryTimestamp(cat);
     if (ts > latest) latest = ts;
