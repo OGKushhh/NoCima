@@ -8,6 +8,7 @@
 
 import {storage} from '../storage';
 import {postViewCount} from './api';
+import { encode as b64encode, decode as b64decode } from 'base-64';
 
 const PENDING_PREFIX = 'vpend:';
 const INDEX_KEY      = 'vpend_index';
@@ -16,25 +17,22 @@ const INDEX_KEY      = 'vpend_index';
 
 /**
  * Encode contentId for safe use as an MMKV key.
- * Episode URLs contain colons, slashes, and query chars which can
- * corrupt MMKV keys. Base64-encode anything that isn't a plain slug.
+ * Uses base-64 package — Hermes's built-in btoa only handles Latin1
+ * and corrupts percent-encoded Unicode strings.
  */
 const encodeForKey = (contentId: string): string => {
   if (/[:/\\?=&]/.test(contentId)) {
-    // React Native's built-in btoa works on ASCII; use manual base64 for URLs
-    // btoa() is built into React Native — no Buffer needed
-    return btoa(encodeURIComponent(contentId))
+    return b64encode(encodeURIComponent(contentId))
       .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
   }
   return contentId;
 };
 
 const decodeFromKey = (encoded: string): string => {
-  // If it looks like URL-safe base64 (no colons, slashes, etc.), try decoding
   if (!/[:/\\?=&]/.test(encoded) && encoded.length > 20) {
     try {
       const padded = encoded.replace(/-/g, '+').replace(/_/g, '/');
-      const decoded = decodeURIComponent(atob(padded));
+      const decoded = decodeURIComponent(b64decode(padded));
       if (decoded.startsWith('http')) return decoded;
     } catch {}
   }

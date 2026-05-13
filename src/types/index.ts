@@ -69,6 +69,9 @@ export interface DownloadItem {
   destinationPath?: string;
   /** Error message if download failed */
   errorMessage?: string;
+  /** For bulk series downloads — groups episodes under one card */
+  seriesId?: string;
+  seriesTitle?: string;
 }
 
 export interface UserSettings {
@@ -81,6 +84,7 @@ export interface UserSettings {
   qualityPreference: 'high' | 'medium' | 'low' | 'auto';
   playerQuality: 'auto' | '1080' | '720' | '480' | '360';
   subtitleEnabled: boolean;
+  downloadDir: 'downloads' | 'internal';
 }
 
 export type ContentCategory = 'movies' | 'anime' | 'series' | 'tvshows' | 'asian-series' | 'arabic-series';

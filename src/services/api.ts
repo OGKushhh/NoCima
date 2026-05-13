@@ -85,18 +85,19 @@ export const checkApiHealth = async (): Promise<boolean> => {
   }
 };
 
+import { encode as b64encode } from 'base-64';
+
 // ─── View counter endpoints ─────────────────────────────────────────
 
 /**
- * Encode a content ID for use in URL paths.
- * Episode URLs (full http URLs) are base64-encoded so they don't break the route.
- * Regular numeric/string IDs pass through unchanged.
+ * Encode a content ID for safe use in URL paths.
+ * Uses base-64 package (not btoa) because Hermes's btoa only handles Latin1
+ * and will silently corrupt or throw on percent-encoded Unicode strings.
  */
 const encodeContentId = (id: string): string => {
   if (id.startsWith('http://') || id.startsWith('https://')) {
-    // btoa() is built into React Native — no Buffer/Node polyfill needed
-    // encodeURIComponent handles Arabic/Unicode chars in episode URLs
-    return btoa(encodeURIComponent(id)).replace(/\//g, '_').replace(/\+/g, '-').replace(/=/g, '');
+    return b64encode(encodeURIComponent(id))
+      .replace(/\//g, '_').replace(/\+/g, '-').replace(/=/g, '');
   }
   return encodeURIComponent(id);
 };

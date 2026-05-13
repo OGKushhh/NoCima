@@ -27,7 +27,7 @@ import {
 } from '@kesha-antonov/react-native-background-downloader';
 import ReactNativeBlobUtil from 'react-native-blob-util';
 import {DownloadItem, ContentItem} from '../types';
-import {storage, storageKeys} from '../storage';
+import {storage, storageKeys, getSettings} from '../storage';
 
 // Enable native download logs so we can see exactly what's happening
 setConfig({ isLogsEnabled: true, progressInterval: 1000 });
@@ -133,19 +133,26 @@ export const restoreDownloads = async () => {
   }
 };
 
-// ─── Start a new download (uses ReactNativeBlobUtil — starts immediately,
-//     avoiding signed-URL expiry that kills Android DownloadManager) ────────
+// ─── Start a new download ────────────────────────────────────────────────
 export const startDownload = async (
   item: ContentItem,
   mp4Url: string,
   quality = 'auto',
+  seriesId?: string,
+  seriesTitle?: string,
 ): Promise<DownloadItem> => {
-  const dir = `${ReactNativeBlobUtil.fs.dirs.DocumentDir}/downloads`;
+  // Read user's preferred save location from settings
+  const { downloadDir: dirPref } = getSettings();
+  const baseDir = dirPref === 'internal'
+    ? ReactNativeBlobUtil.fs.dirs.DocumentDir
+    : ReactNativeBlobUtil.fs.dirs.DownloadDir;
+  const dir = `${baseDir}/AbdoApp`;
   const dirExists = await ReactNativeBlobUtil.fs.isDir(dir);
   if (!dirExists) await ReactNativeBlobUtil.fs.mkdir(dir);
 
   const id = `dl_${item.id}_${Date.now()}`;
-  const destPath = `${dir}/${id}.mp4`;
+  const safeName = (item.Title || 'video').replace(/[^\w\u0600-\u06FF\s.-]/g, '').trim().substring(0, 60);
+  const destPath = `${dir}/${safeName}_${id}.mp4`;
 
   const downloadItem: DownloadItem = {
     id,
@@ -159,48 +166,37 @@ export const startDownload = async (
     status: 'downloading',
     timestamp: Date.now(),
     destinationPath: destPath,
+    seriesId,
+    seriesTitle,
   };
 
   const current = getDownloadState();
   saveDownloadState([downloadItem, ...current]);
   notify();
 
-  // Store the task so pause/cancel works
   const task = ReactNativeBlobUtil.config({
     path: destPath,
     fileCache: true,
     overwrite: true,
     indicator: true,
+    trusty: true, // fixes SSL CertPathValidatorException on older Android/MIUI
   }).fetch('GET', mp4Url, {
     'User-Agent': 'Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
     'Referer': 'https://akwam.com.co/',
     'Origin': 'https://akwam.com.co',
   });
 
-  // Track progress
   task.progress({ interval: 500 }, (received: number, total: number) => {
     const progress = total > 0 ? received / total : 0;
-    updateItem(id, {
-      progress,
-      downloadedBytes: received,
-      totalBytes: total,
-      status: 'downloading',
-    });
+    updateItem(id, { progress, downloadedBytes: received, totalBytes: total, status: 'downloading' });
   });
 
-  // Store reference for pause/cancel (blob-util uses a StatefulPromise)
   blobTasks.set(id, task);
 
-  // Handle completion / error asynchronously
   task
     .then((res: any) => {
       console.log('[Download] done:', id, res.path());
-      updateItem(id, {
-        status: 'completed',
-        progress: 1,
-        localPath: `file://${destPath}`,
-        destinationPath: destPath,
-      });
+      updateItem(id, { status: 'completed', progress: 1, localPath: `file://${destPath}`, destinationPath: destPath });
       blobTasks.delete(id);
     })
     .catch((e: any) => {
@@ -215,6 +211,7 @@ export const startDownload = async (
 
   return downloadItem;
 };
+
 
 // ─── Pause ────────────────────────────────────────────────────────────────
 export const pauseDownload = (id: string) => {

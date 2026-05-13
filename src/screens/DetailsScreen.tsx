@@ -461,9 +461,8 @@ export const DetailsScreen: React.FC = () => {
         .finally(() => setDownloading(false));
     } else {
       if (currentEpUrl) {
-        // Episode play — record with episode URL as the ID so each episode is tracked separately
-        recordPlay(currentEpUrl, category);
-        // Optimistically bump this episode's view count
+        // Record against the series ID — server tracks series-level views
+        recordPlay(item.id, category);
         setEpisodeViews(prev => ({...prev, [currentEpUrl]: (prev[currentEpUrl] ?? 0) + 1}));
       } else {
         // Movie / non-episodic play
@@ -510,7 +509,7 @@ export const DetailsScreen: React.FC = () => {
     setExtracting(true);
     akwamCallbackRef.current = (mp4: string) => {
       setAkwamUrl(null);
-      recordPlay(ep.url, category);
+      recordPlay(item.id, category); // use series ID, not episode URL
       setExtracting(false);
       nav.navigate('Player', {
         url: mp4,

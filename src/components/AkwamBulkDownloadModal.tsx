@@ -12,7 +12,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   Modal, View, Text, TouchableOpacity, StyleSheet, ScrollView,
-  Pressable, ActivityIndicator,
+  Pressable, ActivityIndicator, ToastAndroid, Platform,
 } from 'react-native';
 import { ArabicEpisode, ArabicEpisodeSource, ContentItem } from '../types';
 import { Colors } from '../theme/colors';
@@ -105,12 +105,15 @@ const AkwamBulkDownloadModal: React.FC<Props> = ({
           const epItem: ContentItem = { ...item, Title: ep.title };
           try {
             const mp4 = await resolveAkwamDownloadLink(src.download_url);
-            await startDownload(epItem, mp4);
+            await startDownload(epItem, mp4, selQuality, item.id, item.Title);
           } catch (e) {
             console.warn('[BulkDownload] ep error:', ep.number, e);
           }
         })
       );
+      if (Platform.OS === 'android') {
+        ToastAndroid.show(`✓ تمت إضافة ${toDownload.length} حلقة للتحميل`, ToastAndroid.SHORT);
+      }
       setDone(true);
       setTimeout(() => {
         setDone(false);

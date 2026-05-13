@@ -64,6 +64,7 @@ export const SettingsScreen: React.FC = () => {
   const [cacheModalVisible, setCacheModalVisible] = useState(false);
   const [updateModalVisible, setUpdateModalVisible] = useState(false);
   const [updateInfo, setUpdateInfo] = useState<any>(null);
+  const [dirModalVisible, setDirModalVisible] = useState(false);
 
   // Loading states
   const [clearingCache, setClearingCache] = useState(false);
@@ -287,6 +288,23 @@ export const SettingsScreen: React.FC = () => {
             </TouchableOpacity>
           </View>
 
+          {/* ── Downloads ── */}
+          <Text style={styles.sectionTitle}>{'التحميل / Downloads'}</Text>
+          <View style={styles.section}>
+            <TouchableOpacity style={[styles.row, {borderBottomWidth: 0}]} onPress={() => setDirModalVisible(true)} activeOpacity={0.65}>
+              <View style={styles.rowIcon}>
+                <Image source={require('../../assets/icons/download-to-storage-drive.png')} style={{ width: 20, height: 20, tintColor: colors.primary }} />
+              </View>
+              <Text style={styles.rowLabel}>{'مجلد الحفظ / Save Location'}</Text>
+              <View style={styles.rowRight}>
+                <Text style={styles.rowValue}>
+                  {settings.downloadDir === 'internal' ? 'Internal (Hidden)' : 'Downloads (Visible)'}
+                </Text>
+                <Image source={require('../../assets/icons/chevron-down.png')} style={{ width: 18, height: 18, tintColor: colors.textMuted, transform: [{ rotate: '-90deg' }] }} />
+              </View>
+            </TouchableOpacity>
+          </View>
+
           {/* ── Data ── */}
           <Text style={styles.sectionTitle}>{t('data')}</Text>
           <View style={styles.section}>
@@ -383,6 +401,32 @@ export const SettingsScreen: React.FC = () => {
           <View style={{ height: 32 }} />
         </ScrollView>
       </SafeAreaView>
+
+      {/* ── Download Dir Modal ── */}
+      <AppModal visible={dirModalVisible} onClose={() => setDirModalVisible(false)} colors={colors}>
+        <Text style={[styles.modalTitle, {color: colors.text}]}>{'مجلد الحفظ / Save Location'}</Text>
+        <Text style={{color: colors.textMuted, fontSize: 12, fontFamily: 'Rubik', marginBottom: 16, lineHeight: 18}}>
+          {'Downloads: ظاهر في تطبيق الملفات\nInternal: مخفي، أكثر أماناً'}
+        </Text>
+        {[
+          { value: 'downloads', label: 'Downloads Folder', sub: '/storage/emulated/0/AbdoApp/' },
+          { value: 'internal',  label: 'Internal Storage',  sub: 'App private folder (hidden)' },
+        ].map(opt => (
+          <TouchableOpacity
+            key={opt.value}
+            style={[styles.qualityOption, settings.downloadDir === opt.value && { borderColor: colors.primary, backgroundColor: `${colors.primary}15` }]}
+            onPress={() => { updateSetting('downloadDir', opt.value); setDirModalVisible(false); }}
+          >
+            <View style={{flex: 1}}>
+              <Text style={[styles.qualityOptionText, {color: colors.text}]}>{opt.label}</Text>
+              <Text style={{color: colors.textMuted, fontSize: 11, fontFamily: 'Rubik', marginTop: 2}}>{opt.sub}</Text>
+            </View>
+            {settings.downloadDir === opt.value && (
+              <Image source={require('../../assets/icons/checkmark.png')} style={{width: 18, height: 18, tintColor: colors.primary}} />
+            )}
+          </TouchableOpacity>
+        ))}
+      </AppModal>
 
       {/* ── Quality Modal ── */}
       <AppModal visible={qualityModalVisible} onClose={() => setQualityModalVisible(false)} colors={colors}>
