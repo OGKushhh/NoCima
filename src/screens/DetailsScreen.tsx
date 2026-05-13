@@ -197,6 +197,7 @@ export const DetailsScreen: React.FC = () => {
   const [qualityModalEp,   setQualityModalEp]   = useState<ArabicEpisode | null>(null);
   const [qualityModalMode, setQualityModalMode] = useState<'play' | 'download'>('play');
   const [showBulkDownload, setShowBulkDownload] = useState(false);
+  const [showNotice, setShowNotice] = useState(false);
   const preferredQuality: string = isArabicSeries ? (getSettings()?.playerQuality ?? 'auto') : 'auto';
 
   // ── Akwam extractor state ─────────────────────────────────────────────────
@@ -742,14 +743,30 @@ export const DetailsScreen: React.FC = () => {
             <Image source={require('../../assets/icons/arrow.png')} style={S.iconNav} />
           </TouchableOpacity>
           <View style={S.navBtnGroup}>
+            <TouchableOpacity style={S.navBtn} onPress={() => setShowNotice(v => !v)}>
+              <Image source={require('../../assets/icons/notice.png')} style={[S.iconNav, {tintColor: '#fff'}]} />
+            </TouchableOpacity>
             <TouchableOpacity style={S.navBtn} onPress={handleReport}>
-              <Image source={require('../../assets/icons/flag.png')} style={[S.iconNav, {tintColor: '#94A3B8'}]} />
+              <Image source={require('../../assets/icons/flag.png')} style={[S.iconNav, {tintColor: '#fff'}]} />
             </TouchableOpacity>
             <TouchableOpacity style={S.navBtn} onPress={handleShare}>
               <Image source={require('../../assets/icons/share.png')} style={S.iconNav} />
             </TouchableOpacity>
           </View>
         </View>
+
+        {/* ── Developer notice dropdown ── */}
+        {showNotice && (
+          <TouchableOpacity
+            activeOpacity={1}
+            onPress={() => setShowNotice(false)}
+            style={S.noticeOverlay}
+          >
+            <TouchableOpacity activeOpacity={1} style={S.noticeCard}>
+              <Text style={S.noticeText}>{t('developer_notice')}</Text>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        )}
 
         {/* ── Title box ── */}
         <View style={S.titleBox}>
@@ -1228,6 +1245,9 @@ const S = StyleSheet.create({
   navBtn:      {width: 42, height: 42, borderRadius: 21, backgroundColor: Colors.dark.surface, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: Colors.dark.border},
   navBtnGroup: {flexDirection: 'row', gap: 8},
   iconNav:    {width: 20, height: 20, tintColor: Colors.dark.text},
+  noticeOverlay: {position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 99},
+  noticeCard:  {position: 'absolute', top: 60, right: 16, left: 16, backgroundColor: Colors.dark.surface, borderRadius: 14, padding: 18, borderWidth: 1, borderColor: Colors.dark.border, shadowColor: '#000', shadowOffset: {width: 0, height: 4}, shadowOpacity: 0.4, shadowRadius: 12, elevation: 12},
+  noticeText:  {color: Colors.dark.text, fontSize: 13.5, fontFamily: 'Rubik', lineHeight: 22, textAlign: 'right'},
   iconMed:    {width: 20, height: 20},
 
   titleBox: {

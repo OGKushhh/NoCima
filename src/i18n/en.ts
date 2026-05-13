@@ -181,4 +181,6 @@ export const en = {
   server: 'Server',
   // Player — offline
   play_offline: 'Play offline',
+  // Developer notice
+  developer_notice: 'The app developer is independent and the app generates no profit. Episode updates happen manually based on requests on the Telegram channel, as I cannot keep track of thousands of series and episodes. If you want content updated, press the report button (the flag) next to this button and send a message with the content name and type (Movie - Series - Anime).\n\nThank you for your understanding 🙏',
 };
