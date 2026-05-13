@@ -18,7 +18,7 @@ import {ContentItem} from '../types';
 import {MovieCard, CARD_WIDTH} from '../components/MovieCard';
 import {Colors} from '../theme/colors';
 import AdsterraBanner from '../ads/AdsterraBanner';
-import {getViewCount} from '../services/api';
+import {getViewCount, getSeriesTotalViews} from '../services/api';
 import {retrySyncViews} from '../services/viewService';
 
 const {width: SW} = Dimensions.get('window');
@@ -206,6 +206,24 @@ export const HomeScreen: React.FC = () => {
               }
             })
             .catch(() => {});
+        }
+
+        // Enrich episodic categories for most-viewed section
+        const episodicCats = ['series', 'tvshows', 'anime', 'asian-series', 'arabic-series'] as const;
+        for (const cat of episodicCats) {
+          const arr = map[cat] ?? [];
+          if (!arr.length) continue;
+          Promise.all(
+            arr.slice(0, 30).map(async item => {
+              try {
+                const v = await getSeriesTotalViews(cat, item.id);
+                return v > 0 ? {...item, Views: String(v)} : item;
+              } catch { return item; }
+            })
+          ).then(enriched => {
+            const live = enriched.filter(i => parseInt((i as any).Views || '0', 10) > 0);
+            if (live.length >= 2) setCategoryData(prev => ({...prev, [cat]: live}));
+          }).catch(() => {});
         }
 
         retrySyncViews().catch(() => {});

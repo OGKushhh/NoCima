@@ -22,6 +22,7 @@ import { Colors } from '../theme/colors';
 import { CATEGORIES } from '../constants/categories';
 import { useTranslation } from 'react-i18next';
 import { Image } from 'react-native';
+import { getViewCount, getSeriesTotalViews } from '../services/api';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 const PAGE_SIZE = 30;
@@ -136,6 +137,28 @@ export const CategoryScreen: React.FC = () => {
       setHasMore(true);
       setPage(1);
       setAllItems(sorted); // last — triggers filtered recompute with fresh state
+
+      // Enrich top 60 items with view counts in background
+      const episodic = ['series','tvshows','anime','asian-series','arabic-series'].includes(selectedCategory);
+      Promise.allSettled(
+        sorted.slice(0, 60).map(async item => {
+          try {
+            const v = episodic
+              ? await getSeriesTotalViews(selectedCategory, item.id)
+              : await getViewCount(selectedCategory, item.id);
+            return v > 0 ? {...item, Views: String(v)} : item;
+          } catch { return item; }
+        })
+      ).then(results => {
+        const enriched = results.map((r, i) =>
+          r.status === 'fulfilled' ? r.value : sorted[i]
+        );
+        setAllItems(prev => {
+          // Merge enriched into the full list (tail stays unchanged)
+          const tail = prev.slice(60);
+          return [...enriched, ...tail];
+        });
+      }).catch(() => {});
     } catch (err: any) {
       setError(err.message || t('error_loading'));
     } finally {
