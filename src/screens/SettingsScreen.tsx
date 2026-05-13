@@ -2,7 +2,7 @@ import React, { useState, useMemo, useCallback } from 'react';
 import {
   View, StyleSheet, Text, TouchableOpacity, Switch,
   Linking, ActivityIndicator, Image, ScrollView, Modal,
-  Animated,
+  Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import LinearGradient from 'react-native-linear-gradient';
@@ -15,15 +15,17 @@ import { checkForUpdate, openUpdateUrl, skipVersion } from '../services/updateSe
 import { APP_VERSION } from '../constants/endpoints';
 import { useTheme } from '../hooks/useTheme';
 import { useRewardAd, formatAdFreeRemaining } from '../ads/RewardAdPopup';
+import { Colors } from '../theme/colors'; // for dark background etc. (fallback)
 
-// ─── Custom Modal ──────────────────────────────────────────────────────────────
+const { width: SW } = Dimensions.get('window');
+
+// ─── Custom Modal (unchanged but stylish) ──────────────────────────────────
 interface AppModalProps {
   visible: boolean;
   onClose: () => void;
   children: React.ReactNode;
   colors: any;
 }
-
 const AppModal: React.FC<AppModalProps> = ({ visible, onClose, children, colors }) => (
   <Modal transparent visible={visible} animationType="fade" onRequestClose={onClose}>
     <TouchableOpacity
@@ -36,7 +38,8 @@ const AppModal: React.FC<AppModalProps> = ({ visible, onClose, children, colors 
           backgroundColor: colors.surface,
           borderRadius: 20,
           padding: 24,
-          width: 300,
+          width: SW * 0.85,
+          maxWidth: 360,
           borderWidth: 1,
           borderColor: colors.border,
           shadowColor: '#000',
@@ -51,7 +54,7 @@ const AppModal: React.FC<AppModalProps> = ({ visible, onClose, children, colors 
   </Modal>
 );
 
-// ─── Main Screen ───────────────────────────────────────────────────────────────
+// ─── Main Screen ───────────────────────────────────────────────────────────
 export const SettingsScreen: React.FC = () => {
   const { colors, isDark, setDarkMode } = useTheme();
   const { t, i18n } = useTranslation();
@@ -66,22 +69,18 @@ export const SettingsScreen: React.FC = () => {
   const [updateInfo, setUpdateInfo] = useState<any>(null);
   const [dirModalVisible, setDirModalVisible] = useState(false);
 
-  // Loading states
   const [clearingCache, setClearingCache] = useState(false);
   const [checkingUpdate, setCheckingUpdate] = useState(false);
 
   const qualityOptions = ['auto', '1080', '720', '480', '360'];
 
-  // ─── Unified settings updater ────────────────────────────────────────────────
+  // ─── Unified settings updater ────────────────────────────────────────────
   const updateSetting = useCallback((key: string, value: any) => {
-    // Normalize: SettingsScreen uses camelCase to match storage defaults
     const storageKey = key === 'dark_mode' ? 'darkMode' : key;
     const updated = { ...settings, [storageKey]: value };
     setSettings(updated);
     saveSettings(updated);
-    if (storageKey === 'darkMode') {
-      setDarkMode(value);
-    }
+    if (storageKey === 'darkMode') setDarkMode(value);
   }, [settings, setDarkMode]);
 
   const toggleLanguage = useCallback(() => {
@@ -90,23 +89,18 @@ export const SettingsScreen: React.FC = () => {
     i18n.changeLanguage(newLang);
   }, [settings.language, updateSetting, i18n]);
 
-  // ─── Sync ────────────────────────────────────────────────────────────────────
   const handleSync = useCallback(() => {
-    startSync(true); // force refresh all categories
+    startSync(true);
   }, []);
 
-  // ─── Clear cache ─────────────────────────────────────────────────────────────
   const handleClearCacheConfirm = useCallback(async () => {
     setClearingCache(true);
-    try {
-      await clearAllMetadataCache();
-    } finally {
+    try { await clearAllMetadataCache(); } finally {
       setClearingCache(false);
       setCacheModalVisible(false);
     }
   }, []);
 
-  // ─── Check update ────────────────────────────────────────────────────────────
   const handleCheckUpdate = useCallback(async () => {
     setCheckingUpdate(true);
     try {
@@ -119,75 +113,127 @@ export const SettingsScreen: React.FC = () => {
   }, []);
 
   const lastSync = getLastSyncTime();
-  const lastSyncText = lastSync
-    ? new Date(lastSync).toLocaleDateString()
-    : t('never');
+  const lastSyncText = lastSync ? new Date(lastSync).toLocaleDateString() : t('never');
 
-  // ─── Styles ──────────────────────────────────────────────────────────────────
+  // ─── Styles (dynamic) ────────────────────────────────────────────────────
   const styles = useMemo(() => StyleSheet.create({
-    container:          { flex: 1, backgroundColor: colors.background },
-    content:            { flex: 1 },
+    container: { flex: 1, backgroundColor: colors.background || '#0F0F1A' },
+    scrollContent: { paddingBottom: 50 },
 
-    // Header
-    header:             { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingTop: 20, paddingBottom: 20 },
-    headerLeft:         { flex: 1 },
-    headerTitle:        { fontSize: 30, fontWeight: '800', fontFamily: 'Rubik', letterSpacing: -0.5 },
-    version:            { color: colors.textMuted, fontSize: 13, marginTop: 3 },
-    headerIcon:         { width: 44, height: 44, borderRadius: 22, backgroundColor: `${colors.primary}18`, justifyContent: 'center', alignItems: 'center' },
+    // Gradient Header Banner
+    headerBanner: {
+      paddingTop: 50,
+      paddingBottom: 30,
+      paddingHorizontal: 20,
+      borderBottomLeftRadius: 24,
+      borderBottomRightRadius: 24,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 16,
+      marginBottom: 16,
+    },
+    headerIconCircle: {
+      width: 48, height: 48, borderRadius: 24,
+      backgroundColor: 'rgba(255,255,255,0.15)',
+      justifyContent: 'center', alignItems: 'center',
+    },
+    headerIconImg: { width: 28, height: 28, tintColor: '#fff' },
+    headerTextBlock: { flex: 1 },
+    headerTitle: { fontSize: 28, fontWeight: '900', color: '#fff', letterSpacing: -0.5 },
+    headerVersion: { fontSize: 13, color: 'rgba(255,255,255,0.7)', marginTop: 2 },
 
-    // Sections
-    sectionTitle:       { color: colors.textMuted, fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1.2, paddingHorizontal: 20, marginTop: 28, marginBottom: 8 },
-    section:            { backgroundColor: colors.surface, borderRadius: 16, marginHorizontal: 16, overflow: 'hidden', borderWidth: 1, borderColor: colors.border },
+    // Section
+    section: {
+      backgroundColor: colors.surface,
+      borderRadius: 16,
+      marginHorizontal: 16,
+      marginBottom: 24,
+      borderWidth: 1,
+      borderColor: colors.border,
+      overflow: 'hidden',
+    },
+    sectionTitle: {
+      color: colors.textMuted,
+      fontSize: 11,
+      fontWeight: '700',
+      textTransform: 'uppercase',
+      letterSpacing: 1.5,
+      marginLeft: 20,
+      marginBottom: 8,
+      marginTop: 8,
+    },
 
-    // Rows
-    row:                { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 15, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
-    rowLast:            { borderBottomWidth: 0 },
-    rowIcon:            { width: 36, height: 36, borderRadius: 10, backgroundColor: `${colors.primary}15`, justifyContent: 'center', alignItems: 'center', marginRight: 14 },
-    rowLabel:           { flex: 1, color: colors.text, fontSize: 15, fontWeight: '500' },
-    rowSub:             { color: colors.textMuted, fontSize: 12, marginTop: 2 },
-    rowValue:           { color: colors.textSecondary, fontSize: 14, marginRight: 6 },
-    rowRight:           { flexDirection: 'row', alignItems: 'center' },
+    // Row
+    row: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: 16,
+      paddingVertical: 15,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: colors.border,
+    },
+    rowLast: { borderBottomWidth: 0 },
+    rowIcon: {
+      width: 36, height: 36, borderRadius: 10,
+      backgroundColor: `${colors.primary}18`,
+      justifyContent: 'center', alignItems: 'center',
+      marginRight: 14,
+    },
+    rowIconImg: { width: 18, height: 18, tintColor: colors.primary },
+    rowContent: { flex: 1, minWidth: 0 },
+    rowLabel: { fontSize: 15, fontWeight: '500', color: colors.text },
+    rowSub: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
+    rowRight: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+    rowValue: { fontSize: 14, color: colors.textSecondary },
+    rowChevron: { width: 18, height: 18, tintColor: colors.textMuted, transform: [{ rotate: '-90deg' }] },
 
     // Donate button
-    donateBtn:          { margin: 16, marginTop: 12, borderRadius: 16, overflow: 'hidden' },
-    donateBtnInner:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 18, paddingHorizontal: 24 },
-    donateBtnText:      { color: '#fff', fontSize: 17, fontWeight: '700', marginLeft: 10, fontFamily: 'Rubik', letterSpacing: 0.3 },
+    donateBtn: { marginHorizontal: 16, marginTop: 8, marginBottom: 40, borderRadius: 16, overflow: 'hidden' },
+    donateInner: {
+      flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+      paddingVertical: 18, paddingHorizontal: 24,
+    },
+    donateIcon: { width: 22, height: 22, tintColor: '#fff' },
+    donateText: { color: '#fff', fontSize: 17, fontWeight: '700', marginLeft: 10 },
 
-    // Modal
-    modalTitle:         { color: colors.text, fontSize: 18, fontWeight: '700', marginBottom: 6, fontFamily: 'Rubik' },
-    modalBody:          { color: colors.textSecondary, fontSize: 14, lineHeight: 20, marginBottom: 20 },
-    modalActions:       { flexDirection: 'row', gap: 10 },
-    modalBtnPrimary:    { flex: 1, backgroundColor: colors.primary, borderRadius: 12, paddingVertical: 13, alignItems: 'center' },
-    modalBtnSecondary:  { flex: 1, backgroundColor: colors.surfaceLight, borderRadius: 12, paddingVertical: 13, alignItems: 'center', borderWidth: 1, borderColor: colors.border },
-    modalBtnTextPrimary:    { color: '#fff', fontWeight: '700', fontSize: 15 },
-    modalBtnTextSecondary:  { color: colors.text, fontWeight: '600', fontSize: 15 },
-    modalOption:        { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 13, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
-    modalOptionText:    { color: colors.text, fontSize: 15 },
-    modalDivider:       { height: 1, backgroundColor: colors.border, marginVertical: 16 },
+    // Modals
+    modalTitle: { fontSize: 18, fontWeight: '700', color: colors.text, marginBottom: 8 },
+    modalBody: { fontSize: 14, color: colors.textSecondary, lineHeight: 20, marginBottom: 20 },
+    modalActions: { flexDirection: 'row', gap: 10 },
+    modalBtnPrimary: { flex: 1, backgroundColor: colors.primary, borderRadius: 12, paddingVertical: 13, alignItems: 'center' },
+    modalBtnSecondary: { flex: 1, backgroundColor: colors.surfaceLight || 'rgba(255,255,255,0.08)', borderRadius: 12, paddingVertical: 13, alignItems: 'center', borderWidth: 1, borderColor: colors.border },
+    modalBtnTextPrimary: { color: '#fff', fontWeight: '700', fontSize: 15 },
+    modalBtnTextSecondary: { color: colors.text, fontWeight: '600', fontSize: 15 },
+    modalOption: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 13, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
+    modalOptionLast: { borderBottomWidth: 0 },
+    modalOptionText: { fontSize: 15, color: colors.text },
+    modalCheck: { width: 18, height: 18, tintColor: colors.primary },
+    modalDivider: { height: 1, backgroundColor: colors.border, marginVertical: 12 },
 
-    // Update modal extras
-    updateBadge:        { alignSelf: 'flex-start', backgroundColor: `${colors.primary}20`, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4, marginBottom: 12 },
-    updateBadgeText:    { color: colors.primary, fontSize: 12, fontWeight: '700' },
-    changelogBox:       { backgroundColor: colors.background, borderRadius: 10, padding: 12, marginBottom: 20, maxHeight: 120 },
-    changelogText:      { color: colors.textSecondary, fontSize: 13, lineHeight: 19 },
+    // Update extras
+    updateBadge: { alignSelf: 'flex-start', backgroundColor: `${colors.primary}20`, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4, marginBottom: 12 },
+    updateBadgeText: { color: colors.primary, fontSize: 12, fontWeight: '700' },
+    changelogBox: { backgroundColor: colors.background || '#0F0F1A', borderRadius: 10, padding: 12, marginBottom: 16, maxHeight: 120 },
+    changelogText: { color: colors.textSecondary, fontSize: 13, lineHeight: 19 },
   }), [colors]);
 
-  // ─── Reusable row ─────────────────────────────────────────────────────────────
-  const SettingRow = useCallback(({ icon, label, sub, value, onPress, toggle, settingKey, last }: any) => {
-    const isOn = settingKey === 'dark_mode' ? isDark : !!settings[settingKey];
+  // ─── Helper Row Component ──────────────────────────────────────────────────
+  const SettingRow = ({ icon, label, sub, value, onPress, toggle, settingKey, last }: any) => {
+    const isOn = settingKey === 'dark_mode' ? isDark : (settings[settingKey] ?? false);
     return (
       <TouchableOpacity
         style={[styles.row, last && styles.rowLast]}
         onPress={() => {
-          if (toggle && settingKey) updateSetting(settingKey, settingKey === 'dark_mode' ? !isDark : !settings[settingKey]);
-          else if (onPress) onPress();
+          if (toggle && settingKey) {
+            updateSetting(settingKey, settingKey === 'dark_mode' ? !isDark : !settings[settingKey]);
+          } else if (onPress) onPress();
         }}
         activeOpacity={0.65}
       >
         <View style={styles.rowIcon}>
-          <Image source={icon} style={{ width: 20, height: 20, tintColor: colors.primary }} />
+          <Image source={icon} style={styles.rowIconImg} />
         </View>
-        <View style={{ flex: 1 }}>
+        <View style={styles.rowContent}>
           <Text style={styles.rowLabel}>{label}</Text>
           {sub ? <Text style={styles.rowSub}>{sub}</Text> : null}
         </View>
@@ -201,47 +247,33 @@ export const SettingsScreen: React.FC = () => {
         ) : (
           <View style={styles.rowRight}>
             {value ? <Text style={styles.rowValue}>{value}</Text> : null}
-            <Image
-              source={require('../../assets/icons/chevron-down.png')}
-              style={{ width: 18, height: 18, tintColor: colors.textMuted, transform: [{ rotate: '-90deg' }] }}
-            />
+            <Image source={require('../../assets/icons/chevron-down.png')} style={styles.rowChevron} />
           </View>
         )}
       </TouchableOpacity>
     );
-  }, [settings, isDark, colors, styles, updateSetting]);
+  };
 
-  // ─── Render ───────────────────────────────────────────────────────────────────
+  // ─── Render ───────────────────────────────────────────────────────────────
   return (
     <View style={styles.container}>
-      <SafeAreaView style={styles.content}>
-        <ScrollView showsVerticalScrollIndicator={false}>
+      <SafeAreaView edges={['bottom']} style={{ flex: 1 }}>
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
 
-          {/* ── Header ── */}
-          <View style={styles.header}>
-            <View style={styles.headerLeft}>
-              {/* Brand-matched gradient title */}
-              <LinearGradient
-                colors={['#E53935', '#FF6D00']}
-                start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
-                style={{ borderRadius: 4, alignSelf: 'flex-start' }}
-              >
-                <Text style={[styles.headerTitle, { color: 'transparent' }]}
-                  // Gradient text trick via backgroundClip isn't supported in RN,
-                  // so we layer: gradient behind transparent text won't work —
-                  // instead use direct brand color:
-                />
-              </LinearGradient>
-              {/* RN doesn't support gradient text natively — use brand primary */}
-              <Text style={[styles.headerTitle, { color: colors.primary }]}>
-                {t('settings')}
-              </Text>
-              <Text style={styles.version}>v{APP_VERSION}</Text>
+          {/* ── Gradient Header Banner ── */}
+          <LinearGradient
+            colors={['#E53935', '#FF6D00']}
+            start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+            style={styles.headerBanner}
+          >
+            <View style={styles.headerIconCircle}>
+              <Image source={require('../../assets/icons/settings.png')} style={styles.headerIconImg} />
             </View>
-            <View style={styles.headerIcon}>
-              <Image source={require('../../assets/icons/settings.png')} style={{ width: 24, height: 24, tintColor: colors.primary }} />
+            <View style={styles.headerTextBlock}>
+              <Text style={styles.headerTitle}>{t('settings')}</Text>
+              <Text style={styles.headerVersion}>v{APP_VERSION}</Text>
             </View>
-          </View>
+          </LinearGradient>
 
           {/* ── Appearance ── */}
           <Text style={styles.sectionTitle}>{t('appearance')}</Text>
@@ -278,12 +310,14 @@ export const SettingsScreen: React.FC = () => {
             />
             <TouchableOpacity style={styles.row} onPress={() => setQualityModalVisible(true)} activeOpacity={0.65}>
               <View style={styles.rowIcon}>
-                <Image source={require('../../assets/icons/setting.png')} style={{ width: 20, height: 20, tintColor: colors.primary }} />
+                <Image source={require('../../assets/icons/setting.png')} style={styles.rowIconImg} />
               </View>
-              <Text style={styles.rowLabel}>{t('quality_preference')}</Text>
+              <View style={styles.rowContent}>
+                <Text style={styles.rowLabel}>{t('quality_preference')}</Text>
+              </View>
               <View style={styles.rowRight}>
                 <Text style={styles.rowValue}>{t(`quality_${settings.qualityPreference || 'auto'}`)}</Text>
-                <Image source={require('../../assets/icons/chevron-down.png')} style={{ width: 18, height: 18, tintColor: colors.textMuted, transform: [{ rotate: '-90deg' }] }} />
+                <Image source={require('../../assets/icons/chevron-down.png')} style={styles.rowChevron} />
               </View>
             </TouchableOpacity>
           </View>
@@ -291,17 +325,17 @@ export const SettingsScreen: React.FC = () => {
           {/* ── Downloads ── */}
           <Text style={styles.sectionTitle}>{'التحميل / Downloads'}</Text>
           <View style={styles.section}>
-            <TouchableOpacity style={[styles.row, {borderBottomWidth: 0}]} onPress={() => setDirModalVisible(true)} activeOpacity={0.65}>
+            <TouchableOpacity style={styles.row} onPress={() => setDirModalVisible(true)} activeOpacity={0.65}>
               <View style={styles.rowIcon}>
-                <Image source={require('../../assets/icons/download-to-storage-drive.png')} style={{ width: 20, height: 20, tintColor: colors.primary }} />
+                <Image source={require('../../assets/icons/download-to-storage-drive.png')} style={styles.rowIconImg} />
               </View>
-              <Text style={styles.rowLabel}>{'مجلد الحفظ / Save Location'}</Text>
-              <View style={styles.rowRight}>
-                <Text style={styles.rowValue}>
+              <View style={styles.rowContent}>
+                <Text style={styles.rowLabel}>{'مجلد الحفظ / Save Location'}</Text>
+                <Text style={styles.rowSub}>
                   {settings.downloadDir === 'internal' ? 'Internal (Hidden)' : 'Downloads (Visible)'}
                 </Text>
-                <Image source={require('../../assets/icons/chevron-down.png')} style={{ width: 18, height: 18, tintColor: colors.textMuted, transform: [{ rotate: '-90deg' }] }} />
               </View>
+              <Image source={require('../../assets/icons/chevron-down.png')} style={styles.rowChevron} />
             </TouchableOpacity>
           </View>
 
@@ -310,26 +344,29 @@ export const SettingsScreen: React.FC = () => {
           <View style={styles.section}>
             <TouchableOpacity style={styles.row} onPress={handleSync} activeOpacity={0.65} disabled={syncing}>
               <View style={styles.rowIcon}>
-                <Image source={require('../../assets/icons/sync.png')} style={{ width: 20, height: 20, tintColor: colors.primary }} />
+                <Image source={require('../../assets/icons/sync.png')} style={styles.rowIconImg} />
               </View>
-              <View style={{ flex: 1 }}>
+              <View style={styles.rowContent}>
                 <Text style={styles.rowLabel}>{t('sync_database')}</Text>
                 <Text style={styles.rowSub}>{t('last_sync')}: {lastSyncText}</Text>
               </View>
-              {syncing
-                ? <ActivityIndicator size="small" color={colors.primary} />
-                : <Image source={require('../../assets/icons/chevron-down.png')} style={{ width: 18, height: 18, tintColor: colors.textMuted, transform: [{ rotate: '-90deg' }] }} />
-              }
+              {syncing ? (
+                <ActivityIndicator size="small" color={colors.primary} />
+              ) : (
+                <Image source={require('../../assets/icons/chevron-down.png')} style={styles.rowChevron} />
+              )}
             </TouchableOpacity>
-
-            {/* Inline sync progress — shown only while syncing */}
-            <CacheSyncInline progress={syncProgress} />
+            {syncing && (
+              <CacheSyncInline progress={syncProgress} />
+            )}
             <TouchableOpacity style={[styles.row, styles.rowLast]} onPress={() => setCacheModalVisible(true)} activeOpacity={0.65}>
-              <View style={styles.rowIcon}>
-                <Image source={require('../../assets/icons/files.png')} style={{ width: 20, height: 20, tintColor: colors.error }} />
+              <View style={[styles.rowIcon, { backgroundColor: 'rgba(255,0,0,0.15)' }]}>
+                <Image source={require('../../assets/icons/files.png')} style={[styles.rowIconImg, { tintColor: colors.error }]} />
               </View>
-              <Text style={[styles.rowLabel, { color: colors.error }]}>{t('clear_cache')}</Text>
-              <Image source={require('../../assets/icons/chevron-down.png')} style={{ width: 18, height: 18, tintColor: colors.textMuted, transform: [{ rotate: '-90deg' }] }} />
+              <View style={styles.rowContent}>
+                <Text style={[styles.rowLabel, { color: colors.error }]}>{t('clear_cache')}</Text>
+              </View>
+              <Image source={require('../../assets/icons/chevron-down.png')} style={styles.rowChevron} />
             </TouchableOpacity>
           </View>
 
@@ -338,16 +375,17 @@ export const SettingsScreen: React.FC = () => {
           <View style={styles.section}>
             <TouchableOpacity style={[styles.row, styles.rowLast]} onPress={handleCheckUpdate} activeOpacity={0.65} disabled={checkingUpdate}>
               <View style={styles.rowIcon}>
-                <Image source={require('../../assets/icons/download-to-storage-drive.png')} style={{ width: 20, height: 20, tintColor: colors.primary }} />
+                <Image source={require('../../assets/icons/download-to-storage-drive.png')} style={styles.rowIconImg} />
               </View>
-              <View style={{ flex: 1 }}>
+              <View style={styles.rowContent}>
                 <Text style={styles.rowLabel}>{t('check_for_updates')}</Text>
                 <Text style={styles.rowSub}>{t('current_version')}: v{APP_VERSION}</Text>
               </View>
-              {checkingUpdate
-                ? <ActivityIndicator size="small" color={colors.primary} />
-                : <Image source={require('../../assets/icons/chevron-down.png')} style={{ width: 18, height: 18, tintColor: colors.textMuted, transform: [{ rotate: '-90deg' }] }} />
-              }
+              {checkingUpdate ? (
+                <ActivityIndicator size="small" color={colors.primary} />
+              ) : (
+                <Image source={require('../../assets/icons/chevron-down.png')} style={styles.rowChevron} />
+              )}
             </TouchableOpacity>
           </View>
 
@@ -362,7 +400,7 @@ export const SettingsScreen: React.FC = () => {
               <View style={[styles.rowIcon, adFreeActive && { backgroundColor: 'rgba(76,175,80,0.15)' }]}>
                 <Text style={{ fontSize: 18 }}>{adFreeActive ? '✅' : '🎬'}</Text>
               </View>
-              <View style={{ flex: 1 }}>
+              <View style={styles.rowContent}>
                 <Text style={styles.rowLabel}>
                   {adFreeActive ? 'بدون إعلانات / Ad-Free Active' : 'تعطيل الإعلانات / Disable Ads'}
                 </Text>
@@ -373,15 +411,12 @@ export const SettingsScreen: React.FC = () => {
                 </Text>
               </View>
               {!adFreeActive && (
-                <Image
-                  source={require('../../assets/icons/chevron-down.png')}
-                  style={{ width: 18, height: 18, tintColor: colors.textMuted, transform: [{ rotate: '-90deg' }] }}
-                />
+                <Image source={require('../../assets/icons/chevron-down.png')} style={styles.rowChevron} />
               )}
             </TouchableOpacity>
           </View>
 
-          {/* ── Support — Donate button ── */}
+          {/* ── Support ── */}
           <Text style={styles.sectionTitle}>{t('support_us')}</Text>
           <TouchableOpacity
             style={styles.donateBtn}
@@ -391,10 +426,10 @@ export const SettingsScreen: React.FC = () => {
             <LinearGradient
               colors={['#E53935', '#FF6D00']}
               start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
-              style={styles.donateBtnInner}
+              style={styles.donateInner}
             >
-              <Image source={require('../../assets/icons/heart.png')} style={{ width: 22, height: 22, tintColor: '#fff' }} />
-              <Text style={styles.donateBtnText}>Support on Ko-fi ☕</Text>
+              <Image source={require('../../assets/icons/heart.png')} style={styles.donateIcon} />
+              <Text style={styles.donateText}>Support on Ko-fi ☕</Text>
             </LinearGradient>
           </TouchableOpacity>
 
@@ -404,25 +439,27 @@ export const SettingsScreen: React.FC = () => {
 
       {/* ── Download Dir Modal ── */}
       <AppModal visible={dirModalVisible} onClose={() => setDirModalVisible(false)} colors={colors}>
-        <Text style={[styles.modalTitle, {color: colors.text}]}>{'مجلد الحفظ / Save Location'}</Text>
-        <Text style={{color: colors.textMuted, fontSize: 12, fontFamily: 'Rubik', marginBottom: 16, lineHeight: 18}}>
+        <Text style={styles.modalTitle}>{'مجلد الحفظ / Save Location'}</Text>
+        <Text style={styles.modalBody}>
           {'Downloads: ظاهر في تطبيق الملفات\nInternal: مخفي، أكثر أماناً'}
         </Text>
         {[
           { value: 'downloads', label: 'Downloads Folder', sub: '/storage/emulated/0/AbdoApp/' },
           { value: 'internal',  label: 'Internal Storage',  sub: 'App private folder (hidden)' },
-        ].map(opt => (
+        ].map((opt, i, arr) => (
           <TouchableOpacity
             key={opt.value}
-            style={[styles.qualityOption, settings.downloadDir === opt.value && { borderColor: colors.primary, backgroundColor: `${colors.primary}15` }]}
+            style={[styles.modalOption, i === arr.length - 1 && styles.modalOptionLast]}
             onPress={() => { updateSetting('downloadDir', opt.value); setDirModalVisible(false); }}
           >
-            <View style={{flex: 1}}>
-              <Text style={[styles.qualityOptionText, {color: colors.text}]}>{opt.label}</Text>
-              <Text style={{color: colors.textMuted, fontSize: 11, fontFamily: 'Rubik', marginTop: 2}}>{opt.sub}</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.modalOptionText, settings.downloadDir === opt.value && { color: colors.primary, fontWeight: '700' }]}>
+                {opt.label}
+              </Text>
+              <Text style={{ color: colors.textMuted, fontSize: 11, marginTop: 2 }}>{opt.sub}</Text>
             </View>
             {settings.downloadDir === opt.value && (
-              <Image source={require('../../assets/icons/checkmark.png')} style={{width: 18, height: 18, tintColor: colors.primary}} />
+              <Image source={require('../../assets/icons/checkmark.png')} style={styles.modalCheck} />
             )}
           </TouchableOpacity>
         ))}
@@ -432,17 +469,17 @@ export const SettingsScreen: React.FC = () => {
       <AppModal visible={qualityModalVisible} onClose={() => setQualityModalVisible(false)} colors={colors}>
         <Text style={styles.modalTitle}>{t('select_quality')}</Text>
         <View style={styles.modalDivider} />
-        {qualityOptions.map((q, i) => (
+        {qualityOptions.map((q, i, arr) => (
           <TouchableOpacity
             key={q}
-            style={[styles.modalOption, i === qualityOptions.length - 1 && { borderBottomWidth: 0 }]}
+            style={[styles.modalOption, i === arr.length - 1 && styles.modalOptionLast]}
             onPress={() => { updateSetting('qualityPreference', q); setQualityModalVisible(false); }}
           >
             <Text style={[styles.modalOptionText, settings.qualityPreference === q && { color: colors.primary, fontWeight: '700' }]}>
               {t(`quality_${q}`)}
             </Text>
             {settings.qualityPreference === q && (
-              <Image source={require('../../assets/icons/checkmark.png')} style={{ width: 18, height: 18, tintColor: colors.primary }} />
+              <Image source={require('../../assets/icons/checkmark.png')} style={styles.modalCheck} />
             )}
           </TouchableOpacity>
         ))}
@@ -461,10 +498,7 @@ export const SettingsScreen: React.FC = () => {
             onPress={handleClearCacheConfirm}
             disabled={clearingCache}
           >
-            {clearingCache
-              ? <ActivityIndicator size="small" color="#fff" />
-              : <Text style={styles.modalBtnTextPrimary}>{t('clear_cache')}</Text>
-            }
+            {clearingCache ? <ActivityIndicator size="small" color="#fff" /> : <Text style={styles.modalBtnTextPrimary}>{t('clear_cache')}</Text>}
           </TouchableOpacity>
         </View>
       </AppModal>
@@ -509,7 +543,7 @@ export const SettingsScreen: React.FC = () => {
         )}
       </AppModal>
 
-      {/* ── Reward Ad Popup (from settings trigger) ── */}
+      {/* Reward ad popup */}
       {rewardElement}
     </View>
   );
