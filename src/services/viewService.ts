@@ -7,7 +7,7 @@
  */
 
 import {storage} from '../storage';
-import {postViewCount} from './api';
+import {postViewCount, postEpisodeView} from './api';
 import { encode as b64encode, decode as b64decode } from 'base-64';
 
 const PENDING_PREFIX = 'vpend:';
@@ -65,6 +65,19 @@ const writeIndex = (index: string[]): void => {
 };
 
 // ── Public API ───────────────────────────────────────────────────────
+
+/**
+ * Call when user plays a specific episode.
+ * Increments both the series-level total AND the per-episode counter.
+ */
+export const recordEpisodePlay = (seriesId: string, category: string, epNumber: number): void => {
+  if (!seriesId || !category) return;
+  postEpisodeView(category, seriesId, epNumber)
+    .catch(() => {
+      // fallback: at least record the series-level view
+      queuePending(category, seriesId, 1);
+    });
+};
 
 /**
  * Call when user presses Play on any title or episode.

@@ -22,8 +22,8 @@ import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import FastImage from 'react-native-fast-image';
 import axios from 'axios';
 import {ContentItem, ArabicEpisode, ArabicEpisodeSource} from '../types';
-import {recordPlay} from '../services/viewService';
-import {getViewCount, getSeriesTotalViews} from '../services/api';
+import {recordPlay, recordEpisodePlay} from '../services/viewService';
+import {getViewCount, getSeriesTotalViews, getEpisodeViewCount} from '../services/api';
 import {useAds} from '../ads/AdContext';
 import {Colors} from '../theme/colors';
 import {useTranslation} from 'react-i18next';
@@ -150,6 +150,7 @@ export const DetailsScreen: React.FC = () => {
   const [statusIdx, setStatusIdx] = useState(0);
   const [extractError, setExtractError] = useState<string | null>(null);
   const [extractingEpUrl, setExtractingEpUrl] = useState<string | null>(null);
+  const [extractingEpNumber, setExtractingEpNumber] = useState<number | null>(null);
 
   // WebView extractor state
   const [extractorUrl, setExtractorUrl] = useState<string | null>(null);
@@ -247,7 +248,23 @@ export const DetailsScreen: React.FC = () => {
       .then(data => {
         // ── Arabic-series: flat episode array with sources[] per episode ──────
         if (isArabicSeries && Array.isArray(data?.episodes)) {
-          setArabicEpisodes(data.episodes as ArabicEpisode[]);
+          const eps = data.episodes as ArabicEpisode[];
+          setArabicEpisodes(eps);
+          // Fetch per-episode view counts
+          Promise.allSettled(
+            eps.map(ep =>
+              getEpisodeViewCount(category, item.id, ep.number)
+                .then(count => ({epUrl: ep.url, count}))
+            )
+          ).then(results => {
+            const map: Record<string, number> = {};
+            results.forEach(r => {
+              if (r.status === 'fulfilled' && r.value.count > 0) {
+                map[r.value.epUrl] = r.value.count;
+              }
+            });
+            if (Object.keys(map).length > 0) setEpisodeViews(map);
+          }).catch(() => {});
           setLoadingEps(false);
           return;
         }
@@ -285,8 +302,8 @@ export const DetailsScreen: React.FC = () => {
         }
         if (allEpUrls.length > 0) {
           Promise.allSettled(
-            allEpUrls.map(epUrl =>
-              getViewCount(category, epUrl)
+            allEpUrls.map((epUrl, idx) =>
+              getEpisodeViewCount(category, item.id, idx + 1)
                 .then(count => ({epUrl, count}))
             )
           ).then(results => {
@@ -437,7 +454,9 @@ export const DetailsScreen: React.FC = () => {
     setExtractorUrl(null);
     setExtracting(false);
     const currentEpUrl = extractingEpUrl;
+    const currentEpNumber = extractingEpNumber;
     setExtractingEpUrl(null);
+    setExtractingEpNumber(null);
 
     const primaryUrl = m3u8Urls[0];
 
@@ -461,8 +480,12 @@ export const DetailsScreen: React.FC = () => {
         .finally(() => setDownloading(false));
     } else {
       if (currentEpUrl) {
-        // Record against the series ID — server tracks series-level views
-        recordPlay(item.id, category);
+        // Record series-level view + per-episode view
+        if (currentEpNumber != null) {
+          recordEpisodePlay(item.id, category, currentEpNumber);
+        } else {
+          recordPlay(item.id, category);
+        }
         setEpisodeViews(prev => ({...prev, [currentEpUrl]: (prev[currentEpUrl] ?? 0) + 1}));
       } else {
         // Movie / non-episodic play
@@ -492,7 +515,7 @@ export const DetailsScreen: React.FC = () => {
   }, []);
 
   // ── Shared extraction launcher ────────────────────────────────────
-  const startExtraction = useCallback((url: string, title: string, epUrl?: string, allServers = false) => {
+  const startExtraction = useCallback((url: string, title: string, epUrl?: string, allServers = false, epNumber?: number) => {
     setShowLightbox(false);
     setExtracting(true);
     setExtractError(null);
@@ -501,6 +524,7 @@ export const DetailsScreen: React.FC = () => {
     lastPlayRef.current = {url, title};
     allServersModeRef.current = allServers;
     if (epUrl !== undefined) setExtractingEpUrl(epUrl);
+    if (epNumber !== undefined) setExtractingEpNumber(epNumber);
     setExtractorUrl(url);
   }, []);
 
@@ -509,7 +533,8 @@ export const DetailsScreen: React.FC = () => {
     setExtracting(true);
     akwamCallbackRef.current = (mp4: string) => {
       setAkwamUrl(null);
-      recordPlay(item.id, category); // use series ID, not episode URL
+      recordEpisodePlay(item.id, category, ep.number); // series total + per-episode
+      setEpisodeViews(prev => ({...prev, [ep.url]: (prev[ep.url] ?? 0) + 1}));
       setExtracting(false);
       nav.navigate('Player', {
         url: mp4,
@@ -650,13 +675,12 @@ export const DetailsScreen: React.FC = () => {
     if (!currentEps.length) return;
     const epUrl = currentEps[0];
     const title = `${item.Title} - ${t('season')} ${selSeason} ${t('episode')} 1`;
-    showInterstitial(() => startExtraction(epUrl, title, epUrl, allServers), 'play');
-  }, [isArabicSeries, arabicEpisodes, handlePlayArabicEpisode, currentEps, item.Title, selSeason, t, startExtraction, showInterstitial]);
+    showInterstitial(() => startExtraction(epUrl, title, epUrl, allServers, 1), 'play');
 
   // ── Play episode (on-device extraction) ──────────────────────────
   const handlePlayEpisode = useCallback((epUrl: string, epNum: number, allServers = false) => {
     const title = `${item.Title} - ${t('season')} ${selSeason} ${t('episode')} ${epNum}`;
-    showInterstitial(() => startExtraction(epUrl, title, epUrl, allServers), 'play');
+    showInterstitial(() => startExtraction(epUrl, title, epUrl, allServers, epNum), 'play');
   }, [item.Title, selSeason, t, startExtraction, showInterstitial]);
 
   // Cache server token URLs on the item as soon as the WebView reports them.
@@ -1072,6 +1096,9 @@ export const DetailsScreen: React.FC = () => {
                 </TouchableOpacity>
                 <View style={{flex: 1}}>
                   <Text style={S.epTitle} numberOfLines={1}>{t('episode')} {ep.number}</Text>
+                  {episodeViews[ep.url] ? (
+                    <Text style={S.epDur}>{formatViews(episodeViews[ep.url])}</Text>
+                  ) : null}
                 </View>
                 <Image
                   source={require('../../assets/icons/flash.png')}
