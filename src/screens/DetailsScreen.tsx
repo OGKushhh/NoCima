@@ -666,17 +666,18 @@ export const DetailsScreen: React.FC = () => {
 
   // ── Play first episode of current season ─────────────────────────
   const handlePlayFirst = useCallback((allServers = false) => {
-    // Akwam — route to first arabic episode
-    if (isArabicSeries) {
-      const firstEp = arabicEpisodes[0];
-      if (firstEp) handlePlayArabicEpisode(firstEp);
-      return;
-    }
-    // FaselHD
-    if (!currentEps.length) return;
-    const epUrl = currentEps[0];
-    const title = `${item.Title} - ${t('season')} ${selSeason} ${t('episode')} 1`;
-    showInterstitial(() => startExtraction(epUrl, title, epUrl, allServers, 1), 'play');
+  // Akwam — route to first arabic episode
+  if (isArabicSeries) {
+    const firstEp = arabicEpisodes[0];
+    if (firstEp) handlePlayArabicEpisode(firstEp);
+    return;
+  }
+  // FaselHD
+  if (!currentEps.length) return;
+  const epUrl = currentEps[0];
+  const title = `${item.Title} - ${t('season')} ${selSeason} ${t('episode')} 1`;
+  showInterstitial(() => startExtraction(epUrl, title, epUrl, allServers, 1), 'play');
+}, [isArabicSeries, arabicEpisodes, handlePlayArabicEpisode, currentEps, item.Title, t, selSeason, showInterstitial, startExtraction]);
 
   // ── Play episode (on-device extraction) ──────────────────────────
   const handlePlayEpisode = useCallback((epUrl: string, epNum: number, allServers = false) => {
