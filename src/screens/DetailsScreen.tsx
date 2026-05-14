@@ -151,12 +151,13 @@ export const DetailsScreen: React.FC = () => {
   const [extractError, setExtractError] = useState<string | null>(null);
   const [extractingEpUrl, setExtractingEpUrl] = useState<string | null>(null);
   const [extractingEpNumber, setExtractingEpNumber] = useState<number | null>(null);
+  const [extractingEpSeason, setExtractingEpSeason] = useState<number>(1);
 
   // WebView extractor state
   const [extractorUrl, setExtractorUrl] = useState<string | null>(null);
   const extractorTitleRef = useRef<string>('');
   // Tracks the last play request so the error-banner retry button works for both movies and episodes
-  const lastPlayRef = useRef<{url: string; title: string} | null>(null);
+  const lastPlayRef = useRef<{url: string; title: string; epUrl?: string; epNumber?: number; epSeason?: number} | null>(null);
   // Download mode: when true, handleExtracted starts a download instead of playing
   const downloadModeRef   = useRef(false);
   // All-servers mode: when true, VideoExtractor collects ALL servers before committing
@@ -254,7 +255,7 @@ export const DetailsScreen: React.FC = () => {
           // Fetch per-episode view counts
           Promise.allSettled(
             eps.map(ep =>
-              getEpisodeViewCount(category, item.id, ep.number)
+              getEpisodeViewCount(category, item.id, ep.number, 1)
                 .then(count => ({epUrl: ep.url, count}))
             )
           ).then(results => {
@@ -290,21 +291,25 @@ export const DetailsScreen: React.FC = () => {
         }
         setEpData(data);
         if (data?.seasons) setSelSeason(Object.keys(data.seasons)[0] ?? '1');
-        // Fetch per-episode view counts — collect all episode URLs across all seasons
-        const allEpUrls: string[] = [];
+        // Fetch per-episode view counts — collect all episode URLs across all seasons with their season number
+        const allEpEntries: { epUrl: string; season: string; epIdx: number }[] = [];
         if (data?.seasons) {
-          Object.values(data.seasons).forEach((season: any) => {
+          Object.entries(data.seasons).forEach(([sk, season]: [string, any]) => {
             if (Array.isArray(season.episodes)) {
-              allEpUrls.push(...season.episodes);
+              season.episodes.forEach((epUrl: string, idx: number) => {
+                allEpEntries.push({ epUrl, season: sk, epIdx: idx + 1 });
+              });
             }
           });
         } else if (Array.isArray(data?.episodes)) {
-          allEpUrls.push(...data.episodes);
+          (data.episodes as string[]).forEach((epUrl, idx) => {
+            allEpEntries.push({ epUrl, season: '1', epIdx: idx + 1 });
+          });
         }
-        if (allEpUrls.length > 0) {
+        if (allEpEntries.length > 0) {
           Promise.allSettled(
-            allEpUrls.map((epUrl, idx) =>
-              getEpisodeViewCount(category, item.id, idx + 1)
+            allEpEntries.map(({ epUrl, season, epIdx }) =>
+              getEpisodeViewCount(category, item.id, epIdx, parseInt(season, 10) || 1)
                 .then(count => ({epUrl, count}))
             )
           ).then(results => {
@@ -456,8 +461,10 @@ export const DetailsScreen: React.FC = () => {
     setExtracting(false);
     const currentEpUrl = extractingEpUrl;
     const currentEpNumber = extractingEpNumber;
+    const currentEpSeason = extractingEpSeason;
     setExtractingEpUrl(null);
     setExtractingEpNumber(null);
+    setExtractingEpSeason(1);
 
     const primaryUrl = m3u8Urls[0];
 
@@ -483,7 +490,7 @@ export const DetailsScreen: React.FC = () => {
       if (currentEpUrl) {
         // Record series-level view + per-episode view
         if (currentEpNumber != null) {
-          recordEpisodePlay(item.id, category, currentEpNumber);
+          recordEpisodePlay(item.id, category, currentEpNumber, currentEpSeason);
         } else {
           recordPlay(item.id, category);
         }
@@ -502,7 +509,7 @@ export const DetailsScreen: React.FC = () => {
         category,
       });
     }
-  }, [item, category, nav, extractingEpUrl, t]);
+  }, [item, category, nav, extractingEpUrl, extractingEpNumber, extractingEpSeason, t]);
 
   const handleExtractError = useCallback((reason?: 'timeout' | 'load' | 'http') => {
     stopStatusTimer();
@@ -516,16 +523,17 @@ export const DetailsScreen: React.FC = () => {
   }, []);
 
   // ── Shared extraction launcher ────────────────────────────────────
-  const startExtraction = useCallback((url: string, title: string, epUrl?: string, allServers = false, epNumber?: number) => {
+  const startExtraction = useCallback((url: string, title: string, epUrl?: string, allServers = false, epNumber?: number, epSeason?: number) => {
     setShowLightbox(false);
     setExtracting(true);
     setExtractError(null);
     startStatusTimer();
     extractorTitleRef.current = title;
-    lastPlayRef.current = {url, title};
+    lastPlayRef.current = {url, title, epUrl, epNumber, epSeason};
     allServersModeRef.current = allServers;
     if (epUrl !== undefined) setExtractingEpUrl(epUrl);
     if (epNumber !== undefined) setExtractingEpNumber(epNumber);
+    if (epSeason !== undefined) setExtractingEpSeason(epSeason);
     setExtractorUrl(url);
   }, []);
 
@@ -534,7 +542,7 @@ export const DetailsScreen: React.FC = () => {
     setExtracting(true);
     akwamCallbackRef.current = (mp4: string) => {
       setAkwamUrl(null);
-      recordEpisodePlay(item.id, category, ep.number); // series total + per-episode
+      recordEpisodePlay(item.id, category, ep.number, 1); // series total + per-episode
       setEpisodeViews(prev => ({...prev, [ep.url]: (prev[ep.url] ?? 0) + 1}));
       setExtracting(false);
       nav.navigate('Player', {
@@ -676,13 +684,15 @@ export const DetailsScreen: React.FC = () => {
   if (!currentEps.length) return;
   const epUrl = currentEps[0];
   const title = `${item.Title} - ${t('season')} ${selSeason} ${t('episode')} 1`;
-  showInterstitial(() => startExtraction(epUrl, title, epUrl, allServers, 1), 'play');
+  const seasonNum = parseInt(selSeason, 10) || 1;
+  showInterstitial(() => startExtraction(epUrl, title, epUrl, allServers, 1, seasonNum), 'play');
 }, [isArabicSeries, arabicEpisodes, handlePlayArabicEpisode, currentEps, item.Title, t, selSeason, showInterstitial, startExtraction]);
 
   // ── Play episode (on-device extraction) ──────────────────────────
   const handlePlayEpisode = useCallback((epUrl: string, epNum: number, allServers = false) => {
     const title = `${item.Title} - ${t('season')} ${selSeason} ${t('episode')} ${epNum}`;
-    showInterstitial(() => startExtraction(epUrl, title, epUrl, allServers, epNum), 'play');
+    const seasonNum = parseInt(selSeason, 10) || 1;
+    showInterstitial(() => startExtraction(epUrl, title, epUrl, allServers, epNum, seasonNum), 'play');
   }, [item.Title, selSeason, t, startExtraction, showInterstitial]);
 
   // Cache server token URLs on the item as soon as the WebView reports them.
@@ -696,9 +706,8 @@ export const DetailsScreen: React.FC = () => {
   // ── Retry last extraction ─────────────────────────────────────────
   const handleRetry = useCallback(() => {
     if (!lastPlayRef.current) return;
-    const {url, title} = lastPlayRef.current;
-    const isEp = !url.includes('/?p=');
-    startExtraction(url, title, isEp ? url : undefined);
+    const {url, title, epUrl, epNumber, epSeason} = lastPlayRef.current;
+    startExtraction(url, title, epUrl, false, epNumber, epSeason);
   }, [startExtraction]);
 
   const handleShare = () =>
@@ -1184,6 +1193,8 @@ export const DetailsScreen: React.FC = () => {
                 stopStatusTimer();
                 setExtracting(false);
                 setExtractingEpUrl(null);
+                setExtractingEpNumber(null);
+                setExtractingEpSeason(1);
                 setExtractorUrl(null);
                 setExtractError(t('video_unavailable'));
               }}

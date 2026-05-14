@@ -112,13 +112,14 @@ export const postViewCount = async (
   return r.data?.views ?? 0;
 };
 
-/** Record a series-level view AND a per-episode view in one call */
+/** Record a series-level view AND a per-episode view in one call (season-aware) */
 export const postEpisodeView = async (
   category: string,
   seriesId: string,
   epNumber: number,
+  seasonNumber: number = 1,
 ): Promise<void> => {
-  await api.post(`/api/view/${category}/${seriesId}/episode/${epNumber}`, {});
+  await api.post(`/api/view/${category}/${seriesId}/season/${seasonNumber}/episode/${epNumber}`, {});
 };
 
 export const getViewCount = async (
@@ -130,13 +131,14 @@ export const getViewCount = async (
   return r.data?.views ?? 0;
 };
 
-/** Get per-episode view count */
+/** Get per-episode view count (season-aware) */
 export const getEpisodeViewCount = async (
   category: string,
   seriesId: string,
   epNumber: number,
+  seasonNumber: number = 1,
 ): Promise<number> => {
-  const r = await api.get(`/api/view/${category}/${seriesId}/episode/${epNumber}`);
+  const r = await api.get(`/api/view/${category}/${seriesId}/season/${seasonNumber}/episode/${epNumber}`);
   return r.data?.views ?? 0;
 };
 

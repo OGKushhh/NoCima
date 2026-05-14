@@ -70,9 +70,9 @@ const writeIndex = (index: string[]): void => {
  * Call when user plays a specific episode.
  * Increments both the series-level total AND the per-episode counter.
  */
-export const recordEpisodePlay = (seriesId: string, category: string, epNumber: number): void => {
+export const recordEpisodePlay = (seriesId: string, category: string, epNumber: number, seasonNumber: number = 1): void => {
   if (!seriesId || !category) return;
-  postEpisodeView(category, seriesId, epNumber)
+  postEpisodeView(category, seriesId, epNumber, seasonNumber)
     .catch(() => {
       // fallback: at least record the series-level view
       queuePending(category, seriesId, 1);
