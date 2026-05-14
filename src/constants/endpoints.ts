@@ -34,7 +34,7 @@ export const GITHUB_APP_REPO = 'OGKushhh/AbdoBest';
 export const GITHUB_RELEASES_URL = `https://api.github.com/repos/${GITHUB_APP_REPO}/releases/latest`;
 
 // Current app version
-export const APP_VERSION = '1.0.5';
+export const APP_VERSION = '1.1.0';
 
 // Cache durations
 export const METADATA_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
