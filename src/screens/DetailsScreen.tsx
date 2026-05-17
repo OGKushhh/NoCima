@@ -285,12 +285,13 @@ export const DetailsScreen: React.FC = () => {
             }
             // Split dubbed/subbed episodes into virtual sub-seasons
             const eps: string[] = data.seasons[sk]?.episodes ?? [];
-            const hasDub = eps.some((u: string) => u.includes('مدبلج'));
-            const hasSub = eps.some((u: string) => !u.includes('مدبلج'));
+            const isDub = (u: string) => u.toLowerCase().includes('%d9%85%d8%af%d8%a8%d9%84%d8%ac');
+            const hasDub = eps.some(isDub);
+            const hasSub = eps.some((u: string) => !isDub(u));
             if (hasDub && hasSub) {
               const poster = data.seasons[sk]?.poster || '';
-              data.seasons[`${sk}_sub`] = {poster, episodes: eps.filter((u: string) => !u.includes('مدبلج'))};
-              data.seasons[`${sk}_dub`] = {poster, episodes: eps.filter((u: string) => u.includes('مدبلج'))};
+              data.seasons[`${sk}_sub`] = {poster, episodes: eps.filter((u: string) => !isDub(u))};
+              data.seasons[`${sk}_dub`] = {poster, episodes: eps.filter(isDub)};
               delete data.seasons[sk];
             }
           });
