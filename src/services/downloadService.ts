@@ -28,6 +28,7 @@ import {
 import ReactNativeBlobUtil from 'react-native-blob-util';
 import {DownloadItem, ContentItem} from '../types';
 import {storage, storageKeys, getSettings} from '../storage';
+import {AKWAM_BASE_URL, AKWAM_REFERER} from '../constants/endpoints';
 
 // Enable native download logs so we can see exactly what's happening
 setConfig({ isLogsEnabled: true, progressInterval: 1000 });
@@ -182,8 +183,8 @@ export const startDownload = async (
     trusty: true, // fixes SSL CertPathValidatorException on older Android/MIUI
   }).fetch('GET', mp4Url, {
     'User-Agent': 'Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
-    'Referer': 'https://akwam.com.co/',
-    'Origin': 'https://akwam.com.co',
+    'Referer': AKWAM_REFERER,
+    'Origin': AKWAM_BASE_URL,
   });
 
   task.progress({ interval: 500 }, (received: number, total: number) => {
@@ -265,8 +266,8 @@ export const retryDownload = async (id: string) => {
     indicator: true,
   }).fetch('GET', item.videoUrl, {
     'User-Agent': 'Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
-    'Referer': 'https://akwam.com.co/',
-    'Origin': 'https://akwam.com.co',
+    'Referer': AKWAM_REFERER,
+    'Origin': AKWAM_BASE_URL,
   });
 
   task.progress({ interval: 500 }, (received: number, total: number) => {

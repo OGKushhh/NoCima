@@ -16,6 +16,13 @@
 import React, {useRef, useEffect, useCallback, useState} from 'react';
 import {View} from 'react-native';
 import {WebView} from 'react-native-webview';
+import {
+  AKWAM_BASE_URL,
+  AKWAM_GO_DOMAIN,
+  AKWAM_BASE_DOMAIN,
+  AKWAM_REFERER,
+  normalizeAkwamUrl,
+} from '../constants/endpoints';
 
 export type AkwamExtractMode = 'watch' | 'download';
 
@@ -32,7 +39,7 @@ const UA =
 
 // ── Pure HTTP download resolution (unchanged, already reliable) ───────────
 async function resolveDownloadMp4(shortUrl: string): Promise<string> {
-  const r1 = await fetch(shortUrl, {
+  const r1 = await fetch(normalizeAkwamUrl(shortUrl), {
     method: 'GET',
     redirect: 'manual',
     headers: {'User-Agent': UA},
@@ -41,7 +48,7 @@ async function resolveDownloadMp4(shortUrl: string): Promise<string> {
   if (r1.status >= 300 && r1.status < 400) {
     const loc = r1.headers.get('location');
     if (!loc) throw new Error('redirect with no Location header');
-    downloadPageUrl = loc.startsWith('http') ? loc : `https://akwam.com.co${loc}`;
+    downloadPageUrl = loc.startsWith('http') ? loc : `${AKWAM_BASE_URL}${loc}`;
   } else {
     const html = await r1.text();
     const m =
@@ -49,10 +56,10 @@ async function resolveDownloadMp4(shortUrl: string): Promise<string> {
       html.match(/href="([^"]+)"[^>]*class="download-link"/);
     const href = m?.[1];
     if (!href) throw new Error('download-link not found');
-    downloadPageUrl = href.startsWith('http') ? href : `https://akwam.com.co${href}`;
+    downloadPageUrl = href.startsWith('http') ? href : `${AKWAM_BASE_URL}${href}`;
   }
   const r2 = await fetch(downloadPageUrl, {
-    headers: {'User-Agent': UA, Referer: 'https://akwam.com.co/'},
+    headers: {'User-Agent': UA, Referer: AKWAM_REFERER},
   });
   const html2 = await r2.text();
   const mp4Match = html2.match(
@@ -99,8 +106,8 @@ const WATCH_JS = `
 
   var currentUrl = window.location.href;
 
-  // Shortener page (go.akwam.com.co / akw.cam) → click the download-link
-  if (currentUrl.indexOf('go.akwam.com.co') !== -1 || currentUrl.indexOf('akw.cam') !== -1) {
+  // Shortener page – detect by go domain or legacy aliases
+  if (currentUrl.indexOf('go.akwam.it') !== -1 || currentUrl.indexOf('go.akwam.com.co') !== -1 || currentUrl.indexOf('akw.cam') !== -1) {
     function clickDownloadLink() {
       var link = document.querySelector('a.download-link');
       if (link && link.href) {
@@ -119,7 +126,7 @@ const WATCH_JS = `
     return;
   }
 
-  // Final watch page (akwam.com.co/watch/…) – scan for #player source
+  // Final watch page (akwam.it/watch/…) – scan for #player source
   function scan() {
     var s = document.querySelector('#player source[src]');
     if (s && s.src && s.src.indexOf('.mp4') !== -1) { done(s.src); return true; }
@@ -241,8 +248,11 @@ const AkwamExtractor: React.FC<Props> = ({
       if (!url) return true;
       if (url.startsWith('about:') || url.startsWith('data:')) return true;
 
-      // If it's the real watch page, store it and start the fallback timer
-      if (url.includes('akwam.com.co/watch/') && url !== watchPageUrlRef.current) {
+      // If it's the real watch page (new or legacy domain), store it and start fallback timer
+      const isWatchPage =
+        url.includes(`${AKWAM_BASE_DOMAIN}/watch/`) ||
+        url.includes('akwam.com.co/watch/');
+      if (isWatchPage && url !== watchPageUrlRef.current) {
         watchPageUrlRef.current = url;
         startFallback();
       }
@@ -252,7 +262,14 @@ const AkwamExtractor: React.FC<Props> = ({
         return false;
       }
 
-      const allowed = ['akwam.com.co', 'go.akwam.com.co', 'akw.cam', 'downet.net'];
+      const allowed = [
+        AKWAM_BASE_DOMAIN,   // akwam.it
+        AKWAM_GO_DOMAIN,     // go.akwam.it
+        'akwam.com.co',      // legacy
+        'go.akwam.com.co',   // legacy
+        'akw.cam',           // legacy alias
+        'downet.net',
+      ];
       const ok = allowed.some(h => url.includes(h));
       if (!ok) console.log('[Akwam] WEBVIEW blocked:', url.substring(0, 120));
       return ok;

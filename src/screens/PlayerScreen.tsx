@@ -12,6 +12,7 @@ import { useTranslation } from 'react-i18next';
 import { getSettings, saveSettings } from '../storage';
 import { useTheme } from '../hooks/useTheme';
 import ImmersiveMode from 'react-native-immersive-mode';
+import {AKWAM_BASE_URL, AKWAM_REFERER} from '../constants/endpoints';
 
 // ─── Orientation (no external library needed) ─────────────────────────────────
 // We use react-native's built-in Dimensions + a JS-side rotation flag.
@@ -435,8 +436,8 @@ export const PlayerScreen: React.FC = () => {
             uri: activeUri,
             type: activeUri?.includes('.m3u8') ? 'm3u8' : undefined,
             headers: {
-              'Referer': 'https://akwam.com.co/',
-              'Origin': 'https://akwam.com.co',
+              'Referer': AKWAM_REFERER,
+              'Origin': AKWAM_BASE_URL,
               'User-Agent': 'Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
             },
           }}

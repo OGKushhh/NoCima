@@ -1,6 +1,43 @@
 // HF Spaces API
 export const API_BASE = 'https://ogkushhh-abdobest.hf.space';
 
+// ── Akwam domains ─────────────────────────────────────────────────────────
+// Update these when akwam changes their domain – everything else auto-follows.
+export const AKWAM_BASE_DOMAIN   = 'akwam.it';           // main site
+export const AKWAM_BASE_URL      = `https://${AKWAM_BASE_DOMAIN}`;
+export const AKWAM_GO_DOMAIN     = 'go.akwam.it';        // shortener / watch links
+export const AKWAM_GO_URL        = `https://${AKWAM_GO_DOMAIN}`;
+export const AKWAM_REFERER       = `${AKWAM_BASE_URL}/`;
+// Legacy domains kept for URL-rewriting (links already saved in DB use these)
+export const AKWAM_LEGACY_DOMAINS = [
+  'akwam.com.co',
+  'go.akwam.com.co',
+  'akw.cam',
+] as const;
+// ──────────────────────────────────────────────────────────────────────────
+
+/**
+ * Rewrites any stored akwam URL (old domains) to the current live domain.
+ * Safe to call even if the URL is already on the new domain or is empty.
+ *
+ * Examples:
+ *   go.akwam.com.co/watch/12345  →  go.akwam.it/watch/12345
+ *   akwam.com.co/watch/12345     →  akwam.it/watch/12345
+ *   akw.cam/watch/12345          →  akwam.it/watch/12345   (akw.cam = shortener alias)
+ */
+export function normalizeAkwamUrl(url: string): string {
+  if (!url) return url;
+  let normalized = url;
+  for (const legacy of AKWAM_LEGACY_DOMAINS) {
+    if (normalized.includes(legacy)) {
+      const replacement = legacy.startsWith('go.') ? AKWAM_GO_DOMAIN : AKWAM_BASE_DOMAIN;
+      normalized = normalized.replace(legacy, replacement);
+      break;
+    }
+  }
+  return normalized;
+}
+
 // Metadata API endpoints (served by HF Spaces)
 export const METADATA_ENDPOINTS: Record<string, string> = {
   movies: '/api/movies',
