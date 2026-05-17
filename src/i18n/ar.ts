@@ -134,6 +134,7 @@ export const ar = {
   play_first_episode: 'تشغيل الحلقة الأولى',
   badge_movie: 'فيلم',
   badge_dubbed: 'مدبلج',
+  badge_subbed: 'مترجم',
   badge_hindi: 'هندي',
   badge_asian: 'آسيوي',
   badge_anime: 'أنمي',

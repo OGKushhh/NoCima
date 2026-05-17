@@ -134,6 +134,7 @@ export const en = {
   play_first_episode: 'Play First Episode',
   badge_movie: 'Movie',
   badge_dubbed: 'Dubbed',
+  badge_subbed: 'Subbed',
   badge_hindi: 'Hindi',
   badge_asian: 'Asian',
   badge_anime: 'Anime',

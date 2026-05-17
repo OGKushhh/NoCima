@@ -283,6 +283,16 @@ export const DetailsScreen: React.FC = () => {
               // Case B: plain array → wrap
               data.seasons[sk] = {episodes: data.seasons[sk]};
             }
+            // Split dubbed/subbed episodes into virtual sub-seasons
+            const eps: string[] = data.seasons[sk]?.episodes ?? [];
+            const hasDub = eps.some((u: string) => u.includes('مدبلج'));
+            const hasSub = eps.some((u: string) => !u.includes('مدبلج'));
+            if (hasDub && hasSub) {
+              const poster = data.seasons[sk]?.poster || '';
+              data.seasons[`${sk}_sub`] = {poster, episodes: eps.filter((u: string) => !u.includes('مدبلج'))};
+              data.seasons[`${sk}_dub`] = {poster, episodes: eps.filter((u: string) => u.includes('مدبلج'))};
+              delete data.seasons[sk];
+            }
           });
         } else if (Array.isArray(data?.episodes)) {
           // Case C: flat episodes array → synthesise a season 1
@@ -418,10 +428,22 @@ export const DetailsScreen: React.FC = () => {
   const isOngoing = status === '\u0645\u0633\u062A\u0645\u0631' || status.toLowerCase() === 'ongoing';
 
   // Episode data
+  // Returns the human-readable label for a season key, handling _sub/_dub suffixes
+  const seasonLabel = (sk: string): string => {
+    const numMatch = sk.match(/^(\d+)/);
+    const num = numMatch ? numMatch[1] : sk;
+    if (sk.endsWith('_sub')) return `${t('season')} ${num} - ${t('badge_subbed')}`;
+    if (sk.endsWith('_dub')) return `${t('season')} ${num} - ${t('badge_dubbed')}`;
+    return `${t('season')} ${num}`;
+  };
   const seasonKeys: string[] = epData?.seasons ? Object.keys(epData.seasons).sort((a, b) => {
     const na = parseInt(a.replace(/\D/g, ''), 10) || 0;
     const nb = parseInt(b.replace(/\D/g, ''), 10) || 0;
-    return na - nb;
+    if (na !== nb) return na - nb;
+    // Within same season number: _sub before _dub
+    if (a.endsWith('_sub') && b.endsWith('_dub')) return -1;
+    if (a.endsWith('_dub') && b.endsWith('_sub')) return 1;
+    return 0;
   }) : [];
   const currentEps: string[] = epData?.seasons?.[selSeason]?.episodes ?? [];
   const seasonPoster: string = epData?.seasons?.[selSeason]?.poster || '';
@@ -1027,7 +1049,7 @@ export const DetailsScreen: React.FC = () => {
                   onPress={() => setShowSeasonDlg(true)}
                 >
                   <Image source={require('../../assets/icons/tv.png')} style={[S.seasonBtnIcon, {tintColor: Colors.dark.primary}]} />
-                  <Text style={S.seasonBtnTxt}>{t('season')} {selSeason}</Text>
+                  <Text style={S.seasonBtnTxt}>{seasonLabel(selSeason)}</Text>
                   <Text style={S.seasonBtnArrow}>&#9662;</Text>
                 </TouchableOpacity>
               )}
@@ -1233,7 +1255,7 @@ export const DetailsScreen: React.FC = () => {
                   onPress={() => { setSelSeason(sk); setShowSeasonDlg(false); }}
                 >
                   <Text style={[S.seasonModalOptionText, selSeason === sk && S.seasonModalOptionTextActive]}>
-                    {t('season')} {sk}
+                    {seasonLabel(sk)}
                   </Text>
                   {selSeason === sk && (
                     <Text style={{color: Colors.dark.primary, fontSize: 16}}>✓</Text>
