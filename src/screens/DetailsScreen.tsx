@@ -1087,18 +1087,16 @@ export const DetailsScreen: React.FC = () => {
                     <View style={[S.epNumCircle, isExtractingThis && S.epNumActive]}>
                       <Text style={[S.epNum, isExtractingThis && S.epNumActiveTxt]}>{idx + 1}</Text>
                     </View>
+                    {episodeViews[epUrl] ? (
+                      <View style={S.epViewsBadge}>
+                        <Image source={require('../../assets/icons/eyes.png')} style={S.epViewsBadgeIcon} />
+                        <Text style={S.epViewsBadgeTxt}>{formatViews(episodeViews[epUrl])}</Text>
+                      </View>
+                    ) : null}
                     <TouchableOpacity style={S.epDownloadBtn} onPress={showComingSoon}>
                       <Image source={require('../../assets/icons/download-to-storage-drive.png')} style={[S.epPlayIcon, {tintColor: Colors.dark.accent}]} />
                     </TouchableOpacity>
-                    <View style={S.epInfo}>
-                      <Text style={S.epTitle}>{t('episode')} {idx + 1}</Text>
-                      {episodeViews[epUrl] ? (
-                        <View style={S.epViewsRow}>
-                          <Image source={require('../../assets/icons/eyes.png')} style={S.epViewsIcon} />
-                          <Text style={S.epDur}>{formatViews(episodeViews[epUrl])}</Text>
-                        </View>
-                      ) : null}
-                    </View>
+                    <Text style={[S.epTitle, {flex: 1, textAlign: 'right'}]} numberOfLines={1}>{t('episode')} {idx + 1}</Text>
                     {isExtractingThis ? (
                       <ActivityIndicator size="small" color={Colors.dark.primary} />
                     ) : (
@@ -1126,10 +1124,14 @@ export const DetailsScreen: React.FC = () => {
                 onPress={() => handlePlayArabicEpisode(ep)}
               >
                 <View style={S.epNumCircle}>
-                  <Text style={{color: Colors.dark.primary, fontSize: 12, fontWeight: '700', fontFamily: 'Rubik'}}>
-                    {ep.number}
-                  </Text>
+                  <Text style={S.epNum}>{ep.number}</Text>
                 </View>
+                {episodeViews[ep.url] ? (
+                  <View style={S.epViewsBadge}>
+                    <Image source={require('../../assets/icons/eyes.png')} style={S.epViewsBadgeIcon} />
+                    <Text style={S.epViewsBadgeTxt}>{formatViews(episodeViews[ep.url])}</Text>
+                  </View>
+                ) : null}
                 <TouchableOpacity
                   style={S.epDownloadBtn}
                   activeOpacity={0.7}
@@ -1144,12 +1146,7 @@ export const DetailsScreen: React.FC = () => {
                     style={[S.epPlayIcon, {tintColor: Colors.dark.accent}]}
                   />
                 </TouchableOpacity>
-                <View style={{flex: 1}}>
-                  <Text style={S.epTitle} numberOfLines={1}>{t('episode')} {ep.number}</Text>
-                  {episodeViews[ep.url] ? (
-                    <Text style={S.epDur}>{formatViews(episodeViews[ep.url])}</Text>
-                  ) : null}
-                </View>
+                <Text style={[S.epTitle, {flex: 1, textAlign: 'right'}]} numberOfLines={1}>{t('episode')} {ep.number}</Text>
                 <Image
                   source={require('../../assets/icons/flash.png')}
                   style={[S.epPlayIcon, {tintColor: '#FFD700'}]}
@@ -1375,6 +1372,9 @@ const S = StyleSheet.create({
   epDur:           {color: Colors.dark.textMuted, fontSize: 12, fontFamily: 'Rubik', marginTop: 2},
   epViewsRow:      {flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 2},
   epViewsIcon:     {width: 12, height: 12, tintColor: 'rgba(255,255,255,0.6)'},
+  epViewsBadge:    {flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.dark.surface, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 16, borderWidth: 1, borderColor: Colors.dark.border, gap: 5, minWidth: 56},
+  epViewsBadgeIcon:{width: 14, height: 14, tintColor: Colors.dark.textSecondary},
+  epViewsBadgeTxt: {color: Colors.dark.textSecondary, fontSize: 12, fontFamily: 'Rubik', fontWeight: '600'},
   epPlayIcon:      {width: 20, height: 20},
   noEpsWrap:       {alignItems: 'center', paddingVertical: 24, gap: 8},
   noEpsTxt:        {color: Colors.dark.textMuted, fontSize: 14, fontFamily: 'Rubik'},
