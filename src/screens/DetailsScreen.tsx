@@ -192,6 +192,7 @@ export const DetailsScreen: React.FC = () => {
   const category = (item?.Category || 'movies').toLowerCase();
   const isEpisodic = ['series', 'tvshows', 'asian-series', 'anime', 'arabic-series'].includes(category);
   const isArabicSeries = category === 'arabic-series';
+  const isArabicMovie  = category === 'arabic-movies';
 
   // ── Arabic-series / Akwam specific state ─────────────────────────────────
   const [arabicEpisodes,   setArabicEpisodes]   = useState<ArabicEpisode[]>([]);
@@ -200,6 +201,10 @@ export const DetailsScreen: React.FC = () => {
   const [showBulkDownload, setShowBulkDownload] = useState(false);
   const [showNotice, setShowNotice] = useState(false);
   const preferredQuality: string = isArabicSeries ? (getSettings()?.playerQuality ?? 'auto') : 'auto';
+
+  // ── Arabic-movie quality picker state ────────────────────────────────────
+  const [movieQualityModal, setMovieQualityModal] = useState(false);
+  const [movieQualityMode,  setMovieQualityMode]  = useState<'play' | 'download'>('play');
 
   // ── Akwam extractor state ─────────────────────────────────────────────────
   const [akwamUrl,  setAkwamUrl]  = useState<string | null>(null);
@@ -586,6 +591,59 @@ export const DetailsScreen: React.FC = () => {
     setQualityModalEp(ep);
   }, []);
 
+  // ── Arabic movie: watch via AkwamExtractor ────────────────────────────────
+  const handlePlayArabicMovie = useCallback((lnk: {watch_url: string; quality: string}) => {
+    setMovieQualityModal(false);
+    setExtracting(true);
+    akwamCallbackRef.current = (mp4: string) => {
+      setAkwamUrl(null);
+      setExtracting(false);
+      recordPlay(item.id, category);
+      nav.navigate('Player', {
+        url: mp4,
+        servers: [mp4],
+        title: item.Title,
+        contentId: item.id,
+        category,
+      });
+    };
+    setAkwamMode('watch');
+    setAkwamUrl(lnk.watch_url);
+  }, [category, item.id, item.Title, nav]);
+
+  // ── Arabic movie: download via resolveAkwamDownloadLink ──────────────────
+  const handleDownloadArabicMovie = useCallback((lnk: {download_url: string; quality: string}) => {
+    setMovieQualityModal(false);
+    const title = item.Title;
+    const startFlow = async () => {
+      const preparingMsg = lang === 'ar'
+        ? `🔗 جاري تحضير الرابط: ${title}`
+        : `🔗 Preparing download: ${title}`;
+      Platform.OS === 'android'
+        ? ToastAndroid.show(preparingMsg, ToastAndroid.LONG)
+        : Alert.alert('', preparingMsg);
+      const hasPermission = await requestStoragePermission();
+      if (!hasPermission) { Alert.alert('', 'Storage permission is required.'); return; }
+      try {
+        const mp4 = await resolveAkwamDownloadLink(lnk.download_url);
+        await startDownload(item as any, mp4);
+        const doneMsg = lang === 'ar'
+          ? `⬇ بدأ التحميل: ${title}`
+          : `⬇ Download started: ${title}`;
+        Platform.OS === 'android'
+          ? ToastAndroid.show(doneMsg, ToastAndroid.LONG)
+          : Alert.alert('', doneMsg);
+      } catch (e) {
+        console.warn('[Details] arabic movie download error:', e);
+        const errMsg = lang === 'ar' ? '❌ فشل التحميل' : '❌ Download failed';
+        Platform.OS === 'android'
+          ? ToastAndroid.show(errMsg, ToastAndroid.SHORT)
+          : Alert.alert('', errMsg);
+      }
+    };
+    startFlow();
+  }, [item, lang, requestStoragePermission]);
+
   // ── Storage permission helper ──────────────────────────────────────
   const requestStoragePermission = useCallback(async (): Promise<boolean> => {
     if (Platform.OS !== 'android') return true;
@@ -671,20 +729,25 @@ export const DetailsScreen: React.FC = () => {
 
   // ── Play movie (on-device extraction) ────────────────────────────
   const handlePlay = useCallback((allServers = false) => {
-    // Akwam categories have no Sources[] — play is episode-based only
-    // The play button for arabic-series routes through handlePlayFirst
     if (isArabicSeries) return;
-    // FaselHD extraction
+    if (isArabicMovie) {
+      setMovieQualityMode('play');
+      setMovieQualityModal(true);
+      return;
+    }
     const src = item.Sources?.[0];
     const url = src ?? `${FASEL_BASE}/?p=${item.id}`;
     showInterstitial(() => startExtraction(url, item.Title, undefined, allServers), 'play');
-  }, [item.id, item.Title, item.Sources, isArabicSeries, startExtraction, showInterstitial]);
+  }, [item.id, item.Title, item.Sources, isArabicSeries, isArabicMovie, startExtraction, showInterstitial]);
 
   // ── Download movie or first episode ──────────────────────────────
   const handleDownload = useCallback(() => {
-    // Akwam downloads go through AkwamBulkDownloadModal — button already routes there
     if (isArabicSeries) return;
-    // FaselHD extraction for download
+    if (isArabicMovie) {
+      setMovieQualityMode('download');
+      setMovieQualityModal(true);
+      return;
+    }
     downloadModeRef.current = true;
     if (isEpisodic && currentEps.length > 0) {
       const epUrl = currentEps[0];
@@ -693,7 +756,7 @@ export const DetailsScreen: React.FC = () => {
     } else {
       startExtraction(`${FASEL_BASE}/?p=${item.id}`, item.Title);
     }
-  }, [item, isArabicSeries, isEpisodic, currentEps, selSeason, t, startExtraction]);
+  }, [item, isArabicSeries, isArabicMovie, isEpisodic, currentEps, selSeason, t, startExtraction]);
 
   // ── Play first episode of current season ─────────────────────────
   const handlePlayFirst = useCallback((allServers = false) => {
@@ -1191,6 +1254,35 @@ export const DetailsScreen: React.FC = () => {
         onClose={() => setQualityModalEp(null)}
       />
 
+      {/* ── Arabic movie quality picker ── */}
+      <Modal
+        visible={movieQualityModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setMovieQualityModal(false)}>
+        <TouchableOpacity style={S.mqOverlay} activeOpacity={1} onPress={() => setMovieQualityModal(false)}>
+          <View style={S.mqCard}>
+            <Text style={S.mqTitle}>
+              {movieQualityMode === 'download'
+                ? (lang === 'ar' ? '⬇ اختر الجودة للتحميل' : '⬇ Choose Download Quality')
+                : (lang === 'ar' ? '▶ اختر الجودة للمشاهدة' : '▶ Choose Watch Quality')}
+            </Text>
+            {((raw.links ?? raw.Sources ?? []) as any[]).map((lnk: any, i: number) => (
+              <TouchableOpacity
+                key={i}
+                style={S.mqRow}
+                onPress={() => movieQualityMode === 'download'
+                  ? handleDownloadArabicMovie({download_url: lnk.download_url, quality: lnk.quality ?? ''})
+                  : showInterstitial(() => handlePlayArabicMovie({watch_url: lnk.watch_url, quality: lnk.quality ?? ''}), 'play')
+                }>
+                <Text style={S.mqLabel}>{lnk.quality || (lang === 'ar' ? `جودة ${i + 1}` : `Quality ${i + 1}`)}</Text>
+                {lnk.size ? <Text style={S.mqSize}>{lnk.size}</Text> : null}
+              </TouchableOpacity>
+            ))}
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
       {/* ── Akwam bulk download ── */}
       <AkwamBulkDownloadModal
         visible={showBulkDownload}
@@ -1378,6 +1470,14 @@ const S = StyleSheet.create({
   epPlayIcon:      {width: 20, height: 20},
   noEpsWrap:       {alignItems: 'center', paddingVertical: 24, gap: 8},
   noEpsTxt:        {color: Colors.dark.textMuted, fontSize: 14, fontFamily: 'Rubik'},
+
+  // ── Arabic movie quality modal ──
+  mqOverlay: {flex: 1, backgroundColor: 'rgba(0,0,0,0.65)', justifyContent: 'center', alignItems: 'center'},
+  mqCard:    {backgroundColor: Colors.dark.surface, borderRadius: 18, padding: 22, width: '82%', maxWidth: 360},
+  mqTitle:   {color: Colors.dark.text, fontSize: 15, fontWeight: '700', fontFamily: 'Rubik', marginBottom: 16, textAlign: 'center'},
+  mqRow:     {flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 13, paddingHorizontal: 16, backgroundColor: Colors.dark.surfaceLight, borderRadius: 10, marginBottom: 8},
+  mqLabel:   {color: Colors.dark.text, fontSize: 14, fontWeight: '600', fontFamily: 'Rubik'},
+  mqSize:    {color: Colors.dark.textMuted, fontSize: 12, fontFamily: 'Rubik'},
 
   extractOverlay: {
     ...StyleSheet.absoluteFillObject,

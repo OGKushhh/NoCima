@@ -282,7 +282,7 @@ const AkwamExtractor: React.FC<Props> = ({
   return (
     <View pointerEvents="none" style={{position: 'absolute', width: 1, height: 1, opacity: 0}}>
       <WebView
-        source={{uri: startUrl}}
+        source={{uri: normalizeAkwamUrl(startUrl)}}
         javaScriptEnabled
         domStorageEnabled
         thirdPartyCookiesEnabled
